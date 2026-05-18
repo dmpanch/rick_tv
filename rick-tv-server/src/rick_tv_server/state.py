@@ -39,6 +39,8 @@ class DeliveryItem:
     converted_path: Path | None = None
     source_message_id: int | None = None
     channel_id: str | None = None
+    filename: str | None = None
+    sha256: str | None = None
 
     @classmethod
     def from_json(cls, data: dict[str, object]) -> "DeliveryItem":
@@ -51,6 +53,8 @@ class DeliveryItem:
             converted_path=Path(str(converted_path)) if converted_path is not None else None,
             source_message_id=data.get("source_message_id"),  # type: ignore[arg-type]
             channel_id=data.get("channel_id"),  # type: ignore[arg-type]
+            filename=data.get("filename"),  # type: ignore[arg-type]
+            sha256=data.get("sha256"),  # type: ignore[arg-type]
         )
 
     def to_json(self) -> dict[str, object]:
@@ -103,7 +107,15 @@ class DeliveryStateStore:
         self._persist()
         return item
 
-    def mark_pending(self, item_id: str, *, converted_path: Path, channel_id: str) -> DeliveryItem:
+    def mark_pending(
+        self,
+        item_id: str,
+        *,
+        converted_path: Path,
+        channel_id: str,
+        filename: str | None = None,
+        sha256: str | None = None,
+    ) -> DeliveryItem:
         item = self.items[item_id]
         if item.status != "converting":
             raise ValueError(
@@ -113,6 +125,8 @@ class DeliveryStateStore:
         item.status = "pending"
         item.converted_path = converted_path
         item.channel_id = channel_id
+        item.filename = filename
+        item.sha256 = sha256
         self.last_channel_by_user[item.user_id] = channel_id
         self._persist()
         return item
