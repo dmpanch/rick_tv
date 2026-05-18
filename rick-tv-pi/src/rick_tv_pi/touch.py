@@ -17,6 +17,7 @@ class TouchPoint:
 class TouchInterpreter:
     def __init__(self, cooldown_seconds: float) -> None:
         self.cooldown_seconds = cooldown_seconds
+        self._last_action_at: float | None = None
 
     def interpret(self, start: TouchPoint, end: TouchPoint) -> SwipeAction | None:
         horizontal_delta = end.x - start.x
@@ -27,5 +28,15 @@ class TouchInterpreter:
         if abs(horizontal_delta) <= abs(vertical_delta):
             return None
         if horizontal_delta < 0:
-            return "next"
-        return "previous"
+            action: SwipeAction = "next"
+        else:
+            action = "previous"
+
+        if (
+            self._last_action_at is not None
+            and start.timestamp - self._last_action_at < self.cooldown_seconds
+        ):
+            return None
+
+        self._last_action_at = start.timestamp
+        return action

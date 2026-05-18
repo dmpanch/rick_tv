@@ -32,3 +32,24 @@ def test_tap_movement_under_threshold_returns_none():
     )
 
     assert action is None
+
+
+def test_cooldown_blocks_repeated_swipes():
+    interpreter = TouchInterpreter(cooldown_seconds=0.5)
+
+    first_action = interpreter.interpret(
+        TouchPoint(x=200, y=100, timestamp=1.0),
+        TouchPoint(x=20, y=100, timestamp=1.1),
+    )
+    second_action = interpreter.interpret(
+        TouchPoint(x=200, y=100, timestamp=1.3),
+        TouchPoint(x=20, y=100, timestamp=1.4),
+    )
+    third_action = interpreter.interpret(
+        TouchPoint(x=200, y=100, timestamp=1.6),
+        TouchPoint(x=20, y=100, timestamp=1.7),
+    )
+
+    assert first_action == "next"
+    assert second_action is None
+    assert third_action == "next"
