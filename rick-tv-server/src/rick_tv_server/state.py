@@ -72,6 +72,7 @@ class DeliveryStateStore:
         self.last_channel_by_user: dict[str, str] = {}
         self.acknowledgements: dict[str, object] = {}
         self.archive_index: dict[str, object] = {}
+        self.archive_delete_requests: dict[str, object] = {}
         self._load()
 
     def create_uploaded_item(
@@ -146,7 +147,11 @@ class DeliveryStateStore:
         return [item for item in self.items.values() if item.status == "pending"]
 
     def list_archived_items(self) -> list[DeliveryItem]:
-        return [item for item in self.items.values() if item.status == "archived"]
+        return [
+            item
+            for item in self.items.values()
+            if item.status in ("delivered", "archived")
+        ]
 
     def cancel_pending_item(self, item_id: str) -> DeliveryItem:
         item = self.items[item_id]
@@ -159,25 +164,43 @@ class DeliveryStateStore:
 
     def request_archive_delete(self, item_id: str) -> DeliveryItem:
         item = self.items[item_id]
-        if item.status != "archived":
+        if item.status not in ("delivered", "archived"):
             raise ValueError(
                 f"delivery item must be archived before archive delete: {item_id}"
             )
 
+        self.archive_delete_requests[item_id] = {"status": "requested"}
+        self._persist()
         return item
 
     def confirm_archive_delete(self, item_id: str) -> DeliveryItem:
         item = self.items[item_id]
-        if item.status != "archived":
+        if item.status not in ("delivered", "archived"):
             raise ValueError(
                 f"delivery item must be archived before archive delete: {item_id}"
             )
+        if item_id not in self.archive_delete_requests:
+            raise ValueError(f"archive delete must be requested before confirm: {item_id}")
 
-        if item.converted_path is not None:
-            item.converted_path.unlink(missing_ok=True)
+        moved_media_paths = self._quarantine_server_side_media(item)
+        previous_status = item.status
+        previous_archive_entry = self.archive_index.get(item_id)
+        previous_request = self.archive_delete_requests.get(item_id)
         item.status = "deleted_server_side"
         self.archive_index.pop(item_id, None)
-        self._persist()
+        self.archive_delete_requests.pop(item_id, None)
+        try:
+            self._persist()
+        except Exception:
+            item.status = previous_status
+            if previous_archive_entry is not None:
+                self.archive_index[item_id] = previous_archive_entry
+            if previous_request is not None:
+                self.archive_delete_requests[item_id] = previous_request
+            self._restore_quarantined_media(moved_media_paths)
+            raise
+
+        self._delete_quarantined_media(moved_media_paths)
         return item
 
     def ack_item(self, item_id: str) -> DeliveryItem:
@@ -212,6 +235,7 @@ class DeliveryStateStore:
         self.last_channel_by_user = dict(data.get("last_channel_by_user", {}))
         self.acknowledgements = dict(data.get("acknowledgements", {}))
         self.archive_index = dict(data.get("archive_index", {}))
+        self.archive_delete_requests = dict(data.get("archive_delete_requests", {}))
 
     def _persist(self) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -220,6 +244,7 @@ class DeliveryStateStore:
             "last_channel_by_user": self.last_channel_by_user,
             "acknowledgements": self.acknowledgements,
             "archive_index": self.archive_index,
+            "archive_delete_requests": self.archive_delete_requests,
         }
 
         fd, tmp_name = tempfile.mkstemp(
@@ -235,3 +260,47 @@ class DeliveryStateStore:
         except Exception:
             Path(tmp_name).unlink(missing_ok=True)
             raise
+
+    def _server_side_media_paths(self, item: DeliveryItem) -> list[Path]:
+        paths: list[Path] = []
+        for media_path in (item.converted_path, item.original_path):
+            if media_path is None or media_path in paths:
+                continue
+            if not self._is_server_media_path(media_path):
+                continue
+            if media_path.exists() and media_path.is_file():
+                paths.append(media_path)
+        return paths
+
+    def _is_server_media_path(self, media_path: Path) -> bool:
+        try:
+            media_path.resolve(strict=False).relative_to(
+                self.settings.media_dir.resolve(strict=False)
+            )
+        except ValueError:
+            return False
+        return True
+
+    def _quarantine_server_side_media(self, item: DeliveryItem) -> list[tuple[Path, Path]]:
+        moved_paths: list[tuple[Path, Path]] = []
+        quarantine_dir = self.settings.media_dir / ".deleted_server_side" / item.item_id
+        for index, media_path in enumerate(self._server_side_media_paths(item)):
+            quarantine_path = quarantine_dir / f"{index}-{media_path.name}"
+            quarantine_path.parent.mkdir(parents=True, exist_ok=True)
+            media_path.replace(quarantine_path)
+            moved_paths.append((quarantine_path, media_path))
+        return moved_paths
+
+    def _restore_quarantined_media(self, moved_paths: list[tuple[Path, Path]]) -> None:
+        for quarantine_path, media_path in reversed(moved_paths):
+            if not quarantine_path.exists() or media_path.exists():
+                continue
+            media_path.parent.mkdir(parents=True, exist_ok=True)
+            quarantine_path.replace(media_path)
+
+    def _delete_quarantined_media(self, moved_paths: list[tuple[Path, Path]]) -> None:
+        for quarantine_path, _media_path in moved_paths:
+            try:
+                quarantine_path.unlink(missing_ok=True)
+            except OSError:
+                pass

@@ -35,10 +35,24 @@ class FakeMessage:
         self.replies.append({"text": text, **kwargs})
 
 
+class FakeCallbackQuery:
+    def __init__(self, data: str) -> None:
+        self.data = data
+        self.answers: list[str | None] = []
+        self.edits: list[dict[str, object]] = []
+
+    async def answer(self, text: str | None = None) -> None:
+        self.answers.append(text)
+
+    async def edit_message_text(self, text: str, **kwargs: object) -> None:
+        self.edits.append({"text": text, **kwargs})
+
+
 @dataclass
 class FakeUpdate:
     effective_user: FakeUser
-    message: FakeMessage
+    message: FakeMessage | None = None
+    callback_query: FakeCallbackQuery | None = None
 
 
 class FakeContext:
@@ -151,13 +165,16 @@ def test_pending_delete_marks_canceled(tmp_path: Path):
 def test_archive_delete_requires_confirmation_and_is_server_side_only(tmp_path: Path):
     settings = make_settings(tmp_path)
     state_store = DeliveryStateStore(settings)
+    original_path = tmp_path / "media" / "uploads" / "item-1.mov"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original media bytes")
     converted_path = tmp_path / "media" / "converted" / "archived-video.mp4"
     converted_path.parent.mkdir(parents=True)
     converted_path.write_bytes(b"converted media bytes")
     state_store.create_uploaded_item(
         item_id="item-1",
         user_id="user-1",
-        original_path=tmp_path / "media" / "uploads" / "item-1.mov",
+        original_path=original_path,
     )
     state_store.mark_converting("item-1")
     state_store.mark_pending(
@@ -203,5 +220,88 @@ def test_archive_delete_requires_confirmation_and_is_server_side_only(tmp_path: 
     assert deleted.status == "deleted_server_side"
     assert state_store.items["item-1"].status == "deleted_server_side"
     assert "item-1" not in state_store.archive_index
+    assert not original_path.exists()
     assert not converted_path.exists()
     assert state_store.acknowledgements == {"item-1": {"status": "delivered"}}
+
+
+def test_archive_callbacks_request_confirmation_and_delete(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    state_store = DeliveryStateStore(settings)
+    original_path = tmp_path / "media" / "uploads" / "item-1.mov"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original media bytes")
+    converted_path = tmp_path / "media" / "converted" / "archived-video.mp4"
+    converted_path.parent.mkdir(parents=True)
+    converted_path.write_bytes(b"converted media bytes")
+    state_store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=original_path,
+    )
+    state_store.mark_converting("item-1")
+    state_store.mark_pending(
+        "item-1",
+        converted_path=converted_path,
+        channel_id="01_Citadel",
+        filename="archived-video.mp4",
+    )
+    state_store.ack_item("item-1")
+
+    request_query = FakeCallbackQuery("archive_delete:item-1")
+    request_update = FakeUpdate(
+        effective_user=FakeUser(id=42),
+        callback_query=request_query,
+    )
+
+    asyncio.run(bot.handle_archive_callback(request_update, FakeContext(), state_store))
+
+    assert request_query.answers == [None]
+    assert len(request_query.edits) == 1
+    assert "Confirm server-side delete" in str(request_query.edits[0]["text"])
+    assert isinstance(request_query.edits[0]["reply_markup"], InlineKeyboardMarkup)
+    assert state_store.items["item-1"].status == "archived"
+    assert original_path.exists()
+    assert converted_path.exists()
+
+    confirm_query = FakeCallbackQuery("archive_delete_confirm:item-1")
+    confirm_update = FakeUpdate(
+        effective_user=FakeUser(id=42),
+        callback_query=confirm_query,
+    )
+
+    asyncio.run(bot.handle_archive_callback(confirm_update, FakeContext(), state_store))
+
+    assert confirm_query.answers == [None]
+    assert len(confirm_query.edits) == 1
+    assert "Deleted server-side media" in str(confirm_query.edits[0]["text"])
+    assert state_store.items["item-1"].status == "deleted_server_side"
+    assert not original_path.exists()
+    assert not converted_path.exists()
+
+
+def test_archive_list_handler_shows_archived_media(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    state_store = DeliveryStateStore(settings)
+    converted_path = tmp_path / "media" / "converted" / "archived-video.mp4"
+    state_store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=tmp_path / "media" / "uploads" / "item-1.mov",
+    )
+    state_store.mark_converting("item-1")
+    state_store.mark_pending(
+        "item-1",
+        converted_path=converted_path,
+        channel_id="01_Citadel",
+        filename="archived-video.mp4",
+    )
+    state_store.ack_item("item-1")
+    message = FakeMessage()
+    update = FakeUpdate(effective_user=FakeUser(id=42), message=message)
+
+    asyncio.run(bot.handle_archive_media(update, FakeContext(), state_store))
+
+    assert len(message.replies) == 1
+    assert "archived-video.mp4" in str(message.replies[0]["text"])
+    assert isinstance(message.replies[0]["reply_markup"], InlineKeyboardMarkup)

@@ -71,18 +71,7 @@ def build_pending_media_keyboard(pending_items: list[Any]) -> Keyboard:
 
 
 def build_pending_media_reply_markup(keyboard: Keyboard) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    text=button["text"],
-                    callback_data=button["callback_data"],
-                )
-                for button in row
-            ]
-            for row in keyboard
-        ]
-    )
+    return _build_reply_markup(keyboard)
 
 
 def build_archive_media_keyboard(archived_items: list[Any]) -> Keyboard:
@@ -112,6 +101,10 @@ def build_archive_delete_confirmation_keyboard(item_id: str) -> Keyboard:
 
 
 def build_archive_media_reply_markup(keyboard: Keyboard) -> InlineKeyboardMarkup:
+    return _build_reply_markup(keyboard)
+
+
+def _build_reply_markup(keyboard: Keyboard) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
@@ -157,6 +150,57 @@ def request_archive_delete(item_id: str, state_store: Any) -> str:
 
 def confirm_archive_delete(item_id: str, state_store: Any) -> Any:
     return state_store.confirm_archive_delete(item_id)
+
+
+async def handle_archive_media(update: Any, context: Any, state_store: Any) -> None:
+    del context
+
+    archived_items = state_store.list_archived_items()
+    await update.message.reply_text(
+        format_archive_media_list(archived_items),
+        reply_markup=build_archive_media_reply_markup(
+            build_archive_media_keyboard(archived_items)
+        ),
+    )
+
+
+async def handle_archive_callback(update: Any, context: Any, state_store: Any) -> None:
+    del context
+
+    query = update.callback_query
+    await query.answer()
+    data = str(query.data or "")
+
+    if data.startswith("archive_delete_confirm:"):
+        item_id = data.removeprefix("archive_delete_confirm:")
+        try:
+            item = confirm_archive_delete(item_id, state_store)
+        except (KeyError, ValueError):
+            await query.edit_message_text("Archived media is no longer available.")
+            return
+
+        await query.edit_message_text(
+            f"Deleted server-side media: {item.item_id}: {_media_filename(item)}"
+        )
+        return
+
+    if data.startswith("archive_delete:"):
+        item_id = data.removeprefix("archive_delete:")
+        try:
+            confirmation_text = request_archive_delete(item_id, state_store)
+        except (KeyError, ValueError):
+            await query.edit_message_text("Archived media is no longer available.")
+            return
+
+        await query.edit_message_text(
+            confirmation_text,
+            reply_markup=build_archive_media_reply_markup(
+                build_archive_delete_confirmation_keyboard(item_id)
+            ),
+        )
+        return
+
+    await query.edit_message_text("Archived media action is not available.")
 
 
 def _media_filename(item: Any) -> str:
