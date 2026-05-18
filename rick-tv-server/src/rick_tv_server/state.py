@@ -127,9 +127,12 @@ class DeliveryStateStore:
         item.channel_id = channel_id
         item.filename = filename
         item.sha256 = sha256
-        self.last_channel_by_user[item.user_id] = channel_id
-        self._persist()
+        self.remember_user_channel(item.user_id, channel_id)
         return item
+
+    def remember_user_channel(self, user_id: str, channel_id: str) -> None:
+        self.last_channel_by_user[user_id] = channel_id
+        self._persist()
 
     def ready_items_for_channels(self, channel_ids: list[str]) -> list[DeliveryItem]:
         channels = set(channel_ids)

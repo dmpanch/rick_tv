@@ -82,6 +82,16 @@ def test_pending_remains_ready_until_ack(tmp_path: Path):
     assert store.ready_items_for_channels(["01_Citadel"]) == []
 
 
+def test_remember_user_channel_persists_last_channel(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    store = DeliveryStateStore(settings)
+
+    store.remember_user_channel("user-1", "Garage")
+
+    reloaded = DeliveryStateStore(settings)
+    assert reloaded.last_channel_by_user == {"user-1": "Garage"}
+
+
 def test_create_uploaded_item_rejects_duplicate_item_id(tmp_path: Path):
     store = DeliveryStateStore(make_settings(tmp_path))
     store.create_uploaded_item(
