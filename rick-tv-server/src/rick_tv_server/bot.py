@@ -55,6 +55,58 @@ def build_upload_channel_reply_markup(keyboard: Keyboard) -> InlineKeyboardMarku
     )
 
 
+def build_pending_media_keyboard(pending_items: list[Any]) -> Keyboard:
+    keyboard: Keyboard = []
+    for item in pending_items:
+        filename = _pending_media_filename(item)
+        keyboard.append(
+            [
+                {
+                    "text": f"Delete {filename}",
+                    "callback_data": f"pending_delete:{item.item_id}",
+                }
+            ]
+        )
+    return keyboard
+
+
+def build_pending_media_reply_markup(keyboard: Keyboard) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text=button["text"],
+                    callback_data=button["callback_data"],
+                )
+                for button in row
+            ]
+            for row in keyboard
+        ]
+    )
+
+
+def format_pending_media_list(pending_items: list[Any]) -> str:
+    if not pending_items:
+        return "No pending media."
+
+    lines = ["Pending media:"]
+    for item in pending_items:
+        lines.append(f"- {item.item_id}: {_pending_media_filename(item)}")
+    return "\n".join(lines)
+
+
+def cancel_pending_media(item_id: str, state_store: Any) -> Any:
+    return state_store.cancel_pending_item(item_id)
+
+
+def _pending_media_filename(item: Any) -> str:
+    if item.filename:
+        return str(item.filename)
+    if item.converted_path is not None:
+        return item.converted_path.name
+    return item.item_id
+
+
 def remember_user_channel(
     user_id: int | str,
     channel_id: str,

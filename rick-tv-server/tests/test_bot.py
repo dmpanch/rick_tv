@@ -6,6 +6,7 @@ from pathlib import Path
 
 from telegram import InlineKeyboardMarkup
 
+from rick_tv_server import bot
 from rick_tv_server.bot import ChannelChoice, handle_upload_media, remember_user_channel
 from rick_tv_server.config import ServerSettings
 from rick_tv_server.state import DeliveryStateStore
@@ -111,3 +112,37 @@ def test_remember_user_channel_persists_with_real_state_store(tmp_path: Path):
 
     reloaded = DeliveryStateStore(settings)
     assert reloaded.last_channel_by_user == {"42": "garage"}
+
+
+def test_pending_delete_marks_canceled(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    state_store = DeliveryStateStore(settings)
+    for item_id, filename in [
+        ("item-1", "first-video.mp4"),
+        ("item-2", "second-video.mp4"),
+    ]:
+        state_store.create_uploaded_item(
+            item_id=item_id,
+            user_id="user-1",
+            original_path=tmp_path / "media" / "uploads" / f"{item_id}.mov",
+        )
+        state_store.mark_converting(item_id)
+        state_store.mark_pending(
+            item_id,
+            converted_path=tmp_path / "media" / "converted" / filename,
+            channel_id="01_Citadel",
+            filename=filename,
+        )
+
+    pending_text = bot.format_pending_media_list(state_store.list_pending_items())
+
+    assert "item-1" in pending_text
+    assert "first-video.mp4" in pending_text
+    assert "item-2" in pending_text
+    assert "second-video.mp4" in pending_text
+
+    canceled = bot.cancel_pending_media("item-1", state_store)
+
+    assert canceled.status == "canceled"
+    assert state_store.items["item-1"].status == "canceled"
+    assert [item.item_id for item in state_store.list_pending_items()] == ["item-2"]

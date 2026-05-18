@@ -1,7 +1,9 @@
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
+from rick_tv_server.api import create_app
 from rick_tv_server.config import ServerSettings
 from rick_tv_server.state import DeliveryStateStore
 
@@ -143,3 +145,40 @@ def test_mark_pending_requires_converting_item(tmp_path: Path):
     assert store.items["item-1"].status == "uploaded"
     assert store.items["item-1"].converted_path is None
     assert store.last_channel_by_user == {}
+
+
+def test_canceled_pending_is_not_ready(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    store = DeliveryStateStore(settings)
+    converted_path = tmp_path / "media" / "converted" / "item-1.mp4"
+    converted_path.parent.mkdir(parents=True)
+    converted_path.write_bytes(b"converted media bytes")
+    store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=tmp_path / "media" / "uploads" / "item-1.mov",
+    )
+    store.mark_converting("item-1")
+    store.mark_pending(
+        "item-1",
+        converted_path=converted_path,
+        channel_id="01_Citadel",
+    )
+    client = TestClient(create_app(settings, store))
+
+    canceled = store.cancel_pending_item("item-1")
+
+    assert canceled.status == "canceled"
+    assert converted_path.exists()
+    assert store.ready_items_for_channels(["01_Citadel"]) == []
+    ready_response = client.get(
+        "/api/v1/ready?channels=01_Citadel",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    download_response = client.get(
+        "/api/v1/download/item-1",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert ready_response.status_code == 200
+    assert ready_response.json() == {"items": []}
+    assert download_response.status_code == 404

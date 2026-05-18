@@ -142,6 +142,18 @@ class DeliveryStateStore:
             if item.status == "pending" and item.channel_id in channels
         ]
 
+    def list_pending_items(self) -> list[DeliveryItem]:
+        return [item for item in self.items.values() if item.status == "pending"]
+
+    def cancel_pending_item(self, item_id: str) -> DeliveryItem:
+        item = self.items[item_id]
+        if item.status != "pending":
+            raise ValueError(f"delivery item must be pending before cancel: {item_id}")
+
+        item.status = "canceled"
+        self._persist()
+        return item
+
     def ack_item(self, item_id: str) -> DeliveryItem:
         item = self.items[item_id]
         if item.status != "pending":
