@@ -1,11 +1,16 @@
 import hashlib
+import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
 from rick_tv_pi.channels import Channel
 from rick_tv_pi.config import PiSettings
 from rick_tv_pi.validator import validate_ready_profile
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -50,34 +55,53 @@ class Poller:
         return items
 
     def _deliver(self, item: ReadyItem, base_url: str) -> None:
-        download_response = self._http_client.get(
-            item.download_url,
-            headers=self._auth_headers(),
-        )
-        download_response.raise_for_status()
-
         downloads_dir = self._settings.media_root / ".downloads"
-        downloads_dir.mkdir(parents=True, exist_ok=True)
         temp_path = downloads_dir / f"{item.id}.tmp"
-        temp_path.write_bytes(download_response.content)
 
-        if item.sha256 is not None:
-            digest = hashlib.sha256(download_response.content).hexdigest()
-            if digest != item.sha256:
+        try:
+            download_response = self._http_client.get(
+                item.download_url,
+                headers=self._auth_headers(),
+            )
+            download_response.raise_for_status()
+
+            downloads_dir.mkdir(parents=True, exist_ok=True)
+            temp_path.write_bytes(download_response.content)
+
+            if item.sha256 is not None:
+                digest = hashlib.sha256(download_response.content).hexdigest()
+                if digest != item.sha256:
+                    self._remove_temp(temp_path)
+                    return
+
+            if not validate_ready_profile(temp_path):
+                self._remove_temp(temp_path)
                 return
 
-        if not validate_ready_profile(temp_path):
+            destination_dir = self._settings.media_root / item.channel_id
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            temp_path.replace(destination_dir / item.filename)
+
+            ack_response = self._http_client.post(
+                f"{base_url}/api/v1/ack/{item.id}",
+                headers=self._auth_headers(),
+            )
+            ack_response.raise_for_status()
+        except Exception:
+            logger.warning(
+                "Failed to deliver ready item %s for channel %s",
+                item.id,
+                item.channel_id,
+                exc_info=True,
+            )
+            self._remove_temp(temp_path)
             return
-
-        destination_dir = self._settings.media_root / item.channel_id
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        temp_path.replace(destination_dir / item.filename)
-
-        ack_response = self._http_client.post(
-            f"{base_url}/api/v1/ack/{item.id}",
-            headers=self._auth_headers(),
-        )
-        ack_response.raise_for_status()
 
     def _auth_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._settings.api_token}"}
+
+    def _remove_temp(self, temp_path: Path) -> None:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            return
