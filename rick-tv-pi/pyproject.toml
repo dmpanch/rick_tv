@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rick-tv-pi"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx",
+    "PyYAML",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
