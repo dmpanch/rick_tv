@@ -28,3 +28,28 @@ def test_discovers_immediate_directories_in_channel_order(tmp_path):
         media_root / "10_Late",
         media_root / "Garage",
     ]
+
+
+def test_metadata_only_names_existing_directories(tmp_path):
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+
+    (media_root / "01_Citadel").mkdir()
+    (media_root / "Garage").mkdir()
+    metadata_path = tmp_path / "channels.yml"
+    metadata_path.write_text(
+        """
+channels:
+  01_Citadel:
+    display_name: Citadel TV
+  Missing:
+    display_name: Ignored
+""".lstrip()
+    )
+
+    channels = discover_channels(media_root, metadata_path=metadata_path)
+
+    channels_by_id = {channel.id: channel for channel in channels}
+    assert channels_by_id["01_Citadel"].display_name == "Citadel TV"
+    assert "Missing" not in channels_by_id
+    assert channels_by_id["Garage"].display_name is None
