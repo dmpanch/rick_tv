@@ -4,7 +4,8 @@ import hashlib
 import secrets
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from rick_tv_server.config import ServerSettings
@@ -38,6 +39,35 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
                 for item in state_store.ready_items_for_channels(channel_ids)
             ]
         }
+
+    @app.get("/api/v1/download/{item_id}", dependencies=[Depends(require_bearer_token)])
+    def download(item_id: str) -> FileResponse:
+        item = state_store.items.get(item_id)
+        if (
+            item is None
+            or item.status != "pending"
+            or item.converted_path is None
+            or not item.converted_path.exists()
+        ):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+        return FileResponse(item.converted_path)
+
+    @app.post("/api/v1/ack/{item_id}", dependencies=[Depends(require_bearer_token)])
+    def ack(item_id: str) -> Response:
+        item = state_store.items.get(item_id)
+        if item is None or item.status in {
+            "uploaded",
+            "converting",
+            "canceled",
+            "deleted_server_side",
+        }:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+        if item.status == "pending":
+            state_store.ack_item(item_id)
+
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     return app
 
