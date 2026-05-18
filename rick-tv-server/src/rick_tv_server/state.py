@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -116,6 +116,32 @@ class DeliveryStateStore:
         self.last_channel_by_user[item.user_id] = channel_id
         self._persist()
         return item
+
+    def ready_items_for_channels(self, channel_ids: list[str]) -> list[DeliveryItem]:
+        channels = set(channel_ids)
+        return [
+            item
+            for item in self.items.values()
+            if item.status == "pending" and item.channel_id in channels
+        ]
+
+    def ack_item(self, item_id: str) -> DeliveryItem:
+        item = self.items[item_id]
+        if item.status != "pending":
+            raise ValueError(f"delivery item must be pending before ack: {item_id}")
+
+        item.status = "delivered"
+        delivered = replace(item)
+        self.acknowledgements[item_id] = {"status": "delivered"}
+
+        item.status = "archived"
+        self.archive_index[item_id] = {
+            "status": "archived",
+            "channel_id": item.channel_id,
+            "user_id": item.user_id,
+        }
+        self._persist()
+        return delivered
 
     def _load(self) -> None:
         if not self.state_path.exists():

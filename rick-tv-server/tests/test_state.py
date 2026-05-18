@@ -50,6 +50,38 @@ def test_state_persists_delivery_lifecycle(tmp_path: Path):
     assert reloaded.archive_index == {}
 
 
+def test_pending_remains_ready_until_ack(tmp_path: Path):
+    store = DeliveryStateStore(make_settings(tmp_path))
+    store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=tmp_path / "media" / "uploads" / "item-1.mp4",
+    )
+    store.mark_converting("item-1")
+    store.mark_pending(
+        "item-1",
+        converted_path=tmp_path / "media" / "converted" / "item-1.mp4",
+        channel_id="01_Citadel",
+    )
+
+    first_ready = store.ready_items_for_channels(["01_Citadel"])
+    second_ready = store.ready_items_for_channels(["01_Citadel"])
+
+    assert [item.item_id for item in first_ready] == ["item-1"]
+    assert [item.item_id for item in second_ready] == ["item-1"]
+
+    delivered = store.ack_item("item-1")
+    assert delivered.status == "delivered"
+    assert store.items["item-1"].status == "archived"
+    assert store.acknowledgements["item-1"] == {"status": "delivered"}
+    assert store.archive_index["item-1"] == {
+        "status": "archived",
+        "channel_id": "01_Citadel",
+        "user_id": "user-1",
+    }
+    assert store.ready_items_for_channels(["01_Citadel"]) == []
+
+
 def test_create_uploaded_item_rejects_duplicate_item_id(tmp_path: Path):
     store = DeliveryStateStore(make_settings(tmp_path))
     store.create_uploaded_item(
