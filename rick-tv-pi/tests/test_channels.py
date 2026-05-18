@@ -20,3 +20,11 @@ def test_discovers_immediate_directories_in_channel_order(tmp_path):
         "10_Late",
         "Garage",
     ]
+    assert [channel.number for channel in channels] == [1, 2, 3, 4]
+    assert [channel.display_name for channel in channels] == [None, None, None, None]
+    assert [channel.path for channel in channels] == [
+        media_root / "01_Citadel",
+        media_root / "02_Interdimensional_Cable",
+        media_root / "10_Late",
+        media_root / "Garage",
+    ]
