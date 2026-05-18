@@ -146,3 +146,62 @@ def test_pending_delete_marks_canceled(tmp_path: Path):
     assert canceled.status == "canceled"
     assert state_store.items["item-1"].status == "canceled"
     assert [item.item_id for item in state_store.list_pending_items()] == ["item-2"]
+
+
+def test_archive_delete_requires_confirmation_and_is_server_side_only(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    state_store = DeliveryStateStore(settings)
+    converted_path = tmp_path / "media" / "converted" / "archived-video.mp4"
+    converted_path.parent.mkdir(parents=True)
+    converted_path.write_bytes(b"converted media bytes")
+    state_store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=tmp_path / "media" / "uploads" / "item-1.mov",
+    )
+    state_store.mark_converting("item-1")
+    state_store.mark_pending(
+        "item-1",
+        converted_path=converted_path,
+        channel_id="01_Citadel",
+        filename="archived-video.mp4",
+    )
+    state_store.ack_item("item-1")
+
+    archive_text = bot.format_archive_media_list(state_store.list_archived_items())
+    archive_keyboard = bot.build_archive_media_keyboard(state_store.list_archived_items())
+
+    assert "item-1" in archive_text
+    assert "archived-video.mp4" in archive_text
+    assert archive_keyboard == [
+        [
+            {
+                "text": "Delete archived-video.mp4",
+                "callback_data": "archive_delete:item-1",
+            }
+        ]
+    ]
+
+    confirmation_text = bot.request_archive_delete("item-1", state_store)
+    confirmation_keyboard = bot.build_archive_delete_confirmation_keyboard("item-1")
+
+    assert "Confirm" in confirmation_text
+    assert confirmation_keyboard == [
+        [
+            {
+                "text": "Confirm delete",
+                "callback_data": "archive_delete_confirm:item-1",
+            }
+        ]
+    ]
+    assert state_store.items["item-1"].status == "archived"
+    assert state_store.archive_index["item-1"]["status"] == "archived"
+    assert converted_path.exists()
+
+    deleted = bot.confirm_archive_delete("item-1", state_store)
+
+    assert deleted.status == "deleted_server_side"
+    assert state_store.items["item-1"].status == "deleted_server_side"
+    assert "item-1" not in state_store.archive_index
+    assert not converted_path.exists()
+    assert state_store.acknowledgements == {"item-1": {"status": "delivered"}}

@@ -145,12 +145,38 @@ class DeliveryStateStore:
     def list_pending_items(self) -> list[DeliveryItem]:
         return [item for item in self.items.values() if item.status == "pending"]
 
+    def list_archived_items(self) -> list[DeliveryItem]:
+        return [item for item in self.items.values() if item.status == "archived"]
+
     def cancel_pending_item(self, item_id: str) -> DeliveryItem:
         item = self.items[item_id]
         if item.status != "pending":
             raise ValueError(f"delivery item must be pending before cancel: {item_id}")
 
         item.status = "canceled"
+        self._persist()
+        return item
+
+    def request_archive_delete(self, item_id: str) -> DeliveryItem:
+        item = self.items[item_id]
+        if item.status != "archived":
+            raise ValueError(
+                f"delivery item must be archived before archive delete: {item_id}"
+            )
+
+        return item
+
+    def confirm_archive_delete(self, item_id: str) -> DeliveryItem:
+        item = self.items[item_id]
+        if item.status != "archived":
+            raise ValueError(
+                f"delivery item must be archived before archive delete: {item_id}"
+            )
+
+        if item.converted_path is not None:
+            item.converted_path.unlink(missing_ok=True)
+        item.status = "deleted_server_side"
+        self.archive_index.pop(item_id, None)
         self._persist()
         return item
 

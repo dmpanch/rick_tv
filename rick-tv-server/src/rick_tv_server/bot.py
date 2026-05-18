@@ -58,7 +58,7 @@ def build_upload_channel_reply_markup(keyboard: Keyboard) -> InlineKeyboardMarku
 def build_pending_media_keyboard(pending_items: list[Any]) -> Keyboard:
     keyboard: Keyboard = []
     for item in pending_items:
-        filename = _pending_media_filename(item)
+        filename = _media_filename(item)
         keyboard.append(
             [
                 {
@@ -85,13 +85,64 @@ def build_pending_media_reply_markup(keyboard: Keyboard) -> InlineKeyboardMarkup
     )
 
 
+def build_archive_media_keyboard(archived_items: list[Any]) -> Keyboard:
+    keyboard: Keyboard = []
+    for item in archived_items:
+        filename = _media_filename(item)
+        keyboard.append(
+            [
+                {
+                    "text": f"Delete {filename}",
+                    "callback_data": f"archive_delete:{item.item_id}",
+                }
+            ]
+        )
+    return keyboard
+
+
+def build_archive_delete_confirmation_keyboard(item_id: str) -> Keyboard:
+    return [
+        [
+            {
+                "text": "Confirm delete",
+                "callback_data": f"archive_delete_confirm:{item_id}",
+            }
+        ]
+    ]
+
+
+def build_archive_media_reply_markup(keyboard: Keyboard) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text=button["text"],
+                    callback_data=button["callback_data"],
+                )
+                for button in row
+            ]
+            for row in keyboard
+        ]
+    )
+
+
 def format_pending_media_list(pending_items: list[Any]) -> str:
     if not pending_items:
         return "No pending media."
 
     lines = ["Pending media:"]
     for item in pending_items:
-        lines.append(f"- {item.item_id}: {_pending_media_filename(item)}")
+        lines.append(f"- {item.item_id}: {_media_filename(item)}")
+    return "\n".join(lines)
+
+
+def format_archive_media_list(archived_items: list[Any]) -> str:
+    if not archived_items:
+        return "No archived media."
+
+    lines = ["Archived media:"]
+    for item in archived_items:
+        lines.append(f"- {item.item_id}: {_media_filename(item)}")
     return "\n".join(lines)
 
 
@@ -99,7 +150,16 @@ def cancel_pending_media(item_id: str, state_store: Any) -> Any:
     return state_store.cancel_pending_item(item_id)
 
 
-def _pending_media_filename(item: Any) -> str:
+def request_archive_delete(item_id: str, state_store: Any) -> str:
+    item = state_store.request_archive_delete(item_id)
+    return f"Confirm server-side delete for {item.item_id}: {_media_filename(item)}?"
+
+
+def confirm_archive_delete(item_id: str, state_store: Any) -> Any:
+    return state_store.confirm_archive_delete(item_id)
+
+
+def _media_filename(item: Any) -> str:
     if item.filename:
         return str(item.filename)
     if item.converted_path is not None:
