@@ -1,0 +1,17 @@
+[Unit]
+Description=Rick TV Pi Runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/rick-tv-pi.env
+WorkingDirectory=/opt/rick-tv-pi
+ExecStart=/usr/bin/python -m rick_tv_pi.main
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
