@@ -17,6 +17,14 @@ VIDEO_LOOPER_EGG = Path(
     "Adafruit_Video_Looper-1.0.21-py3.7.egg"
 )
 VIDEO_LOOPER_ZIP_NAME = "Adafruit_Video_Looper/video_looper.py"
+OMX_PLAYER = Path(
+    "/usr/local/lib/python3.7/dist-packages/"
+    "Adafruit_Video_Looper-1.0.21-py3.7.egg/"
+    "Adafruit_Video_Looper/omxplayer.py"
+)
+OMX_PLAYER_EGG = VIDEO_LOOPER_EGG
+OMX_PLAYER_ZIP_NAME = "Adafruit_Video_Looper/omxplayer.py"
+OMX_STOP_MARKER = "self.stop(3)"
 
 IMPORT_MARKER = "import urllib.parse\n"
 INIT_MARKER = "        self._playbackStopped = not self._play_on_startup\n"
@@ -88,6 +96,7 @@ FONT_PATCH = """\
 """
 
 IMPORT_PATCH = "import select\n"
+VIDEO_LOOPER_STOP_MARKER = "self._player.stop(3)"
 INIT_PATCH = """\
         self._rick_tv_fifo_path = self._config.get(
             'rick_tv', 'command_fifo', fallback='/tmp/rick-tv-videolooper.fifo'
@@ -152,27 +161,41 @@ def insert_once(text: str, marker: str, patch: str, *, after: bool) -> str:
 
 
 def main() -> None:
-    if VIDEO_LOOPER.exists():
-        text = VIDEO_LOOPER.read_text()
-        VIDEO_LOOPER.write_text(patch_text(text))
+    _patch_target(VIDEO_LOOPER, patch_text, VIDEO_LOOPER_EGG, VIDEO_LOOPER_ZIP_NAME)
+    _patch_target(OMX_PLAYER, patch_omxplayer_text, OMX_PLAYER_EGG, OMX_PLAYER_ZIP_NAME)
+
+
+def _patch_target(
+    target_path: Path,
+    patch_fn,
+    egg_path: Path,
+    zip_name: str,
+) -> None:
+    if target_path.exists():
+        target_path.write_text(patch_fn(target_path.read_text()))
         return
 
-    with zipfile.ZipFile(str(VIDEO_LOOPER_EGG), "r") as source:
-        text = source.read(VIDEO_LOOPER_ZIP_NAME).decode("utf-8")
-        patched_text = patch_text(text)
+    if not egg_path.exists():
+        return
+
+    with zipfile.ZipFile(str(egg_path), "r") as source:
+        names = {item.filename for item in source.infolist()}
+        if zip_name not in names:
+            return
+        patched_text = patch_fn(source.read(zip_name).decode("utf-8"))
         with tempfile.NamedTemporaryFile(delete=False) as target_file:
-            target_path = Path(target_file.name)
-        with zipfile.ZipFile(str(target_path), "w") as target:
+            out_path = Path(target_file.name)
+        with zipfile.ZipFile(str(out_path), "w") as target:
             for item in source.infolist():
                 if item.filename == "Adafruit_Video_Looper/__pycache__/video_looper.cpython-37.pyc":
                     continue
                 data = source.read(item.filename)
-                if item.filename == VIDEO_LOOPER_ZIP_NAME:
+                if item.filename == zip_name:
                     data = patched_text.encode("utf-8")
                 target.writestr(item, data)
 
-    target_path.replace(VIDEO_LOOPER_EGG)
-    os.chmod(str(VIDEO_LOOPER_EGG), 0o644)
+    out_path.replace(egg_path)
+    os.chmod(str(egg_path), 0o644)
 
 
 def patch_text(text: str) -> str:
@@ -188,7 +211,12 @@ def patch_text(text: str) -> str:
     text = text.replace(PYGAME_DISPLAY_BLOCK, PYGAME_DISPLAY_PATCH)
     text = text.replace(BLANK_SCREEN_BLOCK, BLANK_SCREEN_PATCH)
     text = text.replace(FONT_BLOCK, FONT_PATCH)
+    text = text.replace(VIDEO_LOOPER_STOP_MARKER, "self._player.stop(0)")
     return text
+
+
+def patch_omxplayer_text(text: str) -> str:
+    return text.replace(OMX_STOP_MARKER, "self.stop(0)")
 
 
 if __name__ == "__main__":
