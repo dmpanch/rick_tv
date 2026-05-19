@@ -10,6 +10,11 @@ Target hardware:
 - Wi-Fi on 2.4 GHz
 - SSH password login for initial recovery
 
+Default test credentials for the current lab Pi:
+
+- `ssh pi@192.168.1.68`
+- `password: video`
+
 Do not commit real Wi-Fi passwords, API tokens, or private keys. Replace the
 `YOUR_*` placeholders on the SD card before booting.
 
@@ -43,5 +48,9 @@ partition `overlays/` directory, then use the Trixie `config.txt` example under
 For Raspberry Pi OS Trixie, use:
 
 - `display/config.txt.waveshare-28dpi-trixie`
+
+For Raspberry Pi OS Legacy/Buster, use:
+
+- `display/config.txt.waveshare-28dpi-legacy`
 
 Keep a backup of the original `config.txt` before replacing it.

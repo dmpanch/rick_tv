@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Patch installed pi_video_looper with Rick TV FIFO playlist control."""
 
 from pathlib import Path
 import tempfile
 import zipfile
 import os
+import re
+from typing import List, Tuple
 
 
 VIDEO_LOOPER = Path(
@@ -97,30 +101,55 @@ FONT_PATCH = """\
 
 IMPORT_PATCH = "import select\n"
 VIDEO_LOOPER_STOP_MARKER = "self._player.stop(3)"
+RUN_EMPTY_GUARD = """\
+                if movie is None:
+                    self._print(\"Current playlist is empty\")
+                    self._playlist = self._build_playlist()
+                    movie = self._playlist.get_next()
+                    if movie is None:
+                        self._player.stop(0)
+                        time.sleep(0.1)
+                        continue
+
+"""
 INIT_PATCH = """\
         self._rick_tv_fifo_path = self._config.get(
             'rick_tv', 'command_fifo', fallback='/tmp/rick-tv-videolooper.fifo'
         )
         self._rick_tv_fifo = None
         self._rick_tv_open_fifo()
+        self._rick_tv_playlist_reload = False
 """
 RUN_PATCH = """\
             self._rick_tv_handle_fifo_commands()
+            if self._rick_tv_playlist_reload:
+                self._playlist = self._build_playlist()
+                movie = self._playlist.get_next()
+                self._rick_tv_playlist_reload = False
 
 """
-METHOD_PATCH = """\
+RUN_PLAYLIST_FILE_GUARD = """\
+                    if movie is None:
+                        continue
+
+"""
+
+OPEN_METHOD_PATCH = """\
     def _rick_tv_open_fifo(self):
         if not self._rick_tv_fifo_path:
             return
         try:
             if not os.path.exists(self._rick_tv_fifo_path):
                 os.mkfifo(self._rick_tv_fifo_path)
+            os.chmod(self._rick_tv_fifo_path, 0o666)
             self._rick_tv_fifo = os.open(self._rick_tv_fifo_path, os.O_RDONLY | os.O_NONBLOCK)
-            self._print(f"Rick TV command FIFO ready: {self._rick_tv_fifo_path}")
+            self._print(f\"Rick TV command FIFO ready: {self._rick_tv_fifo_path}\")
         except OSError as exc:
             self._rick_tv_fifo = None
-            self._print(f"Rick TV command FIFO unavailable: {exc}")
+            self._print(f\"Rick TV command FIFO unavailable: {exc}\")
+"""
 
+HANDLE_METHOD_PATCH = """\
     def _rick_tv_handle_fifo_commands(self):
         if self._rick_tv_fifo is None:
             return
@@ -130,7 +159,7 @@ METHOD_PATCH = """\
         try:
             payload = os.read(self._rick_tv_fifo, 4096).decode('utf-8')
         except OSError as exc:
-            self._print(f"Rick TV command FIFO read failed: {exc}")
+            self._print(f\"Rick TV command FIFO read failed: {exc}\")
             return
         if payload == '':
             os.close(self._rick_tv_fifo)
@@ -142,13 +171,53 @@ METHOD_PATCH = """\
             if not command:
                 continue
             if '.m3u' in command:
-                self._print(f"Rick TV loading playlist: {command}")
+                self._print(f\"Rick TV loading playlist: {command}\")
                 self._playlist_path = command
                 self._playlist = self._build_playlist()
                 self._player.stop(0)
                 self._playbackStopped = False
+                self._rick_tv_playlist_reload = True
 
 """
+
+
+def _find_method_blocks(text: str, method_name: str) -> List[Tuple[int, int]]:
+    marker = f"    def {method_name}(self):\n"
+    starts: List[int] = []
+    index = 0
+    while True:
+        index = text.find(marker, index)
+        if index == -1:
+            break
+        starts.append(index)
+        index += len(marker)
+
+    if len(starts) <= 1:
+        return []
+
+    blocks: List[Tuple[int, int]] = []
+    for start in starts:
+        end = text.find("\n    def ", start + 1)
+        if end == -1:
+            end = len(text)
+        blocks.append((start, end))
+    return blocks
+
+
+def _upsert_method(text: str, method_name: str, replacement: str) -> str:
+    blocks = _find_method_blocks(text, method_name)
+    if not blocks:
+        return insert_once(text, METHOD_MARKER, replacement, after=False)
+
+    replacement_with_trailing = replacement.rstrip("\n") + "\n"
+    start, end = blocks[-1]
+    text = text[:start] + replacement_with_trailing + "\n" + text[end:]
+
+    if len(blocks) > 1:
+        for block_start, block_end in reversed(blocks[:-1]):
+            text = text[:block_start] + text[block_end:]
+
+    return text
 
 
 def insert_once(text: str, marker: str, patch: str, *, after: bool) -> str:
@@ -202,7 +271,19 @@ def patch_text(text: str) -> str:
     text = insert_once(text, IMPORT_MARKER, IMPORT_PATCH, after=True)
     text = insert_once(text, INIT_MARKER, INIT_PATCH, after=False)
     text = insert_once(text, RUN_MARKER, RUN_PATCH, after=False)
-    text = insert_once(text, METHOD_MARKER, METHOD_PATCH, after=False)
+    text = _upsert_method(text, "_rick_tv_open_fifo", OPEN_METHOD_PATCH)
+    text = _upsert_method(text, "_rick_tv_handle_fifo_commands", HANDLE_METHOD_PATCH)
+    text = re.sub(
+        r"\n(\s*self._rick_tv_handle_fifo_commands\(\)\n)\s*self._rick_tv_handle_fifo_commands\(\)\n(\s*if self._rick_tv_playlist_reload:\n)",
+        r"\n\1\2",
+        text,
+    )
+    text = text.replace(
+        "            if not self._player.is_playing() and not self._playbackStopped:\n                if movie is not None: #just to avoid errors\n",
+        "            if not self._player.is_playing() and not self._playbackStopped:\n"
+        + RUN_EMPTY_GUARD
+        + "                if movie is not None: #just to avoid errors\n",
+    )
     text = text.replace(
         NESTED_PLAYLIST_BUG,
         "                        self._playlist_path = movie.target # type: ignore\n",
@@ -212,6 +293,14 @@ def patch_text(text: str) -> str:
     text = text.replace(BLANK_SCREEN_BLOCK, BLANK_SCREEN_PATCH)
     text = text.replace(FONT_BLOCK, FONT_PATCH)
     text = text.replace(VIDEO_LOOPER_STOP_MARKER, "self._player.stop(0)")
+    text = text.replace(
+        "                    if \".m3u\" in movie.filename: # type: ignore\n",
+        "                    if movie is not None and \".m3u\" in movie.filename: # type: ignore\n",
+    )
+    text = text.replace(
+        "                    movie.was_played() # type: ignore\n",
+        RUN_PLAYLIST_FILE_GUARD + "                    movie.was_played() # type: ignore\n",
+    )
     return text
 
 
