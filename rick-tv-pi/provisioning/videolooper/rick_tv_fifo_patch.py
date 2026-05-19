@@ -121,7 +121,23 @@ INIT_PATCH = """\
         self._rick_tv_playlist_reload = False
         self._rick_tv_current_playlist_path = None
         self._rick_tv_current_playlist_mtime = None
+        self._rick_tv_transition_frame_path = '/home/pi/rick-tv/system/transition-placeholder.fb'
+        self._rick_tv_transition_frame = None
 """
+LEGACY_INIT_PATCHES = (
+    """\
+        self._rick_tv_fifo_path = self._config.get(
+            'rick_tv', 'command_fifo', fallback='/tmp/rick-tv-videolooper.fifo'
+        )
+        self._rick_tv_fifo = None
+        self._rick_tv_open_fifo()
+        self._rick_tv_playlist_reload = False
+        self._rick_tv_current_playlist_path = None
+        self._rick_tv_current_playlist_mtime = None
+        self._rick_tv_transition_frame = self._rick_tv_build_transition_frame()
+""",
+    INIT_PATCH,
+)
 RUN_PLAYLIST_FILE_GUARD = """\
                     if movie is None:
                         continue
@@ -175,6 +191,7 @@ HANDLE_METHOD_PATCH = """\
                 self._print(f\"Rick TV loading playlist: {command}\")
                 self._playlist_path = command
                 self._player.stop(0)
+                self._rick_tv_show_transition_placeholder()
                 self._playbackStopped = False
                 self._playlist = None
                 self._rick_tv_playlist_reload = True
@@ -189,6 +206,132 @@ PLAYLIST_MTIME_METHOD_PATCH = """\
             return os.path.getmtime(playlist_path)
         except OSError:
             return None
+
+"""
+
+TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
+    def _rick_tv_show_transition_placeholder(self):
+        frame = self._rick_tv_transition_frame
+        if frame is None:
+            try:
+                fd = os.open(self._rick_tv_transition_frame_path, os.O_RDONLY)
+                try:
+                    frame = os.read(fd, 8 * 1024 * 1024)
+                finally:
+                    os.close(fd)
+            except OSError as exc:
+                self._print(f\"Rick TV transition placeholder unavailable: {exc}\")
+                return
+            self._rick_tv_transition_frame = frame
+        if not frame:
+            return
+        try:
+            fd = os.open('/dev/fb0', os.O_WRONLY)
+            try:
+                os.write(fd, frame)
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            self._print(f\"Rick TV transition placeholder unavailable: {exc}\")
+
+    def _rick_tv_build_transition_frame(self):
+        try:
+            width, height = self._rick_tv_framebuffer_size()
+            bpp = self._rick_tv_read_int('/sys/class/graphics/fb0/bits_per_pixel')
+            stride = self._rick_tv_read_int('/sys/class/graphics/fb0/stride')
+        except OSError as exc:
+            self._print(f\"Rick TV transition placeholder init failed: {exc}\")
+            return None
+        if bpp != 32:
+            self._print(f\"Rick TV transition placeholder unsupported bpp: {bpp}\")
+            return None
+
+        frame = bytearray(stride * height)
+        colors = (
+            (190, 190, 190),
+            (190, 190, 0),
+            (0, 190, 190),
+            (0, 190, 0),
+            (190, 0, 190),
+            (190, 0, 0),
+            (0, 0, 190),
+        )
+        bar_width = max(1, width // len(colors))
+        for y in range(height):
+            for x in range(width):
+                self._rick_tv_set_pixel(frame, stride, x, y, colors[min(x // bar_width, len(colors) - 1)])
+
+        for i in range((width * height) // 24):
+            x = (i * 1103515245 + 12345) % width
+            y = (i * 214013 + 2531011) % height
+            shade = (i * 37) % 256
+            self._rick_tv_set_pixel(frame, stride, x, y, (shade, shade, shade))
+
+        band_h = max(120, height // 5)
+        band_y = height - band_h
+        self._rick_tv_rect(frame, stride, 0, band_y, width, band_h, (0, 0, 0))
+        self._rick_tv_rect_outline(frame, stride, width // 12, band_y + 24, width * 5 // 6, band_h - 48)
+        self._rick_tv_draw_text(frame, stride, width // 2 - 110, band_y + 48, 'RICK TV', 7)
+        self._rick_tv_draw_text(frame, stride, width // 2 - 144, band_y + 112, 'CHANNEL SYNC', 4)
+        return bytes(frame)
+
+    def _rick_tv_framebuffer_size(self):
+        raw = self._rick_tv_read_text('/sys/class/graphics/fb0/virtual_size')
+        width, height = raw.split(',', 1)
+        return int(width), int(height)
+
+    def _rick_tv_read_int(self, path):
+        return int(self._rick_tv_read_text(path))
+
+    def _rick_tv_read_text(self, path):
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            return os.read(fd, 128).decode('ascii').strip()
+        finally:
+            os.close(fd)
+
+    def _rick_tv_set_pixel(self, frame, stride, x, y, rgb):
+        r, g, b = rgb
+        offset = y * stride + x * 4
+        frame[offset:offset + 4] = bytes((b, g, r, 0))
+
+    def _rick_tv_rect(self, frame, stride, x, y, w, h, rgb):
+        for yy in range(max(0, y), max(0, y) + max(0, h)):
+            for xx in range(max(0, x), max(0, x) + max(0, w)):
+                self._rick_tv_set_pixel(frame, stride, xx, yy, rgb)
+
+    def _rick_tv_rect_outline(self, frame, stride, x, y, w, h):
+        for i in range(4):
+            self._rick_tv_rect(frame, stride, x + i, y + i, w - i * 2, 1, (255, 255, 255))
+            self._rick_tv_rect(frame, stride, x + i, y + h - i - 1, w - i * 2, 1, (255, 255, 255))
+            self._rick_tv_rect(frame, stride, x + i, y + i, 1, h - i * 2, (255, 255, 255))
+            self._rick_tv_rect(frame, stride, x + w - i - 1, y + i, 1, h - i * 2, (255, 255, 255))
+
+    def _rick_tv_draw_text(self, frame, stride, x, y, text, scale):
+        font = {
+            'A': ('01110', '10001', '10001', '11111', '10001', '10001', '10001'),
+            'C': ('01111', '10000', '10000', '10000', '10000', '10000', '01111'),
+            'E': ('11111', '10000', '10000', '11110', '10000', '10000', '11111'),
+            'H': ('10001', '10001', '10001', '11111', '10001', '10001', '10001'),
+            'I': ('11111', '00100', '00100', '00100', '00100', '00100', '11111'),
+            'K': ('10001', '10010', '10100', '11000', '10100', '10010', '10001'),
+            'L': ('10000', '10000', '10000', '10000', '10000', '10000', '11111'),
+            'N': ('10001', '11001', '10101', '10011', '10001', '10001', '10001'),
+            'R': ('11110', '10001', '10001', '11110', '10100', '10010', '10001'),
+            'S': ('01111', '10000', '10000', '01110', '00001', '00001', '11110'),
+            'T': ('11111', '00100', '00100', '00100', '00100', '00100', '00100'),
+            'V': ('10001', '10001', '10001', '10001', '10001', '01010', '00100'),
+            'Y': ('10001', '10001', '01010', '00100', '00100', '00100', '00100'),
+            ' ': ('00000', '00000', '00000', '00000', '00000', '00000', '00000'),
+        }
+        cursor = x
+        for char in text:
+            glyph = font.get(char.upper(), font[' '])
+            for row, bits in enumerate(glyph):
+                for col, bit in enumerate(bits):
+                    if bit == '1':
+                        self._rick_tv_rect(frame, stride, cursor + col * scale, y + row * scale, scale, scale, (255, 255, 255))
+            cursor += 6 * scale
 
 """
 
@@ -367,6 +510,8 @@ def _patch_target(
 
 
 def patch_text(text: str) -> str:
+    for init_patch in LEGACY_INIT_PATCHES:
+        text = text.replace(init_patch, "")
     text = insert_once(text, IMPORT_MARKER, IMPORT_PATCH, after=True)
     text = insert_once(text, INIT_MARKER, INIT_PATCH, after=False)
     text = text.replace(INIT_PATCH + INIT_PATCH, INIT_PATCH)
@@ -375,6 +520,11 @@ def patch_text(text: str) -> str:
     text = _upsert_method(text, "_rick_tv_open_fifo", OPEN_METHOD_PATCH)
     text = _upsert_method(text, "_rick_tv_handle_fifo_commands", HANDLE_METHOD_PATCH)
     text = _upsert_method(text, "_rick_tv_playlist_mtime", PLAYLIST_MTIME_METHOD_PATCH)
+    text = _upsert_method(
+        text,
+        "_rick_tv_show_transition_placeholder",
+        TRANSITION_PLACEHOLDER_METHOD_PATCH,
+    )
     text = text.replace(
         "            if not self._player.is_playing() and not self._playbackStopped:\n"
         "                if movie is not None: #just to avoid errors\n"
