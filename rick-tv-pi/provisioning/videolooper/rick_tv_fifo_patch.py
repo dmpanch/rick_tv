@@ -119,6 +119,8 @@ INIT_PATCH = """\
         self._rick_tv_fifo = None
         self._rick_tv_open_fifo()
         self._rick_tv_playlist_reload = False
+        self._rick_tv_current_playlist_path = None
+        self._rick_tv_current_playlist_mtime = None
 """
 RUN_PLAYLIST_FILE_GUARD = """\
                     if movie is None:
@@ -163,12 +165,30 @@ HANDLE_METHOD_PATCH = """\
             if not command:
                 continue
             if '.m3u' in command:
+                playlist_mtime = self._rick_tv_playlist_mtime(command)
+                if (
+                    command == self._rick_tv_current_playlist_path
+                    and playlist_mtime == self._rick_tv_current_playlist_mtime
+                ):
+                    self._print(f\"Rick TV playlist command unchanged; ignoring: {command}\")
+                    continue
                 self._print(f\"Rick TV loading playlist: {command}\")
                 self._playlist_path = command
                 self._player.stop(0)
                 self._playbackStopped = False
                 self._playlist = None
                 self._rick_tv_playlist_reload = True
+                self._rick_tv_current_playlist_path = command
+                self._rick_tv_current_playlist_mtime = playlist_mtime
+
+"""
+
+PLAYLIST_MTIME_METHOD_PATCH = """\
+    def _rick_tv_playlist_mtime(self, playlist_path):
+        try:
+            return os.path.getmtime(playlist_path)
+        except OSError:
+            return None
 
 """
 
@@ -354,6 +374,7 @@ def patch_text(text: str) -> str:
     text = _inject_run_fifo_realtime(text)
     text = _upsert_method(text, "_rick_tv_open_fifo", OPEN_METHOD_PATCH)
     text = _upsert_method(text, "_rick_tv_handle_fifo_commands", HANDLE_METHOD_PATCH)
+    text = _upsert_method(text, "_rick_tv_playlist_mtime", PLAYLIST_MTIME_METHOD_PATCH)
     text = text.replace(
         "            if not self._player.is_playing() and not self._playbackStopped:\n"
         "                if movie is not None: #just to avoid errors\n"

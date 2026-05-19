@@ -138,7 +138,6 @@ def test_rescan_sends_command_when_channel_files_change(tmp_path):
 
     assert writer.commands == [
         str(tmp_path / "playlists" / "channels" / "01_Citadel.m3u"),
-        str(tmp_path / "playlists" / "channels" / "01_Citadel.m3u"),
     ]
     assert str(channel_path / "episode.mp4") in (
         tmp_path / "playlists" / "channels" / "01_Citadel.m3u"
