@@ -30,6 +30,10 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
     @app.get("/api/v1/ready", dependencies=[Depends(require_bearer_token)])
     def ready(channels: str = Query(...)) -> dict[str, list[dict[str, str]]]:
         channel_ids = [channel_id for channel_id in channels.split(",") if channel_id]

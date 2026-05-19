@@ -20,6 +20,17 @@ def make_settings(tmp_path: Path) -> ServerSettings:
     )
 
 
+def test_health_endpoint_is_public(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    store = DeliveryStateStore(settings)
+    client = TestClient(create_app(settings, store))
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_ready_endpoint_requires_bearer_token(tmp_path: Path):
     settings = make_settings(tmp_path)
     store = DeliveryStateStore(settings)
