@@ -11,8 +11,10 @@ from typing import Iterable, Optional
 
 try:
     from typing import Protocol
+    from typing import Literal
 except ImportError:  # pragma: no cover - Python 3.7 runtime compatibility.
     from typing_extensions import Protocol
+    from typing_extensions import Literal
 
 import httpx
 
@@ -54,6 +56,7 @@ class TouchSettings:
     screen_width: int
     screen_height: int
     swap_axes: bool | str
+    gesture_horizontal_axis: Literal["x", "y"]
     invert_x: bool
     invert_y: bool
     device_path: str | None
@@ -150,12 +153,21 @@ def load_touch_settings_from_env(
         screen_width=int(env.get("RICK_TV_TOUCH_SCREEN_WIDTH", "480")),
         screen_height=int(env.get("RICK_TV_TOUCH_SCREEN_HEIGHT", "640")),
         swap_axes=env.get("RICK_TV_TOUCH_SWAP_AXES", "false"),
+        gesture_horizontal_axis=_normalize_gesture_horizontal_axis(
+            env.get("RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS", "x")
+        ),
         invert_x=env.get("RICK_TV_TOUCH_INVERT_X", "0").lower()
         in {"1", "true", "on", "yes"},
         invert_y=env.get("RICK_TV_TOUCH_INVERT_Y", "0").lower()
         in {"1", "true", "on", "yes"},
         device_path=env.get("RICK_TV_TOUCH_DEVICE"),
     )
+
+
+def _normalize_gesture_horizontal_axis(value: str | None) -> Literal["x", "y"]:
+    if (value or "").strip().lower() == "y":
+        return "y"
+    return "x"
 
 
 def run_runtime_cycle(
@@ -212,7 +224,10 @@ def main() -> None:
             invert_y=touch_settings.invert_y,
             device_path=touch_settings.device_path,
         ),
-        TouchInterpreter(cooldown_seconds=0.5),
+        TouchInterpreter(
+            cooldown_seconds=0.5,
+            gesture_horizontal_axis=touch_settings.gesture_horizontal_axis,
+        ),
     )
     touch_action_queue = TouchActionQueue()
     start_touch_reader(touch_actions, touch_action_queue)

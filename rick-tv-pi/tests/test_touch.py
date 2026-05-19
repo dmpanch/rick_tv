@@ -23,6 +23,17 @@ def test_right_swipe_returns_previous():
     assert action == "previous"
 
 
+def test_left_swipe_returned_when_y_axis_used_for_gesture():
+    interpreter = TouchInterpreter(cooldown_seconds=0.5, gesture_horizontal_axis="y")
+
+    action = interpreter.interpret(
+        TouchPoint(x=100, y=200, timestamp=1.0),
+        TouchPoint(x=120, y=20, timestamp=1.1),
+    )
+
+    assert action == "next"
+
+
 def test_tap_movement_under_threshold_returns_none():
     interpreter = TouchInterpreter(cooldown_seconds=0.5)
 

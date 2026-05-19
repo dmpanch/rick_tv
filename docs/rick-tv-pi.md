@@ -49,6 +49,7 @@ Touch gestures also can be tuned for DPI orientation:
 RICK_TV_TOUCH_SCREEN_WIDTH=480
 RICK_TV_TOUCH_SCREEN_HEIGHT=640
 RICK_TV_TOUCH_SWAP_AXES=false
+RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS=x
 RICK_TV_TOUCH_INVERT_X=0
 RICK_TV_TOUCH_INVERT_Y=0
 RICK_TV_TOUCH_DEVICE=
@@ -56,6 +57,7 @@ RICK_TV_RUNTIME_TICK_SECONDS=0.1
 ```
 
 - `RICK_TV_TOUCH_SWAP_AXES` supports `true|false|auto`; start with `false`.
+- `RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS` supports `x|y` and selects axis used for left-right detection.
 - `RICK_TV_TOUCH_INVERT_X/Y` support `1/0`, `true/false`, `on/off`, `yes/no`.
 - `RICK_TV_TOUCH_DEVICE` forces a specific `/dev/input/event*` path.
 

@@ -40,6 +40,7 @@ def test_load_touch_settings_from_env_supports_screen_size_and_axis_options(monk
     monkeypatch.setenv("RICK_TV_TOUCH_SCREEN_WIDTH", "640")
     monkeypatch.setenv("RICK_TV_TOUCH_SCREEN_HEIGHT", "480")
     monkeypatch.setenv("RICK_TV_TOUCH_SWAP_AXES", "true")
+    monkeypatch.setenv("RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS", "y")
     monkeypatch.setenv("RICK_TV_TOUCH_INVERT_X", "1")
     monkeypatch.setenv("RICK_TV_TOUCH_INVERT_Y", "yes")
     monkeypatch.setenv("RICK_TV_TOUCH_DEVICE", "/dev/input/event4")
@@ -49,6 +50,7 @@ def test_load_touch_settings_from_env_supports_screen_size_and_axis_options(monk
     assert settings.screen_width == 640
     assert settings.screen_height == 480
     assert settings.swap_axes == "true"
+    assert settings.gesture_horizontal_axis == "y"
     assert settings.invert_x is True
     assert settings.invert_y is True
     assert settings.device_path == "/dev/input/event4"

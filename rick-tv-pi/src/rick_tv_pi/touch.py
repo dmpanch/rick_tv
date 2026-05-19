@@ -19,13 +19,22 @@ class TouchPoint:
 
 
 class TouchInterpreter:
-    def __init__(self, cooldown_seconds: float) -> None:
+    def __init__(
+        self,
+        cooldown_seconds: float,
+        gesture_horizontal_axis: Literal["x", "y"] = "x",
+    ) -> None:
         self.cooldown_seconds = cooldown_seconds
+        self.gesture_horizontal_axis = gesture_horizontal_axis
         self._last_action_at: float | None = None
 
     def interpret(self, start: TouchPoint, end: TouchPoint) -> SwipeAction | None:
-        horizontal_delta = end.x - start.x
-        vertical_delta = end.y - start.y
+        if self.gesture_horizontal_axis == "x":
+            horizontal_delta = end.x - start.x
+            vertical_delta = end.y - start.y
+        else:
+            horizontal_delta = end.y - start.y
+            vertical_delta = end.x - start.x
 
         if abs(horizontal_delta) < 60:
             return None
