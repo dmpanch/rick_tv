@@ -29,11 +29,13 @@ def test_load_settings_from_env_reads_required_and_optional_values(monkeypatch):
 def test_load_videolooper_settings_from_env_reads_playlist_root_and_command_path(monkeypatch):
     monkeypatch.setenv("RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT", "/home/pi/rick-tv/playlists")
     monkeypatch.setenv("RICK_TV_VIDEOLOOPER_COMMAND_PATH", "/tmp/rick-tv.fifo")
+    monkeypatch.setenv("RICK_TV_CHANNEL_SHUFFLE_SECONDS", "7200")
 
     settings = load_videolooper_settings_from_env()
 
     assert settings.playlist_root == Path("/home/pi/rick-tv/playlists")
     assert settings.command_path == Path("/tmp/rick-tv.fifo")
+    assert settings.channel_shuffle_seconds == 7200
 
 
 def test_load_touch_settings_from_env_supports_screen_size_and_axis_options(monkeypatch):
@@ -56,9 +58,10 @@ def test_load_touch_settings_from_env_supports_screen_size_and_axis_options(monk
     assert settings.device_path == "/dev/input/event4"
 
 
-def test_runtime_cycle_logs_poll_failure_and_rescans_empty_channel(tmp_path, caplog):
+def test_runtime_cycle_logs_poll_failure_and_rescans_channel(tmp_path, caplog):
     channel_path = tmp_path / "01_Citadel"
     channel_path.mkdir()
+    (channel_path / "episode.mp4").touch()
     settings = PiSettings(
         server_base_url="https://rick-tv.example",
         api_token="test-token",
@@ -75,9 +78,10 @@ def test_runtime_cycle_logs_poll_failure_and_rescans_empty_channel(tmp_path, cap
     assert "Pi runtime poll failed" in caplog.text
 
 
-def test_runtime_cycle_does_not_reselect_initial_empty_channel(tmp_path):
+def test_runtime_cycle_does_not_reselect_initial_channel(tmp_path):
     channel_path = tmp_path / "01_Citadel"
     channel_path.mkdir()
+    (channel_path / "episode.mp4").touch()
     settings = PiSettings(
         server_base_url="https://rick-tv.example",
         api_token="test-token",
@@ -116,6 +120,8 @@ def test_runtime_cycle_rescans_playing_channel_to_restart_dead_player(tmp_path):
 def test_runtime_cycle_applies_touch_navigation_before_rescan(tmp_path):
     (tmp_path / "01_Citadel").mkdir()
     (tmp_path / "02_Cable").mkdir()
+    (tmp_path / "01_Citadel" / "episode.mp4").touch()
+    (tmp_path / "02_Cable" / "episode.mp4").touch()
     settings = PiSettings(
         server_base_url="https://rick-tv.example",
         api_token="test-token",
@@ -151,6 +157,8 @@ def test_runtime_cycle_applies_touch_navigation_before_rescan(tmp_path):
 def test_runtime_cycle_applies_touch_navigation_between_server_polls(tmp_path):
     (tmp_path / "01_Citadel").mkdir()
     (tmp_path / "02_Cable").mkdir()
+    (tmp_path / "01_Citadel" / "episode.mp4").touch()
+    (tmp_path / "02_Cable" / "episode.mp4").touch()
     settings = PiSettings(
         server_base_url="https://rick-tv.example",
         api_token="test-token",
@@ -193,14 +201,14 @@ class FakePlayer:
         self.synced_channels = []
         self.selected_channels = []
 
-    def sync_channels(self, channels):
+    def sync_channels(self, channels, now=None):
         self.synced_channels.append([channel.id for channel in channels])
 
     def select_channel(self, channel):
         self.select_count += 1
         self.selected_channels.append(channel)
 
-    def rescan_current_channel(self):
+    def rescan_current_channel(self, now=None):
         self.rescan_count += 1
 
 

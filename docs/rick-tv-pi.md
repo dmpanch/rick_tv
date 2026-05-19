@@ -40,9 +40,10 @@ RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media
 RICK_TV_METADATA_PATH=/home/pi/rick-tv/channels.yml
 RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT=/home/pi/rick-tv/playlists
 RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo
+RICK_TV_CHANNEL_SHUFFLE_SECONDS=3600
 ```
 
-`RICK_TV_METADATA_PATH` is optional. `RICK_TV_POLL_INTERVAL_SECONDS` is optional and defaults to `60`.
+`RICK_TV_METADATA_PATH` is optional. `RICK_TV_POLL_INTERVAL_SECONDS` is optional and defaults to `60`. `RICK_TV_CHANNEL_SHUFFLE_SECONDS` controls how often files inside each channel playlist are reshuffled; the default is `3600` seconds.
 
 Touch gestures also can be tuned for DPI orientation:
 

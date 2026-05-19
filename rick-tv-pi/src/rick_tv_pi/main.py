@@ -38,17 +38,18 @@ class RuntimeState:
 
 
 class RuntimePlayer(Protocol):
-    def sync_channels(self, channels: Iterable) -> None: ...
+    def sync_channels(self, channels: Iterable, now: Optional[float] = None) -> None: ...
 
     def select_channel(self, channel) -> None: ...
 
-    def rescan_current_channel(self) -> None: ...
+    def rescan_current_channel(self, now: Optional[float] = None) -> None: ...
 
 
 @dataclass(frozen=True)
 class VideolooperSettings:
     playlist_root: Path
     command_path: Path
+    channel_shuffle_seconds: int
 
 
 @dataclass(frozen=True)
@@ -142,6 +143,7 @@ def load_videolooper_settings_from_env(
         command_path=Path(
             env.get("RICK_TV_VIDEOLOOPER_COMMAND_PATH", "/tmp/rick-tv-videolooper.fifo")
         ),
+        channel_shuffle_seconds=int(env.get("RICK_TV_CHANNEL_SHUFFLE_SECONDS", "3600")),
     )
 
 
@@ -184,7 +186,7 @@ def run_runtime_cycle(
         state.navigator = ChannelNavigator()
     state.navigator.refresh_channels(channels)
 
-    player.sync_channels(channels)
+    player.sync_channels(channels, now=current_time)
     if channels and not state.initial_channel_selected:
         state.navigator.select_initial(player)
         state.initial_channel_selected = True
@@ -204,7 +206,7 @@ def run_runtime_cycle(
             logger.warning("Pi runtime poll failed", exc_info=True)
         state.next_poll_at = current_time + settings.poll_interval_seconds
 
-    player.rescan_current_channel()
+    player.rescan_current_channel(now=current_time)
 
 
 def main() -> None:
@@ -215,6 +217,7 @@ def main() -> None:
     player = VideolooperController(
         playlist_root=videolooper_settings.playlist_root,
         command_path=videolooper_settings.command_path,
+        shuffle_interval_seconds=videolooper_settings.channel_shuffle_seconds,
     )
     touch_actions = TouchActionSource(
         EvdevTouchSource(

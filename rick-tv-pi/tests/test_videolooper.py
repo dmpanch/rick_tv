@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from rick_tv_pi.channels import Channel
 from rick_tv_pi.videolooper import VideolooperController
 
@@ -142,3 +140,76 @@ def test_rescan_sends_command_when_channel_files_change(tmp_path):
     assert str(channel_path / "episode.mp4") in (
         tmp_path / "playlists" / "channels" / "01_Citadel.m3u"
     ).read_text()
+
+
+def test_sync_channels_keeps_channel_order_but_shuffles_files_on_interval(tmp_path):
+    channel_path = tmp_path / "media" / "01_Citadel"
+    channel_path.mkdir(parents=True)
+    first = channel_path / "a.mp4"
+    second = channel_path / "b.mp4"
+    first.touch()
+    second.touch()
+    channel = Channel("01_Citadel", 1, None, channel_path)
+    shuffle_orders = [
+        [second, first],
+        [first, second],
+    ]
+    controller = VideolooperController(
+        playlist_root=tmp_path / "playlists",
+        command_writer=FakeCommandWriter(),
+        shuffle_interval_seconds=3600,
+        shuffler=lambda files: shuffle_orders.pop(0),
+    )
+
+    controller.sync_channels([channel], now=0)
+    controller.sync_channels([channel], now=3599)
+    playlist = tmp_path / "playlists" / "channels" / "01_Citadel.m3u"
+
+    assert playlist.read_text() == (
+        "#EXTM3U\n"
+        "#EXTINF:0,Channel 1\n"
+        f"{second}\n"
+        "#EXTINF:0,Channel 1\n"
+        f"{first}\n"
+    )
+
+    controller.sync_channels([channel], now=3600)
+
+    assert playlist.read_text() == (
+        "#EXTM3U\n"
+        "#EXTINF:0,Channel 1\n"
+        f"{first}\n"
+        "#EXTINF:0,Channel 1\n"
+        f"{second}\n"
+    )
+
+
+def test_select_and_rescan_preserve_shuffled_channel_playlist(tmp_path):
+    channel_path = tmp_path / "media" / "01_Citadel"
+    channel_path.mkdir(parents=True)
+    first = channel_path / "a.mp4"
+    second = channel_path / "b.mp4"
+    first.touch()
+    second.touch()
+    channel = Channel("01_Citadel", 1, None, channel_path)
+    writer = FakeCommandWriter()
+    controller = VideolooperController(
+        playlist_root=tmp_path / "playlists",
+        command_writer=writer,
+        shuffle_interval_seconds=3600,
+        shuffler=lambda files: [second, first],
+    )
+
+    controller.sync_channels([channel], now=0)
+    controller.select_channel(channel)
+    controller.rescan_current_channel()
+
+    channel_playlist = tmp_path / "playlists" / "channels" / "01_Citadel.m3u"
+    assert channel_playlist.read_text() == (
+        "#EXTM3U\n"
+        "#EXTINF:0,Channel 1\n"
+        f"{second}\n"
+        "#EXTINF:0,Channel 1\n"
+        f"{first}\n"
+    )
+    assert writer.commands == [str(channel_playlist)]
