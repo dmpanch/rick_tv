@@ -40,7 +40,7 @@ def main() -> None:
 
     if not config.has_section("omxplayer"):
         config.add_section("omxplayer")
-    config.set("omxplayer", "show_titles", "false")
+    config.set("omxplayer", "show_titles", "true")
 
     if not config.has_section("rick_tv"):
         config.add_section("rick_tv")
