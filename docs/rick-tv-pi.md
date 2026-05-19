@@ -12,6 +12,26 @@ The Phase 1 runtime assumes the existing Raspberry Pi TV hardware remains in pla
 - GPIO26 power button.
 - Existing GPIO18 amplifier/backlight wiring.
 
+## SD-card recovery and display setup
+
+Boot-partition recovery files, Waveshare 2.8inch DPI LCD `config.txt` snippets,
+and vendor DTBO overlay files are kept in
+`rick-tv-pi/provisioning/`.
+
+Use these when the Pi is only accessible through the SD card:
+
+- `rick-tv-pi/provisioning/bootfs/custom.toml.example` for a fresh first boot.
+- `rick-tv-pi/provisioning/bootfs/firstrun.sh` for forced recovery after an
+  unknown/failed first boot.
+- `rick-tv-pi/provisioning/ubuntu/network-config.example.yaml` for Ubuntu
+  cloud-init images with a boot-partition `network-config` file.
+- `rick-tv-pi/provisioning/display/config.txt.waveshare-28dpi-bookworm` for
+  current Raspberry Pi OS Bookworm/Trixie.
+- `rick-tv-pi/provisioning/display/config.txt.waveshare-28dpi-legacy` if KMS
+  blanks the DPI LCD after early boot.
+- `rick-tv-pi/provisioning/vendor/waveshare-28dpi/overlays/*.dtbo` copied from
+  Waveshare's 2.8inch DPI LCD vendor package.
+
 ## Environment
 
 Create `/etc/rick-tv-pi.env` for the systemd service:
