@@ -23,7 +23,7 @@ From `rick-tv-server/`, create local runtime directories and start the service:
 
 ```bash
 mkdir -p media config state
-export RICK_TV_API_TOKEN='replace-with-a-long-random-token'
+export RICK_TV_API_TOKEN="$(openssl rand -hex 32)"
 export RICK_TV_PUBLIC_BASE_URL='http://localhost:8080'
 docker compose up -d --build
 ```
@@ -39,9 +39,31 @@ comes back after host restarts unless it was explicitly stopped.
 
 ## Smoke Test
 
+From `rick-tv-server/`, verify that the production image builds and the app
+imports inside the container without using real secrets:
+
+```bash
+docker build -t rick-tv-server:smoke .
+docker run --rm \
+  -e RICK_TV_API_TOKEN=test-token \
+  -e RICK_TV_PUBLIC_BASE_URL=http://localhost:8080 \
+  rick-tv-server:smoke \
+  python -c "import rick_tv_server.main; assert rick_tv_server.main.app is not None"
+```
+
 Use the configured bearer token when calling the API:
 
 ```bash
 curl -H "Authorization: Bearer ${RICK_TV_API_TOKEN}" \
   'http://localhost:8080/api/v1/ready?channels=01_Citadel'
+```
+
+After the public `/health` endpoint is available, extend the smoke run with a
+reachability check:
+
+```bash
+docker compose up -d
+curl -f http://localhost:8080/health
+docker compose logs --no-color --tail=50
+docker compose down
 ```

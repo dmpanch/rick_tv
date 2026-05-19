@@ -28,3 +28,16 @@ def test_docker_compose_mounts_runtime_directories_and_publishes_port() -> None:
     assert "./state:/var/lib/rick-tv/state" in content
     assert "8080:8080" in content
     assert "restart: unless-stopped" in content
+
+
+def test_server_docs_document_docker_build_and_import_smoke_check() -> None:
+    docs_file = PROJECT_ROOT.parent / "docs" / "rick-tv-server.md"
+
+    assert docs_file.exists()
+    content = docs_file.read_text(encoding="utf-8")
+
+    assert "docker build -t rick-tv-server:smoke ." in content
+    assert "docker run --rm" in content
+    assert "RICK_TV_API_TOKEN=test-token" in content
+    assert "import rick_tv_server.main" in content
+    assert "/health" in content
