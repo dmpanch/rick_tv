@@ -123,6 +123,9 @@ INIT_PATCH = """\
         self._rick_tv_current_playlist_mtime = None
         self._rick_tv_transition_frame_path = '/home/pi/rick-tv/system/transition-placeholder.fb'
         self._rick_tv_transition_frame = None
+        self._rick_tv_interstitial_frame_path = '/home/pi/rick-tv/system/interstitial-ad.fb'
+        self._rick_tv_interstitial_frame = None
+        self._rick_tv_skip_next_interstitial = False
 """
 LEGACY_INIT_PATCHES = (
     """\
@@ -192,6 +195,7 @@ HANDLE_METHOD_PATCH = """\
                 self._playlist_path = command
                 self._player.stop(0)
                 self._rick_tv_show_transition_placeholder()
+                self._rick_tv_skip_next_interstitial = True
                 self._playbackStopped = False
                 self._playlist = None
                 self._rick_tv_playlist_reload = True
@@ -233,6 +237,30 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
                 os.close(fd)
         except OSError as exc:
             self._print(f\"Rick TV transition placeholder unavailable: {exc}\")
+
+    def _rick_tv_show_interstitial_ad(self):
+        frame = self._rick_tv_interstitial_frame
+        if frame is None:
+            try:
+                fd = os.open(self._rick_tv_interstitial_frame_path, os.O_RDONLY)
+                try:
+                    frame = os.read(fd, 8 * 1024 * 1024)
+                finally:
+                    os.close(fd)
+            except OSError as exc:
+                self._print(f\"Rick TV interstitial ad unavailable: {exc}\")
+                return
+            self._rick_tv_interstitial_frame = frame
+        if not frame:
+            return
+        try:
+            fd = os.open('/dev/fb0', os.O_WRONLY)
+            try:
+                os.write(fd, frame)
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            self._print(f\"Rick TV interstitial ad unavailable: {exc}\")
 
     def _rick_tv_build_transition_frame(self):
         try:
@@ -446,6 +474,22 @@ def _remove_keyboard_fifo_injection(text: str) -> str:
     return "\n".join(lines[:block_start] + cleaned + lines[block_end:])
 
 
+def _remove_rick_tv_init_patch(text: str) -> str:
+    marker_index = text.find(INIT_MARKER)
+    if marker_index == -1:
+        return text
+
+    block_start = text.find(
+        "        self._rick_tv_fifo_path = self._config.get(",
+        0,
+        marker_index,
+    )
+    if block_start == -1:
+        return text
+
+    return text[:block_start] + text[marker_index:]
+
+
 def _upsert_method(text: str, method_name: str, replacement: str) -> str:
     blocks = _find_method_blocks(text, method_name)
     if not blocks:
@@ -512,6 +556,7 @@ def _patch_target(
 def patch_text(text: str) -> str:
     for init_patch in LEGACY_INIT_PATCHES:
         text = text.replace(init_patch, "")
+    text = _remove_rick_tv_init_patch(text)
     text = insert_once(text, IMPORT_MARKER, IMPORT_PATCH, after=True)
     text = insert_once(text, INIT_MARKER, INIT_PATCH, after=False)
     text = text.replace(INIT_PATCH + INIT_PATCH, INIT_PATCH)
@@ -585,10 +630,15 @@ def patch_text(text: str) -> str:
         "                    if \".m3u\" in movie.filename: # type: ignore\n",
         "                    if movie is not None and \".m3u\" in movie.filename: # type: ignore\n",
     )
-    text = text.replace(
-        "                    movie.was_played() # type: ignore\n",
-        RUN_PLAYLIST_FILE_GUARD + "                    movie.was_played() # type: ignore\n",
-    )
+    if "self._rick_tv_show_interstitial_ad()" not in text:
+        text = text.replace(
+            "                    movie.was_played() # type: ignore\n",
+            RUN_PLAYLIST_FILE_GUARD
+            + "                    if not self._firstStart and not self._rick_tv_skip_next_interstitial:\n"
+            + "                        self._rick_tv_show_interstitial_ad()\n"
+            + "                    self._rick_tv_skip_next_interstitial = False\n"
+            + "                    movie.was_played() # type: ignore\n",
+        )
     return text
 
 

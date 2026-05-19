@@ -75,3 +75,63 @@ def test_fifo_patch_draws_transition_placeholder_after_stopping_player():
     assert stop_index < placeholder_index
     assert "def _rick_tv_show_transition_placeholder(self):" in patched
     assert "def _rick_tv_build_transition_frame(self):" in patched
+
+
+def test_fifo_patch_draws_interstitial_ad_between_playlist_videos_only():
+    patcher = load_patcher()
+
+    patched = patcher.patch_text(
+        "import urllib.parse\n"
+        "class VideoLooper:\n"
+        "    def __init__(self):\n"
+        "        self._playbackStopped = not self._play_on_startup\n"
+        "\n"
+        "    def _handle_keyboard_shortcuts(self):\n"
+        "        self._print(\"keyboard control thread started\")\n"
+        "        while self._running:\n"
+        "            event = pygame.event.wait()\n"
+        "\n"
+        "    def run(self):\n"
+        "        while self._running:\n"
+        "            if not self._player.is_playing() and not self._playbackStopped:\n"
+        "                if movie is not None: #just to avoid errors\n"
+        "                    movie.was_played() # type: ignore\n"
+        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
+        "            time.sleep(0.002)\n"
+    )
+
+    assert "_rick_tv_interstitial_frame_path = '/home/pi/rick-tv/system/interstitial-ad.fb'" in patched
+    assert "self._rick_tv_skip_next_interstitial = True" in patched
+    assert "def _rick_tv_show_interstitial_ad(self):" in patched
+    interstitial_index = patched.index("self._rick_tv_show_interstitial_ad()")
+    played_index = patched.index("movie.was_played()")
+    assert interstitial_index < played_index
+
+
+def test_fifo_patch_is_idempotent_for_rick_tv_runtime_hooks():
+    patcher = load_patcher()
+    source = (
+        "import urllib.parse\n"
+        "class VideoLooper:\n"
+        "    def __init__(self):\n"
+        "        self._playbackStopped = not self._play_on_startup\n"
+        "\n"
+        "    def _handle_keyboard_shortcuts(self):\n"
+        "        self._print(\"keyboard control thread started\")\n"
+        "        while self._running:\n"
+        "            event = pygame.event.wait()\n"
+        "\n"
+        "    def run(self):\n"
+        "        while self._running:\n"
+        "            if not self._player.is_playing() and not self._playbackStopped:\n"
+        "                if movie is not None: #just to avoid errors\n"
+        "                    movie.was_played() # type: ignore\n"
+        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
+        "            time.sleep(0.002)\n"
+    )
+
+    patched = patcher.patch_text(patcher.patch_text(source))
+
+    assert patched.count("_rick_tv_fifo_path = self._config.get") == 1
+    assert patched.count("_rick_tv_interstitial_frame_path =") == 1
+    assert patched.count("self._rick_tv_show_interstitial_ad()") == 1
