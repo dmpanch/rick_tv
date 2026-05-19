@@ -9,6 +9,8 @@ runs Uvicorn on port `8080`.
 Set these environment variables before starting the service:
 
 - `RICK_TV_API_TOKEN`: required bearer token for API clients.
+  Docker Compose uses `change-me-local` only when this variable is omitted for
+  local smoke checks; set a real token before using the service.
 - `RICK_TV_PUBLIC_BASE_URL`: public URL used when generating download links.
   Defaults to `http://localhost:8080`.
 - `RICK_TV_MEDIA_DIR`: media storage path. Defaults to

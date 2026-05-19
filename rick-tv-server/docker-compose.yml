@@ -7,7 +7,7 @@ services:
       RICK_TV_MEDIA_DIR: /var/lib/rick-tv/media
       RICK_TV_CONFIG_DIR: /etc/rick-tv
       RICK_TV_STATE_DIR: /var/lib/rick-tv/state
-      RICK_TV_API_TOKEN: ${RICK_TV_API_TOKEN:?set RICK_TV_API_TOKEN}
+      RICK_TV_API_TOKEN: ${RICK_TV_API_TOKEN:-change-me-local}
       RICK_TV_PUBLIC_BASE_URL: ${RICK_TV_PUBLIC_BASE_URL:-http://localhost:8080}
     volumes:
       - ./media:/var/lib/rick-tv/media
