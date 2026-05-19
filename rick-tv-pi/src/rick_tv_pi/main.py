@@ -180,20 +180,14 @@ def run_runtime_cycle(
 ) -> None:
     current_time = time.monotonic() if now is None else now
     channels = discover_channels(settings.media_root, settings.metadata_path)
-    player.sync_channels(channels)
     if state.navigator is None:
         state.navigator = ChannelNavigator()
     state.navigator.refresh_channels(channels)
+
+    player.sync_channels(channels)
     if channels and not state.initial_channel_selected:
         state.navigator.select_initial(player)
         state.initial_channel_selected = True
-
-    if current_time >= state.next_poll_at:
-        try:
-            poller.poll_once(channels)
-        except Exception:
-            logger.warning("Pi runtime poll failed", exc_info=True)
-        state.next_poll_at = current_time + settings.poll_interval_seconds
 
     if touch_actions is not None:
         while True:
@@ -202,6 +196,13 @@ def run_runtime_cycle(
                 break
             logger.info("Touch action detected: %s", action)
             state.navigator.apply_action(action, player)
+
+    if current_time >= state.next_poll_at:
+        try:
+            poller.poll_once(channels)
+        except Exception:
+            logger.warning("Pi runtime poll failed", exc_info=True)
+        state.next_poll_at = current_time + settings.poll_interval_seconds
 
     player.rescan_current_channel()
 
