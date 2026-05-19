@@ -1,7 +1,0 @@
-# Optional Bookworm Lite rotation prefix for /boot/firmware/cmdline.txt.
-# cmdline.txt must remain a single line. Put one of these tokens at the start
-# of that line only if rotation is wrong.
-
-video=DPI-1:480x640M@60,rotate=90
-# video=DPI-1:480x640M@60,rotate=180
-# video=DPI-1:480x640M@60,rotate=270

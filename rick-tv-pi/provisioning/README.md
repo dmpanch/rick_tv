@@ -1,56 +1,66 @@
-# Raspberry Pi SD-card recovery and display files
+# Rick TV Pi Provisioning
 
-This directory contains files that can be copied to a Raspberry Pi boot partition
-when the Pi is only accessible through the SD card.
+This provisioning set targets the prepared Raspberry Pi OS Legacy/Buster image
+that already contains Adafruit `pi_video_looper`, `supervisor`, and `omxplayer`.
 
-Target hardware:
-
-- Raspberry Pi Zero W
-- Waveshare 2.8inch DPI LCD, 480x640
-- Wi-Fi on 2.4 GHz
-- SSH password login for initial recovery
-
-Default test credentials for the current lab Pi:
+Current lab device:
 
 - `ssh pi@192.168.1.68`
-- `password: video`
+- password: `video`
 
-Do not commit real Wi-Fi passwords, API tokens, or private keys. Replace the
-`YOUR_*` placeholders on the SD card before booting.
+Do not run `apt upgrade` on the target Pi as part of Rick TV deployment.
 
-## Boot partition paths
+## Deploy to a Running Pi
 
-- Raspberry Pi OS Bookworm/Trixie mounts the FAT boot partition as
-  `/boot/firmware` when running.
-- When the card is inserted into another machine, the same partition is usually
-  shown as `bootfs`, `boot`, or `system-boot`.
+From the repository root:
 
-## Wi-Fi and SSH recovery
+```sh
+rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
+```
 
-Use one of these approaches:
+Useful overrides:
 
-1. `bootfs/custom.toml.example` before the first boot of a fresh Raspberry Pi OS
-   image.
-2. `bootfs/firstrun.sh` plus a one-line edit to `cmdline.txt` when the card may
-   already have booted and first-boot customization may not run again.
-3. `ubuntu/network-config.example.yaml` only for Ubuntu/cloud-init images that
-   have a `network-config` file on the boot partition.
+```sh
+PI_HOST=pi@192.168.1.68 PI_PASSWORD=video \
+  rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
+```
 
-The old `wpa_supplicant.conf` file on the boot partition is intentionally not
-used here because it is unreliable on current Raspberry Pi OS Bookworm/Trixie.
+The deploy script:
 
-## Waveshare display
+- installs required packages only;
+- copies the project to `/opt/rick-tv-src`;
+- installs `rick-tv-pi` into `/opt/rick-tv-pi/.venv`;
+- writes the systemd unit;
+- configures `/boot/video_looper.ini`;
+- patches the installed Adafruit Video Looper egg;
+- generates `/home/pi/rick-tv/system/transition-placeholder.fb`;
+- restarts `rick-tv-pi.service` and supervisor `video_looper`.
 
-Copy the DTBO files from `vendor/waveshare-28dpi/overlays/` to the boot
-partition `overlays/` directory, then use the Trixie `config.txt` example under
-`display/`.
+If `/etc/rick-tv-pi.env` does not exist, the script installs
+`rick-tv-pi.env.example`. Edit the real file on the Pi with server URL and token.
 
-For Raspberry Pi OS Trixie, use:
+## Wi-Fi Bootstrap
 
-- `display/config.txt.waveshare-28dpi-trixie`
+For an SD card whose image has Wi-Fi disabled, mount the FAT boot partition on
+your workstation and run:
 
-For Raspberry Pi OS Legacy/Buster, use:
+```sh
+rick-tv-pi/provisioning/deploy_videolooper_image.sh wifi \
+  --boot /Volumes/boot \
+  --ssid "YOUR_WIFI_SSID" \
+  --psk "YOUR_WIFI_PASSWORD"
+```
+
+This writes `wpa_supplicant.conf` and an `ssh` marker file to the boot
+partition. The committed `wifi/wpa_supplicant.conf.example` keeps placeholders
+only.
+
+## Display
+
+For the Waveshare 2.8inch DPI LCD on the legacy image, use:
 
 - `display/config.txt.waveshare-28dpi-legacy`
+- `vendor/waveshare-28dpi/overlays/*.dtbo`
 
-Keep a backup of the original `config.txt` before replacing it.
+Copy the overlay files to the boot partition `overlays/` directory if the image
+does not already contain them.

@@ -1,0 +1,42 @@
+# Waveshare 2.8inch DPI LCD config for Raspberry Pi OS Legacy/Buster.
+# Copy vendor DTBO files to /boot/overlays before booting:
+#   waveshare-28dpi-3b-4b.dtbo
+#   waveshare-28dpi-3b.dtbo
+#   waveshare-28dpi-4b.dtbo
+#
+# If the base image has either of these lines, keep them commented:
+#   dtoverlay=vc4-kms-v3d
+#   dtoverlay=vc4-fkms-v3d
+
+dtparam=i2c_arm=on
+dtparam=spi=on
+dtparam=audio=on
+
+# PWM audio on GPIO19 from original Rick TV build.
+dtoverlay=pwm,pin=19,func=4,enable_jack
+
+# Waveshare 2.8inch DPI LCD / Raspberry Pi OS Buster legacy config.
+gpio=0-9=a2
+gpio=12-17=a2
+gpio=20-25=a2
+
+dtoverlay=dpi24
+enable_dpi_lcd=1
+display_default_lcd=1
+extra_transpose_buffer=2
+
+dpi_group=2
+dpi_mode=87
+dpi_output_format=0x7F216
+hdmi_timings=480 0 26 16 10 640 0 25 10 15 0 0 0 60 0 32000000 1
+
+dtoverlay=waveshare-28dpi-3b-4b
+dtoverlay=waveshare-28dpi-3b
+dtoverlay=waveshare-28dpi-4b
+
+# Stretch/Jessie-style framebuffer rotation.
+# For Bullseye/Buster KMS console rotation, prefer cmdline.txt:
+#   video=DPI-1:480x640M@60,rotate=270
+display_rotate=3
+
+disable_overscan=1

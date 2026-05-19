@@ -65,9 +65,8 @@ def _build_frame(width: int, height: int, stride: int) -> bytes:
     band_h = max(120, height // 5)
     band_y = height - band_h
     _rect(frame, stride, 0, band_y, width, band_h, (0, 0, 0))
-    _rect_outline(frame, stride, width // 12, band_y + 24, width * 5 // 6, band_h - 48)
-    _draw_text(frame, stride, width // 2 - 110, band_y + 48, "RICK TV", scale=7)
-    _draw_text(frame, stride, width // 2 - 144, band_y + 112, "CHANNEL SYNC", scale=4)
+    _draw_text(frame, stride, width // 2 - 330, band_y + 64, "INTERDIMENSIONAL", scale=5)
+    _draw_text(frame, stride, width // 2 - 108, band_y + 118, "CABLE", scale=5)
 
     return bytes(frame)
 
@@ -114,6 +113,9 @@ FONT = {
     "T": ("11111", "00100", "00100", "00100", "00100", "00100", "00100"),
     "V": ("10001", "10001", "10001", "10001", "10001", "01010", "00100"),
     "Y": ("10001", "10001", "01010", "00100", "00100", "00100", "00100"),
+    "D": ("11110", "10001", "10001", "10001", "10001", "10001", "11110"),
+    "M": ("10001", "11011", "10101", "10101", "10001", "10001", "10001"),
+    "O": ("01110", "10001", "10001", "10001", "10001", "10001", "01110"),
     " ": ("00000", "00000", "00000", "00000", "00000", "00000", "00000"),
 }
 

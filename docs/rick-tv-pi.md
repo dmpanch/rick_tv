@@ -12,23 +12,22 @@ The Phase 1 runtime assumes the existing Raspberry Pi TV hardware remains in pla
 - GPIO26 power button.
 - Existing GPIO18 amplifier/backlight wiring.
 
-## SD-card recovery and display setup
+## SD-card and videolooper image setup
 
-Boot-partition recovery files, Waveshare 2.8inch DPI LCD `config.txt` snippets,
-and vendor DTBO overlay files are kept in
-`rick-tv-pi/provisioning/`.
+Rick TV Pi currently targets the prepared Raspberry Pi OS Legacy/Buster image
+with Adafruit `pi_video_looper` already installed. The supported provisioning
+entrypoint is:
 
-Use these when the Pi is only accessible through the SD card:
+```sh
+rick-tv-pi/provisioning/deploy_videolooper_image.sh
+```
 
-- `rick-tv-pi/provisioning/bootfs/custom.toml.example` for a fresh first boot.
-- `rick-tv-pi/provisioning/bootfs/firstrun.sh` for forced recovery after an
-  unknown/failed first boot.
-- `rick-tv-pi/provisioning/ubuntu/network-config.example.yaml` for Ubuntu
-  cloud-init images with a boot-partition `network-config` file.
-- `rick-tv-pi/provisioning/display/config.txt.waveshare-28dpi-trixie` for
-  Raspberry Pi OS Trixie.
-- `rick-tv-pi/provisioning/vendor/waveshare-28dpi/overlays/*.dtbo` copied from
-  Waveshare's 2.8inch DPI LCD vendor package.
+Use `deploy_videolooper_image.sh wifi --boot /path/to/boot --ssid ... --psk ...`
+before first boot when the image has Wi-Fi disabled. Use
+`deploy_videolooper_image.sh deploy` once the Pi is reachable over SSH.
+
+Legacy display files and Waveshare DTBO overlays are kept under
+`rick-tv-pi/provisioning/display/` and `rick-tv-pi/provisioning/vendor/`.
 
 ## Environment
 
@@ -37,8 +36,10 @@ Create `/etc/rick-tv-pi.env` for the systemd service:
 ```text
 RICK_TV_SERVER_URL=https://rick-tv.example
 RICK_TV_API_TOKEN=replace-me
-RICK_TV_MEDIA_ROOT=/home/pi/Videos/rick_tv_channels
-RICK_TV_METADATA_PATH=/etc/rick-tv/channels.yml
+RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media
+RICK_TV_METADATA_PATH=/home/pi/rick-tv/channels.yml
+RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT=/home/pi/rick-tv/playlists
+RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo
 ```
 
 `RICK_TV_METADATA_PATH` is optional. `RICK_TV_POLL_INTERVAL_SECONDS` is optional and defaults to `60`.
