@@ -65,7 +65,16 @@ def _build_frame(width: int, height: int, stride: int) -> bytes:
     band_h = max(120, height // 5)
     band_y = height - band_h
     _rect(frame, stride, 0, band_y, width, band_h, (0, 0, 0))
-    _draw_text(frame, stride, width // 2 - 342, band_y + 88, "INTERDIMENSIONAL CABLE", scale=3)
+    title = "INTERDIMENSIONAL CABLE"
+    scale = max(1, min(5, (width - 80) // _text_width(title, 1)))
+    _draw_text(
+        frame,
+        stride,
+        (width - _text_width(title, scale)) // 2,
+        band_y + (band_h - 7 * scale) // 2,
+        title,
+        scale=scale,
+    )
 
     return bytes(frame)
 
@@ -137,6 +146,12 @@ def _draw_text(frame: bytearray, stride: int, x: int, y: int, text: str, *, scal
                         (255, 255, 255),
                     )
         cursor += 6 * scale
+
+
+def _text_width(text: str, scale: int) -> int:
+    if not text:
+        return 0
+    return (len(text) * 6 - 1) * scale
 
 
 def _read_virtual_size() -> tuple[int, int]:
