@@ -1,7 +1,14 @@
 from pathlib import Path
 
 from rick_tv_pi.config import PiSettings
-from rick_tv_pi.main import RuntimeState, load_settings_from_env, run_runtime_cycle
+from rick_tv_pi.main import (
+    RuntimeState,
+    TouchActionQueue,
+    load_settings_from_env,
+    load_touch_settings_from_env,
+    load_videolooper_settings_from_env,
+    run_runtime_cycle,
+)
 
 
 def test_load_settings_from_env_reads_required_and_optional_values(monkeypatch):
@@ -17,6 +24,34 @@ def test_load_settings_from_env_reads_required_and_optional_values(monkeypatch):
     assert settings.media_root == Path("/var/lib/rick-tv/media")
     assert settings.metadata_path == Path("/etc/rick-tv/channels.yml")
     assert settings.poll_interval_seconds == 60
+
+
+def test_load_videolooper_settings_from_env_reads_playlist_root_and_command_path(monkeypatch):
+    monkeypatch.setenv("RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT", "/home/pi/rick-tv/playlists")
+    monkeypatch.setenv("RICK_TV_VIDEOLOOPER_COMMAND_PATH", "/tmp/rick-tv.fifo")
+
+    settings = load_videolooper_settings_from_env()
+
+    assert settings.playlist_root == Path("/home/pi/rick-tv/playlists")
+    assert settings.command_path == Path("/tmp/rick-tv.fifo")
+
+
+def test_load_touch_settings_from_env_supports_screen_size_and_axis_options(monkeypatch):
+    monkeypatch.setenv("RICK_TV_TOUCH_SCREEN_WIDTH", "640")
+    monkeypatch.setenv("RICK_TV_TOUCH_SCREEN_HEIGHT", "480")
+    monkeypatch.setenv("RICK_TV_TOUCH_SWAP_AXES", "true")
+    monkeypatch.setenv("RICK_TV_TOUCH_INVERT_X", "1")
+    monkeypatch.setenv("RICK_TV_TOUCH_INVERT_Y", "yes")
+    monkeypatch.setenv("RICK_TV_TOUCH_DEVICE", "/dev/input/event4")
+
+    settings = load_touch_settings_from_env()
+
+    assert settings.screen_width == 640
+    assert settings.screen_height == 480
+    assert settings.swap_axes == "true"
+    assert settings.invert_x is True
+    assert settings.invert_y is True
+    assert settings.device_path == "/dev/input/event4"
 
 
 def test_runtime_cycle_logs_poll_failure_and_rescans_empty_channel(tmp_path, caplog):
@@ -57,15 +92,111 @@ def test_runtime_cycle_does_not_reselect_initial_empty_channel(tmp_path):
     assert player.rescan_count == 2
 
 
+def test_runtime_cycle_rescans_playing_channel_to_restart_dead_player(tmp_path):
+    channel_path = tmp_path / "01_Citadel"
+    channel_path.mkdir()
+    (channel_path / "episode.mp4").touch()
+    settings = PiSettings(
+        server_base_url="https://rick-tv.example",
+        api_token="test-token",
+        media_root=tmp_path,
+    )
+    player = FakePlayer()
+    player.screen_state = "playing"
+    poller = SuccessfulPoller()
+    state = RuntimeState()
+
+    run_runtime_cycle(settings=settings, player=player, poller=poller, state=state)
+
+    assert player.rescan_count == 1
+
+
+def test_runtime_cycle_applies_touch_navigation_before_rescan(tmp_path):
+    (tmp_path / "01_Citadel").mkdir()
+    (tmp_path / "02_Cable").mkdir()
+    settings = PiSettings(
+        server_base_url="https://rick-tv.example",
+        api_token="test-token",
+        media_root=tmp_path,
+    )
+    player = FakePlayer()
+    poller = SuccessfulPoller()
+    touch_actions = FakeTouchActions(["next", "previous"])
+    state = RuntimeState()
+
+    run_runtime_cycle(
+        settings=settings,
+        player=player,
+        poller=poller,
+        state=state,
+        touch_actions=touch_actions,
+    )
+    run_runtime_cycle(
+        settings=settings,
+        player=player,
+        poller=poller,
+        state=state,
+        touch_actions=touch_actions,
+    )
+
+    assert [channel.id for channel in player.selected_channels] == [
+        "01_Citadel",
+        "02_Cable",
+        "01_Citadel",
+    ]
+
+
+def test_runtime_cycle_applies_touch_navigation_between_server_polls(tmp_path):
+    (tmp_path / "01_Citadel").mkdir()
+    (tmp_path / "02_Cable").mkdir()
+    settings = PiSettings(
+        server_base_url="https://rick-tv.example",
+        api_token="test-token",
+        media_root=tmp_path,
+        poll_interval_seconds=60,
+    )
+    player = FakePlayer()
+    poller = SuccessfulPoller()
+    state = RuntimeState()
+
+    run_runtime_cycle(settings=settings, player=player, poller=poller, state=state, now=0.0)
+    run_runtime_cycle(
+        settings=settings,
+        player=player,
+        poller=poller,
+        state=state,
+        touch_actions=FakeTouchActions(["next"]),
+        now=0.1,
+    )
+
+    assert poller.poll_count == 1
+    assert [channel.id for channel in player.selected_channels] == [
+        "01_Citadel",
+        "02_Cable",
+    ]
+
+
+def test_touch_action_queue_returns_none_without_blocking_when_empty():
+    queue = TouchActionQueue()
+
+    assert queue.next_action() is None
+
+
 class FakePlayer:
     screen_state = "empty"
 
     def __init__(self) -> None:
         self.select_count = 0
         self.rescan_count = 0
+        self.synced_channels = []
+        self.selected_channels = []
+
+    def sync_channels(self, channels):
+        self.synced_channels.append([channel.id for channel in channels])
 
     def select_channel(self, channel):
         self.select_count += 1
+        self.selected_channels.append(channel)
 
     def rescan_current_channel(self):
         self.rescan_count += 1
@@ -81,5 +212,19 @@ class FailingPoller:
 
 
 class SuccessfulPoller:
+    def __init__(self) -> None:
+        self.poll_count = 0
+
     def poll_once(self, channels):
+        self.poll_count += 1
         return []
+
+
+class FakeTouchActions:
+    def __init__(self, actions):
+        self._actions = list(actions)
+
+    def next_action(self):
+        if not self._actions:
+            return None
+        return self._actions.pop(0)

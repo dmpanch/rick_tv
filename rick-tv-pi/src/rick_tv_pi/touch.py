@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+
+try:
+    from typing import Literal
+except ImportError:  # pragma: no cover - Python 3.7 runtime compatibility.
+    from typing_extensions import Literal
 
 
 SwipeAction = Literal["next", "previous"]
@@ -23,9 +27,9 @@ class TouchInterpreter:
         horizontal_delta = end.x - start.x
         vertical_delta = end.y - start.y
 
-        if abs(horizontal_delta) < 80:
+        if abs(horizontal_delta) < 60:
             return None
-        if abs(horizontal_delta) <= abs(vertical_delta):
+        if abs(horizontal_delta) <= abs(vertical_delta) * 1.3:
             return None
         if horizontal_delta < 0:
             action: SwipeAction = "next"

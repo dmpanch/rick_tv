@@ -43,6 +43,22 @@ RICK_TV_METADATA_PATH=/etc/rick-tv/channels.yml
 
 `RICK_TV_METADATA_PATH` is optional. `RICK_TV_POLL_INTERVAL_SECONDS` is optional and defaults to `60`.
 
+Touch gestures also can be tuned for DPI orientation:
+
+```text
+RICK_TV_TOUCH_SCREEN_WIDTH=480
+RICK_TV_TOUCH_SCREEN_HEIGHT=640
+RICK_TV_TOUCH_SWAP_AXES=false
+RICK_TV_TOUCH_INVERT_X=0
+RICK_TV_TOUCH_INVERT_Y=0
+RICK_TV_TOUCH_DEVICE=
+RICK_TV_RUNTIME_TICK_SECONDS=0.1
+```
+
+- `RICK_TV_TOUCH_SWAP_AXES` supports `true|false|auto`; start with `false`.
+- `RICK_TV_TOUCH_INVERT_X/Y` support `1/0`, `true/false`, `on/off`, `yes/no`.
+- `RICK_TV_TOUCH_DEVICE` forces a specific `/dev/input/event*` path.
+
 ## Runtime
 
 The Pi discovers channel directories under `RICK_TV_MEDIA_ROOT`, polls the server for ready media, downloads and validates files, atomically places them into channel directories, and acknowledges only after placement succeeds. Empty channels stay selectable and are rescanned during the polling loop.
@@ -59,3 +75,14 @@ sudo systemctl enable --now rick-tv-pi.service
 ```
 
 The service writes stdout and stderr to the journal. Rick TV delivery state remains server-authoritative; the Pi does not maintain durable delivery logs.
+
+## SSH Access
+
+For the current local test setup:
+
+```text
+ssh pi@192.168.1.68
+password: video
+```
+
+If service/env updates are needed, use sudo on the Pi for writing `/etc/rick-tv-pi.env` and systemd files.
