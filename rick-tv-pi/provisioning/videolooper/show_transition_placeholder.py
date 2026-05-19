@@ -65,8 +65,7 @@ def _build_frame(width: int, height: int, stride: int) -> bytes:
     band_h = max(120, height // 5)
     band_y = height - band_h
     _rect(frame, stride, 0, band_y, width, band_h, (0, 0, 0))
-    _draw_text(frame, stride, width // 2 - 330, band_y + 64, "INTERDIMENSIONAL", scale=5)
-    _draw_text(frame, stride, width // 2 - 108, band_y + 118, "CABLE", scale=5)
+    _draw_text(frame, stride, width // 2 - 342, band_y + 88, "INTERDIMENSIONAL CABLE", scale=3)
 
     return bytes(frame)
 
@@ -101,6 +100,7 @@ def _rect_outline(frame: bytearray, stride: int, x: int, y: int, w: int, h: int)
 
 FONT = {
     "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
+    "B": ("11110", "10001", "10001", "11110", "10001", "10001", "11110"),
     "C": ("01111", "10000", "10000", "10000", "10000", "10000", "01111"),
     "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
     "H": ("10001", "10001", "10001", "11111", "10001", "10001", "10001"),
