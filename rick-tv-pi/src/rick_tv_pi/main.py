@@ -57,7 +57,12 @@ def run_runtime_cycle(
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     settings = load_settings_from_env()
-    player = PlaybackController()
+    player = PlaybackController(
+        player_command=os.environ.get(
+            "RICK_TV_PLAYER_COMMAND",
+            "mpv --fs --loop-file=inf --no-terminal --really-quiet",
+        )
+    )
     touch = TouchInterpreter(cooldown_seconds=0.5)
     state = RuntimeState()
 
