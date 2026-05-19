@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import logging
 from dataclasses import dataclass
@@ -102,6 +104,8 @@ class Poller:
 
     def _remove_temp(self, temp_path: Path) -> None:
         try:
-            temp_path.unlink(missing_ok=True)
+            temp_path.unlink()
+        except FileNotFoundError:
+            return
         except OSError:
             return

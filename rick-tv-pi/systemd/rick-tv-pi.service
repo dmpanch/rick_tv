@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/rick-tv-pi.env
+Environment=PYTHONPATH=/opt/rick-tv-src
 WorkingDirectory=/opt/rick-tv-src
 ExecStart=/opt/rick-tv-pi/.venv/bin/python -m rick_tv_pi.main
 Restart=always

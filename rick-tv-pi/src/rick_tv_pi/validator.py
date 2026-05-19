@@ -7,6 +7,8 @@ from dataclasses import dataclass
 class ReadyProfile:
     width: int = 640
     height: int = 480
+    max_video_bit_rate: int = 800_000
+    max_audio_bit_rate: int = 128_000
     video_codec: str = "h264"
     pixel_format: str = "yuv420p"
     audio_codec: str = "aac"
@@ -19,7 +21,7 @@ def probe_media(path, runner=subprocess.run):
             "-v",
             "error",
             "-show_entries",
-            "format=format_name:stream=codec_type,codec_name,pix_fmt,width,height",
+            "format=format_name,bit_rate:stream=codec_type,codec_name,pix_fmt,width,height,bit_rate",
             "-of",
             "json",
             str(path),
@@ -54,13 +56,19 @@ def validate_ready_profile(path, profile=ReadyProfile(), runner=subprocess.run):
     height = _positive_int(video_stream.get("height"))
     if width is None or height is None:
         return False
+    video_bit_rate = _positive_int(video_stream.get("bit_rate"))
+    audio_bit_rate = _positive_int(audio_stream.get("bit_rate"))
+    if video_bit_rate is None or audio_bit_rate is None:
+        return False
 
     return (
         video_stream.get("codec_name") == profile.video_codec
         and video_stream.get("pix_fmt") == profile.pixel_format
         and audio_stream.get("codec_name") == profile.audio_codec
-        and width <= profile.width
-        and height <= profile.height
+        and width == profile.width
+        and height == profile.height
+        and video_bit_rate <= profile.max_video_bit_rate
+        and audio_bit_rate <= profile.max_audio_bit_rate
     )
 
 

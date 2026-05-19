@@ -7,10 +7,15 @@ def test_discovers_immediate_directories_in_channel_order(tmp_path):
 
     (media_root / "01_Citadel").mkdir()
     (media_root / "02_Interdimensional_Cable").mkdir()
+    (media_root / "03_Empty").mkdir()
     (media_root / "Garage").mkdir()
     (media_root / "10_Late").mkdir()
     (media_root / "Garage" / "Nested").mkdir()
     (media_root / "not_a_channel.mp4").write_text("not a directory")
+    (media_root / "01_Citadel" / "episode.mp4").touch()
+    (media_root / "02_Interdimensional_Cable" / "episode.mp4").touch()
+    (media_root / "10_Late" / "episode.mp4").touch()
+    (media_root / "Garage" / "episode.mp4").touch()
 
     channels = discover_channels(media_root, metadata_path=None)
 
