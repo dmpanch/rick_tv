@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
+import os
 
 import yaml
 
@@ -13,7 +16,11 @@ class Channel:
 
 
 def discover_channels(media_root: Path, metadata_path: Path | None) -> list[Channel]:
-    channel_paths = [path for path in media_root.iterdir() if path.is_dir()]
+    channel_paths = [
+        path
+        for path in media_root.iterdir()
+        if path.is_dir() and _channel_has_media(path)
+    ]
     ordered_paths = sorted(channel_paths, key=_channel_sort_key)
     display_names = _load_display_names(metadata_path)
 
@@ -26,6 +33,16 @@ def discover_channels(media_root: Path, metadata_path: Path | None) -> list[Chan
         )
         for index, path in enumerate(ordered_paths, start=1)
     ]
+
+
+def _channel_has_media(path: Path) -> bool:
+    try:
+        return any(
+            file_path.is_file() and file_path.suffix.lower() == ".mp4"
+            for file_path in path.iterdir()
+        )
+    except OSError:
+        return False
 
 
 def _channel_sort_key(path: Path) -> tuple[int, int | str, str]:

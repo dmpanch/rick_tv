@@ -59,6 +59,8 @@ class VideolooperController:
         self._current_channel = channel
         self._write_channel_playlist_if_changed(channel)
         self._update_state(channel)
+        if self.current_file is None:
+            return
         self._send_channel_command(channel, force=True)
 
     def rescan_current_channel(self) -> None:
@@ -92,6 +94,9 @@ class VideolooperController:
     def _build_master_playlist(self, channels: Iterable[Channel]) -> str:
         lines = ["#EXTM3U"]
         for channel in channels:
+            _, first_file = self._build_channel_playlist(channel)
+            if first_file is None:
+                continue
             lines.append(f"#EXTINF:0,{_channel_title(channel)}")
             lines.append(str(self._channel_playlist_path(channel)))
         return "\n".join(lines) + "\n"

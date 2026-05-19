@@ -120,14 +120,6 @@ INIT_PATCH = """\
         self._rick_tv_open_fifo()
         self._rick_tv_playlist_reload = False
 """
-RUN_PATCH = """\
-            self._rick_tv_handle_fifo_commands()
-            if self._rick_tv_playlist_reload:
-                self._playlist = self._build_playlist()
-                movie = self._playlist.get_next()
-                self._rick_tv_playlist_reload = False
-
-"""
 RUN_PLAYLIST_FILE_GUARD = """\
                     if movie is None:
                         continue
@@ -173,9 +165,9 @@ HANDLE_METHOD_PATCH = """\
             if '.m3u' in command:
                 self._print(f\"Rick TV loading playlist: {command}\")
                 self._playlist_path = command
-                self._playlist = self._build_playlist()
                 self._player.stop(0)
                 self._playbackStopped = False
+                self._playlist = None
                 self._rick_tv_playlist_reload = True
 
 """
@@ -202,6 +194,93 @@ def _find_method_blocks(text: str, method_name: str) -> List[Tuple[int, int]]:
             end = len(text)
         blocks.append((start, end))
     return blocks
+
+
+def _method_block_indices(lines: list[str], method_name: str) -> Tuple[int, int] | None:
+    start_pattern = f"    def {method_name}(self):"
+    for index, line in enumerate(lines):
+        if line.startswith(start_pattern):
+            start = index
+            break
+    else:
+        return None
+
+    for end in range(start + 1, len(lines)):
+        candidate = lines[end]
+        if candidate.startswith("    def ") and not candidate.startswith("        "):
+            return start, end
+
+    return start, len(lines)
+
+
+def _inject_run_fifo_realtime(text: str) -> str:
+    lines = text.splitlines()
+    run_block = _method_block_indices(lines, "run")
+    if run_block is None:
+        return text
+    run_start, run_end = run_block
+
+    while_index = None
+    for i in range(run_start, run_end):
+        if lines[i].strip() == "while self._running:":
+            while_index = i
+            break
+    if while_index is None:
+        return text
+
+    for line in lines[while_index + 1 : while_index + 10]:
+        if line.strip() == "self._rick_tv_handle_fifo_commands()":
+            return text
+
+    snippet = [
+        "            self._rick_tv_handle_fifo_commands()",
+        "            if self._rick_tv_playlist_reload:",
+        "                self._playlist = self._build_playlist()",
+        "                movie = self._playlist.get_next()",
+        "                self._rick_tv_playlist_reload = False",
+        "",
+    ]
+    insert_index = while_index + 1
+    lines = lines[:insert_index] + snippet + lines[insert_index:]
+    return "\n".join(lines)
+
+
+def _remove_keyboard_fifo_injection(text: str) -> str:
+    lines = text.splitlines()
+    keyboard_block = _method_block_indices(lines, "_handle_keyboard_shortcuts")
+    if keyboard_block is None:
+        return text
+
+    block_start, block_end = keyboard_block
+    cleaned: list[str] = []
+    removed = False
+    i = block_start
+    while i < block_end:
+        line = lines[i]
+        if "_rick_tv_handle_fifo_commands" in line:
+            removed = True
+            i += 1
+            continue
+        if "if self._rick_tv_playlist_reload:" in line:
+            removed = True
+            indent = len(line) - len(line.lstrip(" "))
+            i += 1
+            while i < block_end:
+                next_line = lines[i]
+                next_indent = len(next_line) - len(next_line.lstrip(" "))
+                if next_line.strip() == "":
+                    i += 1
+                    continue
+                if next_indent <= indent:
+                    break
+                i += 1
+            continue
+        cleaned.append(line)
+        i += 1
+
+    if not removed:
+        return text
+    return "\n".join(lines[:block_start] + cleaned + lines[block_end:])
 
 
 def _upsert_method(text: str, method_name: str, replacement: str) -> str:
@@ -270,9 +349,47 @@ def _patch_target(
 def patch_text(text: str) -> str:
     text = insert_once(text, IMPORT_MARKER, IMPORT_PATCH, after=True)
     text = insert_once(text, INIT_MARKER, INIT_PATCH, after=False)
-    text = insert_once(text, RUN_MARKER, RUN_PATCH, after=False)
+    text = text.replace(INIT_PATCH + INIT_PATCH, INIT_PATCH)
+    text = _remove_keyboard_fifo_injection(text)
+    text = _inject_run_fifo_realtime(text)
     text = _upsert_method(text, "_rick_tv_open_fifo", OPEN_METHOD_PATCH)
     text = _upsert_method(text, "_rick_tv_handle_fifo_commands", HANDLE_METHOD_PATCH)
+    text = text.replace(
+        "            if not self._player.is_playing() and not self._playbackStopped:\n"
+        "                if movie is not None: #just to avoid errors\n"
+        "                    if self._rick_tv_playlist_reload:\n"
+        "                        self._playlist = self._build_playlist()\n"
+        "                        movie = self._playlist.get_next()\n"
+        "                        self._rick_tv_playlist_reload = False\n",
+        "            if not self._player.is_playing() and not self._playbackStopped:\n"
+        "                if self._rick_tv_playlist_reload:\n"
+        "                    self._playlist = self._build_playlist()\n"
+        "                    movie = self._playlist.get_next()\n"
+        "                    self._rick_tv_playlist_reload = False\n"
+        "                if movie is not None: #just to avoid errors\n",
+    )
+    text = text.replace(
+        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
+        "            # but increase CPU usage\n"
+        "            # since keyboard commands are handled in a seperate thread this sleeptime mostly influences the pause between files\n"
+        "\n"
+        "            self._rick_tv_handle_fifo_commands()\n"
+        "            if self._rick_tv_playlist_reload:\n"
+        "                self._playlist = self._build_playlist()\n"
+        "                movie = self._playlist.get_next()\n"
+        "                self._rick_tv_playlist_reload = False\n"
+        "\n"
+        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
+        "            # but increase CPU usage\n"
+        "            # since keyboard commands are handled in a seperate thread this sleeptime mostly influences the pause between files\n"
+        "\n"
+        "            time.sleep(0.002)\n",
+        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
+        "            # but increase CPU usage\n"
+        "            # since keyboard commands are handled in a seperate thread this sleeptime mostly influences the pause between files\n"
+        "\n"
+        "            time.sleep(0.002)\n",
+    )
     text = re.sub(
         r"\n(\s*self._rick_tv_handle_fifo_commands\(\)\n)\s*self._rick_tv_handle_fifo_commands\(\)\n(\s*if self._rick_tv_playlist_reload:\n)",
         r"\n\1\2",
