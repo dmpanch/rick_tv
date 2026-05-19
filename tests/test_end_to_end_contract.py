@@ -78,5 +78,7 @@ def test_pi_poll_downloads_pending_server_media_and_archives_ack(
     delivered_path = pi_media_root / channel_id / filename
     assert delivered_path.exists()
     assert delivered_path.read_bytes() == media_bytes
-    assert store.items[item_id].status == "archived"
-    assert store.archive_index[item_id]["status"] == "archived"
+
+    reloaded_store = DeliveryStateStore(server_settings)
+    assert reloaded_store.items[item_id].status == "archived"
+    assert reloaded_store.archive_index[item_id]["status"] == "archived"
