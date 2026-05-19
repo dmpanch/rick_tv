@@ -1,0 +1,16 @@
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+pythonpath = [
+    "rick-tv-pi/src",
+    "rick-tv-server/src",
+]
+
+[tool.rick-tv.test-dependencies]
+install = "python -m pip install -e rick-tv-pi[test] -e rick-tv-server[test]"
+packages = [
+    "pytest",
+    "pytest-asyncio",
+    "fastapi",
+    "httpx",
+    "PyYAML",
+]
