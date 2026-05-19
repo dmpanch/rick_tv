@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_dockerfile_installs_ffmpeg_and_runs_server() -> None:
+    dockerfile = PROJECT_ROOT / "Dockerfile"
+
+    assert dockerfile.exists()
+    content = dockerfile.read_text(encoding="utf-8")
+
+    assert "ffmpeg" in content
+    assert "uvicorn" in content
+    assert "rick_tv_server.main:app" in content
+
+
+def test_docker_compose_mounts_runtime_directories_and_publishes_port() -> None:
+    compose_file = PROJECT_ROOT / "docker-compose.yml"
+
+    assert compose_file.exists()
+    content = compose_file.read_text(encoding="utf-8")
+
+    assert "./media:/var/lib/rick-tv/media" in content
+    assert "./config:/etc/rick-tv" in content
+    assert "./state:/var/lib/rick-tv/state" in content
+    assert "8080:8080" in content
+    assert "restart: unless-stopped" in content
