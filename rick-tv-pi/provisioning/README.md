@@ -37,17 +37,11 @@ used here because it is unreliable on current Raspberry Pi OS Bookworm/Trixie.
 ## Waveshare display
 
 Copy the DTBO files from `vendor/waveshare-28dpi/overlays/` to the boot
-partition `overlays/` directory, then append one of the snippets under
-`display/` to `config.txt`.
+partition `overlays/` directory, then use the Trixie `config.txt` example under
+`display/`.
 
-For Raspberry Pi OS Bookworm/Trixie, use:
+For Raspberry Pi OS Trixie, use:
 
-- `display/config.txt.waveshare-28dpi-bookworm`
+- `display/config.txt.waveshare-28dpi-trixie`
 
-For older Buster/Bullseye-style legacy DPI setups, use:
-
-- `display/config.txt.waveshare-28dpi-legacy`
-
-If the panel shows early boot and then becomes black after userspace starts, the
-first thing to try is removing/commenting `dtoverlay=vc4-kms-v3d` and using the
-legacy DPI block. Keep a backup of the original `config.txt`.
+Keep a backup of the original `config.txt` before replacing it.

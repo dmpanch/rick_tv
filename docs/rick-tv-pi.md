@@ -25,10 +25,8 @@ Use these when the Pi is only accessible through the SD card:
   unknown/failed first boot.
 - `rick-tv-pi/provisioning/ubuntu/network-config.example.yaml` for Ubuntu
   cloud-init images with a boot-partition `network-config` file.
-- `rick-tv-pi/provisioning/display/config.txt.waveshare-28dpi-bookworm` for
-  current Raspberry Pi OS Bookworm/Trixie.
-- `rick-tv-pi/provisioning/display/config.txt.waveshare-28dpi-legacy` if KMS
-  blanks the DPI LCD after early boot.
+- `rick-tv-pi/provisioning/display/config.txt.waveshare-28dpi-trixie` for
+  Raspberry Pi OS Trixie.
 - `rick-tv-pi/provisioning/vendor/waveshare-28dpi/overlays/*.dtbo` copied from
   Waveshare's 2.8inch DPI LCD vendor package.
 
