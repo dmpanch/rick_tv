@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import zipfile
 
 
-PATCHER_PATH = (
-    Path(__file__).parents[1]
-    / "provisioning"
-    / "videolooper"
-    / "rick_tv_fifo_patch.py"
-)
+ROOT = Path(__file__).parents[1]
+PATCHER_PATH = ROOT / "provisioning" / "videolooper" / "rick_tv_fifo_patch.py"
+OVERRIDES = ROOT / "provisioning" / "videolooper" / "overrides"
+VIDEO_LOOPER_OVERRIDE = OVERRIDES / "video_looper.py"
+OMX_PLAYER_OVERRIDE = OVERRIDES / "omxplayer.py"
 
 
-def load_patcher():
+def load_installer():
     spec = importlib.util.spec_from_file_location("rick_tv_fifo_patch", PATCHER_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -20,217 +20,83 @@ def load_patcher():
     return module
 
 
-def test_fifo_patch_ignores_unchanged_duplicate_playlist_commands():
-    patcher = load_patcher()
+def test_videolooper_override_is_valid_python():
+    source = VIDEO_LOOPER_OVERRIDE.read_text()
 
-    patched = patcher.patch_text(
-        "import urllib.parse\n"
-        "class VideoLooper:\n"
-        "    def __init__(self):\n"
-        "        self._playbackStopped = not self._play_on_startup\n"
-        "\n"
-        "    def _handle_keyboard_shortcuts(self):\n"
-        "        self._print(\"keyboard control thread started\")\n"
-        "        while self._running:\n"
-        "            event = pygame.event.wait()\n"
-        "\n"
-        "    def run(self):\n"
-        "        while self._running:\n"
-        "            if not self._player.is_playing() and not self._playbackStopped:\n"
-        "                if movie is not None: #just to avoid errors\n"
-        "                    movie.was_played() # type: ignore\n"
-        "                    self._player.play(movie, loop=player_loop, vol = self._sound_vol)\n"
-        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
-        "            time.sleep(0.002)\n"
-    )
-
-    assert "_rick_tv_playlist_mtime(command)" in patched
-    assert "Rick TV playlist command unchanged; ignoring" in patched
+    compile(source, str(VIDEO_LOOPER_OVERRIDE), "exec")
 
 
-def test_fifo_patch_draws_transition_placeholder_after_stopping_player():
-    patcher = load_patcher()
+def test_omxplayer_override_is_valid_python():
+    source = OMX_PLAYER_OVERRIDE.read_text()
 
-    patched = patcher.patch_text(
-        "import urllib.parse\n"
-        "class VideoLooper:\n"
-        "    def __init__(self):\n"
-        "        self._playbackStopped = not self._play_on_startup\n"
-        "\n"
-        "    def _handle_keyboard_shortcuts(self):\n"
-        "        self._print(\"keyboard control thread started\")\n"
-        "        while self._running:\n"
-        "            event = pygame.event.wait()\n"
-        "\n"
-        "    def run(self):\n"
-        "        while self._running:\n"
-        "            if not self._player.is_playing() and not self._playbackStopped:\n"
-        "                if movie is not None: #just to avoid errors\n"
-        "                    movie.was_played() # type: ignore\n"
-        "                    self._player.play(movie, loop=player_loop, vol = self._sound_vol)\n"
-        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
-        "            time.sleep(0.002)\n"
-    )
+    compile(source, str(OMX_PLAYER_OVERRIDE), "exec")
 
-    stop_index = patched.index("self._player.stop(0)")
-    placeholder_index = patched.index("self._rick_tv_show_transition_placeholder()")
+
+def test_videolooper_override_has_fifo_channel_switch_and_transition_frame():
+    source = VIDEO_LOOPER_OVERRIDE.read_text()
+
+    stop_index = source.index("self._player.stop(0)")
+    placeholder_index = source.index("self._rick_tv_show_transition_placeholder()")
     assert stop_index < placeholder_index
-    assert "def _rick_tv_show_transition_placeholder(self):" in patched
-    assert "def _rick_tv_build_transition_frame(self):" in patched
+    assert "_rick_tv_playlist_mtime(command)" in source
+    assert "Rick TV playlist command unchanged; ignoring" in source
+    assert "_rick_tv_interstitial_frame_path = '/home/pi/rick-tv/system/interstitial-ad.fb'" in source
+    assert "self._rick_tv_skip_next_interstitial = True" in source
 
 
-def test_fifo_patch_draws_interstitial_ad_between_playlist_videos_only():
-    patcher = load_patcher()
+def test_videolooper_override_draws_interstitial_once_before_next_video():
+    source = VIDEO_LOOPER_OVERRIDE.read_text()
 
-    patched = patcher.patch_text(
-        "import urllib.parse\n"
-        "class VideoLooper:\n"
-        "    def __init__(self):\n"
-        "        self._playbackStopped = not self._play_on_startup\n"
-        "\n"
-        "    def _handle_keyboard_shortcuts(self):\n"
-        "        self._print(\"keyboard control thread started\")\n"
-        "        while self._running:\n"
-        "            event = pygame.event.wait()\n"
-        "\n"
-        "    def run(self):\n"
-        "        while self._running:\n"
-        "            if not self._player.is_playing() and not self._playbackStopped:\n"
-        "                if movie is not None: #just to avoid errors\n"
-        "                    movie.was_played() # type: ignore\n"
-        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
-        "            time.sleep(0.002)\n"
+    assert source.count("def _rick_tv_show_interstitial_ad(self):") == 1
+    assert source.count("if not self._firstStart and not self._rick_tv_skip_next_interstitial:") == 1
+    assert source.count("self._rick_tv_show_interstitial_ad()") == 1
+    assert "_rick_tv_prime_interstitial_background" not in source
+    assert "_rick_tv_should_prime_interstitial_background" not in source
+
+    interstitial_index = source.index("self._rick_tv_show_interstitial_ad()")
+    played_index = source.index("movie.was_played() # type: ignore")
+    play_index = source.index("self._player.play(movie, loop=player_loop, vol = self._sound_vol)")
+    assert interstitial_index < played_index < play_index
+
+
+def test_videolooper_override_hides_framebuffer_console_before_raw_frame_writes():
+    source = VIDEO_LOOPER_OVERRIDE.read_text()
+
+    assert "def _rick_tv_prepare_framebuffer_console(self):" in source
+    assert source.count("self._rick_tv_prepare_framebuffer_console()") >= 2
+    assert "/sys/class/graphics/fbcon/cursor_blink" in source
+    assert "/dev/tty1" in source
+
+
+def test_omxplayer_override_uses_nonblocking_stop():
+    source = OMX_PLAYER_OVERRIDE.read_text()
+
+    assert "self.stop(0)  # Up to 3 second delay to let the old player stop." in source
+    assert "self.stop(3)  # Up to 3 second delay to let the old player stop." not in source
+
+
+def test_installer_replaces_zip_entries_and_removes_stale_bytecode(tmp_path):
+    installer = load_installer()
+    egg_path = tmp_path / "Adafruit_Video_Looper-1.0.21-py3.7.egg"
+
+    with zipfile.ZipFile(egg_path, "w") as egg:
+        egg.writestr("Adafruit_Video_Looper/video_looper.py", "old video")
+        egg.writestr("Adafruit_Video_Looper/omxplayer.py", "old omx")
+        egg.writestr("Adafruit_Video_Looper/__pycache__/video_looper.cpython-37.pyc", b"old")
+        egg.writestr("Adafruit_Video_Looper/__pycache__/omxplayer.cpython-37.pyc", b"old")
+        egg.writestr("Adafruit_Video_Looper/model.py", "kept")
+
+    installer.install_overrides(
+        egg_path,
+        {
+            "Adafruit_Video_Looper/video_looper.py": VIDEO_LOOPER_OVERRIDE,
+            "Adafruit_Video_Looper/omxplayer.py": OMX_PLAYER_OVERRIDE,
+        },
     )
 
-    assert "_rick_tv_interstitial_frame_path = '/home/pi/rick-tv/system/interstitial-ad.fb'" in patched
-    assert "self._rick_tv_skip_next_interstitial = True" in patched
-    assert "def _rick_tv_show_interstitial_ad(self):" in patched
-    interstitial_index = patched.index("self._rick_tv_show_interstitial_ad()")
-    played_index = patched.index("movie.was_played()")
-    assert interstitial_index < played_index
-
-
-def test_fifo_patch_hides_framebuffer_console_before_drawing_raw_frames():
-    patcher = load_patcher()
-
-    patched = patcher.patch_text(
-        "import urllib.parse\n"
-        "class VideoLooper:\n"
-        "    def __init__(self):\n"
-        "        self._playbackStopped = not self._play_on_startup\n"
-        "\n"
-        "    def _handle_keyboard_shortcuts(self):\n"
-        "        self._print(\"keyboard control thread started\")\n"
-        "        while self._running:\n"
-        "            event = pygame.event.wait()\n"
-        "\n"
-        "    def run(self):\n"
-        "        while self._running:\n"
-        "            if not self._player.is_playing() and not self._playbackStopped:\n"
-        "                if movie is not None: #just to avoid errors\n"
-        "                    movie.was_played() # type: ignore\n"
-        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
-        "            time.sleep(0.002)\n"
-    )
-
-    assert "def _rick_tv_prepare_framebuffer_console(self):" in patched
-    assert patched.count("self._rick_tv_prepare_framebuffer_console()") >= 2
-
-
-def test_fifo_patch_does_not_prime_interstitial_after_starting_video():
-    patcher = load_patcher()
-
-    patched = patcher.patch_text(
-        "import urllib.parse\n"
-        "class VideoLooper:\n"
-        "    def __init__(self):\n"
-        "        self._playbackStopped = not self._play_on_startup\n"
-        "\n"
-        "    def _handle_keyboard_shortcuts(self):\n"
-        "        self._print(\"keyboard control thread started\")\n"
-        "        while self._running:\n"
-        "            event = pygame.event.wait()\n"
-        "\n"
-        "    def run(self):\n"
-        "        while self._running:\n"
-        "            if not self._player.is_playing() and not self._playbackStopped:\n"
-        "                if movie is not None: #just to avoid errors\n"
-        "                    movie.was_played() # type: ignore\n"
-        "                    self._player.play(movie, loop=player_loop, vol = self._sound_vol)\n"
-        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
-        "            time.sleep(0.002)\n"
-    )
-
-    play_index = patched.index("self._player.play(movie, loop=player_loop, vol = self._sound_vol)")
-    interstitial_index = patched.index("self._rick_tv_show_interstitial_ad()")
-    assert interstitial_index < play_index
-    assert "self._rick_tv_prime_interstitial_background()" not in patched
-    assert "def _rick_tv_prime_interstitial_background(self):" not in patched
-
-
-def test_fifo_patch_is_idempotent_for_rick_tv_runtime_hooks():
-    patcher = load_patcher()
-    source = (
-        "import urllib.parse\n"
-        "class VideoLooper:\n"
-        "    def __init__(self):\n"
-        "        self._playbackStopped = not self._play_on_startup\n"
-        "\n"
-        "    def _handle_keyboard_shortcuts(self):\n"
-        "        self._print(\"keyboard control thread started\")\n"
-        "        while self._running:\n"
-        "            event = pygame.event.wait()\n"
-        "\n"
-        "    def run(self):\n"
-        "        while self._running:\n"
-        "            if not self._player.is_playing() and not self._playbackStopped:\n"
-        "                if movie is not None: #just to avoid errors\n"
-        "                    movie.was_played() # type: ignore\n"
-        "                    self._player.play(movie, loop=player_loop, vol = self._sound_vol)\n"
-        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
-        "            time.sleep(0.002)\n"
-    )
-
-    patched = patcher.patch_text(patcher.patch_text(source))
-
-    assert patched.count("_rick_tv_fifo_path = self._config.get") == 1
-    assert patched.count("_rick_tv_interstitial_frame_path =") == 1
-    assert "_rick_tv_should_prime_interstitial_background" not in patched
-    assert patched.count("if not self._firstStart and not self._rick_tv_skip_next_interstitial:") == 1
-    assert patched.count("def _rick_tv_frame_for_display(self, frame_path):") == 1
-    assert patched.count("def _rick_tv_show_transition_placeholder(self):") == 1
-    assert patched.count("def _rick_tv_show_interstitial_ad(self):") == 1
-    assert patched.count("def _rick_tv_prime_interstitial_background(self):") == 0
-    assert patched.count("self._rick_tv_prime_interstitial_background()") == 0
-    assert patched.count("if movie is None:\n                        continue") <= 1
-
-
-def test_fifo_patch_does_not_show_interstitial_after_skipped_channel_transition():
-    patcher = load_patcher()
-
-    patched = patcher.patch_text(
-        "import urllib.parse\n"
-        "class VideoLooper:\n"
-        "    def __init__(self):\n"
-        "        self._playbackStopped = not self._play_on_startup\n"
-        "\n"
-        "    def _handle_keyboard_shortcuts(self):\n"
-        "        self._print(\"keyboard control thread started\")\n"
-        "        while self._running:\n"
-        "            event = pygame.event.wait()\n"
-        "\n"
-        "    def run(self):\n"
-        "        while self._running:\n"
-        "            if not self._player.is_playing() and not self._playbackStopped:\n"
-        "                if movie is not None: #just to avoid errors\n"
-        "                    movie.was_played() # type: ignore\n"
-        "                    self._player.play(movie, loop=player_loop, vol = self._sound_vol)\n"
-        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
-        "            time.sleep(0.002)\n"
-    )
-
-    guard_index = patched.index("if not self._firstStart and not self._rick_tv_skip_next_interstitial:")
-    skip_index = patched.index("self._rick_tv_skip_next_interstitial = False", guard_index)
-    play_index = patched.index("self._player.play(movie, loop=player_loop, vol = self._sound_vol)")
-    assert guard_index < skip_index < play_index
-    assert "self._rick_tv_prime_interstitial_background" not in patched
+    with zipfile.ZipFile(egg_path) as egg:
+        assert egg.read("Adafruit_Video_Looper/video_looper.py") == VIDEO_LOOPER_OVERRIDE.read_bytes()
+        assert egg.read("Adafruit_Video_Looper/omxplayer.py") == OMX_PLAYER_OVERRIDE.read_bytes()
+        assert egg.read("Adafruit_Video_Looper/model.py") == b"kept"
+        assert "Adafruit_Video_Looper/__pycache__/video_looper.cpython-37.pyc" not in egg.namelist()
+        assert "Adafruit_Video_Looper/__pycache__/omxplayer.cpython-37.pyc" not in egg.namelist()
