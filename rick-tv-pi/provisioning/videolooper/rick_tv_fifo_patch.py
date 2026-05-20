@@ -224,12 +224,6 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
         return stride * height
 
     def _rick_tv_frame_for_display(self, frame_path):
-        try:
-            width, height = self._rick_tv_framebuffer_size()
-            stride = self._rick_tv_read_int('/sys/class/graphics/fb0/stride')
-        except OSError as exc:
-            self._print(f\"Rick TV transition/interstitial framebuffer unavailable: {exc}\")
-            return None
         expected_bytes = self._rick_tv_framebuffer_bytes()
         if expected_bytes is None:
             return None
@@ -237,7 +231,7 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
         try:
             fd = os.open(frame_path, os.O_RDONLY)
             try:
-                frame = os.read(fd, os.fstat(fd).st_size)
+                frame = os.read(fd, 8 * 1024 * 1024)
             finally:
                 os.close(fd)
         except OSError as exc:
@@ -246,80 +240,15 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
 
         if len(frame) == expected_bytes:
             return frame
-        if len(frame) < expected_bytes:
+        if len(frame) > expected_bytes:
             self._print(
-                f\"Rick TV frame too small: got {len(frame)} bytes, expected {expected_bytes} bytes. Zero-padding.\"
+                f\"Rick TV frame too large: got {len(frame)} bytes, expected {expected_bytes} bytes. Truncating.\"
             )
-            return frame + b\"\\0\" * (expected_bytes - len(frame))
-
+            return frame[:expected_bytes]
         self._print(
-            f\"Rick TV frame too large: got {len(frame)} bytes, expected {expected_bytes} bytes. Resizing.\"
+            f\"Rick TV frame too small: got {len(frame)} bytes, expected {expected_bytes} bytes. Zero-padding.\"
         )
-        src_size = self._rick_tv_guess_frame_size(len(frame))
-        if src_size is None:
-            self._print(\"Rick TV frame has unsupported size to infer resolution; truncating to framebuffer size.\")
-            return frame[:expected_bytes]
-        src_width, src_height = src_size
-        if src_width == 0 or src_height == 0:
-            self._print(\"Rick TV frame has zero inferred resolution; truncating to framebuffer size.\")
-            return frame[:expected_bytes]
-        return self._rick_tv_resize_frame_to_display(frame, src_width, src_height, width, height, stride)
-
-    def _rick_tv_guess_frame_size(self, frame_length):
-        if frame_length % 4 != 0:
-            return None
-        pixels = frame_length // 4
-        if pixels <= 0:
-            return None
-        display_width, display_height = self._rick_tv_framebuffer_size()
-        display_area = display_width * display_height
-        try:
-            display_aspect = float(display_width) / float(display_height)
-        except Exception:
-            display_aspect = 1.0
-
-        best = None
-        best_score = None
-        max_width = int(pixels ** 0.5) + 1
-        for src_width in range(1, max_width + 1):
-            if pixels % src_width != 0:
-                continue
-            src_height = pixels // src_width
-            if src_height == 0:
-                continue
-            for candidate_width, candidate_height in ((src_width, src_height), (src_height, src_width)):
-                if candidate_height == 0:
-                    continue
-                aspect_error = abs((float(candidate_width) / float(candidate_height)) - display_aspect)
-                if display_area > 0:
-                    area_error = abs((candidate_width * candidate_height) - display_area) / float(display_area)
-                else:
-                    area_error = 0.0
-                score = aspect_error + area_error
-                if best is None or score < best_score:
-                    best = (candidate_width, candidate_height)
-                    best_score = score
-
-        return best
-
-    def _rick_tv_resize_frame_to_display(self, frame, src_width, src_height, dst_width, dst_height, dst_stride):
-        if src_width == dst_width and src_height == dst_height:
-            return frame[:dst_stride * dst_height]
-        if src_width <= 0 or src_height <= 0:
-            return b\"\\0\" * (dst_stride * dst_height)
-
-        src_stride = src_width * 4
-        resized = bytearray(dst_stride * dst_height)
-        for dst_y in range(dst_height):
-            src_y = (dst_y * src_height) // dst_height
-            src_row = src_y * src_stride
-            dst_row = dst_y * dst_stride
-            for dst_x in range(dst_width):
-                src_x = (dst_x * src_width) // dst_width
-                src = src_row + src_x * 4
-                dst = dst_row + dst_x * 4
-                resized[dst:dst + 4] = frame[src:src + 4]
-        return bytes(resized)
+        return frame + b\"\\0\" * (expected_bytes - len(frame))
 
     def _rick_tv_show_transition_placeholder(self):
         frame = self._rick_tv_transition_frame
