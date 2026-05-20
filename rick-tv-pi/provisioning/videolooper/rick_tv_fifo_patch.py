@@ -126,6 +126,7 @@ INIT_PATCH = """\
         self._rick_tv_interstitial_frame_path = '/home/pi/rick-tv/system/interstitial-ad.fb'
         self._rick_tv_interstitial_frame = None
         self._rick_tv_skip_next_interstitial = False
+        self._rick_tv_should_prime_interstitial_background = False
 """
 LEGACY_INIT_PATCHES = (
     """\
@@ -145,6 +146,27 @@ RUN_PLAYLIST_FILE_GUARD = """\
                     if movie is None:
                         continue
 
+"""
+RUN_INTERSTITIAL_OLD_PATCH = """\
+                    if movie is None:
+                        continue
+
+                    if not self._firstStart and not self._rick_tv_skip_next_interstitial:
+                        self._rick_tv_show_interstitial_ad()
+                    self._rick_tv_skip_next_interstitial = False
+                    movie.was_played() # type: ignore
+"""
+RUN_INTERSTITIAL_GUARDED_PATCH = """\
+                    if movie is None:
+                        continue
+
+                    self._rick_tv_should_prime_interstitial_background = (
+                        not self._firstStart and not self._rick_tv_skip_next_interstitial
+                    )
+                    if self._rick_tv_should_prime_interstitial_background:
+                        self._rick_tv_show_interstitial_ad()
+                    self._rick_tv_skip_next_interstitial = False
+                    movie.was_played() # type: ignore
 """
 PRIME_INTERSTITIAL_BACKGROUND_PATCH = """\
                     self._player.play(movie, loop=player_loop, vol = self._sound_vol)
@@ -353,6 +375,9 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
 
     def _rick_tv_prime_interstitial_background(self):
         try:
+            if not self._rick_tv_should_prime_interstitial_background:
+                return
+            self._rick_tv_should_prime_interstitial_background = False
             time.sleep(0.25)
             if self._player.is_playing():
                 self._rick_tv_show_interstitial_ad()
@@ -688,6 +713,12 @@ def patch_text(text: str) -> str:
     text = insert_once(text, IMPORT_MARKER, IMPORT_PATCH, after=True)
     text = insert_once(text, INIT_MARKER, INIT_PATCH, after=False)
     text = text.replace(INIT_PATCH + INIT_PATCH, INIT_PATCH)
+    if "self._rick_tv_should_prime_interstitial_background = False" not in text:
+        text = text.replace(
+            "        self._rick_tv_skip_next_interstitial = False\n",
+            "        self._rick_tv_skip_next_interstitial = False\n"
+            "        self._rick_tv_should_prime_interstitial_background = False\n",
+        )
     text = _remove_keyboard_fifo_injection(text)
     text = _inject_run_fifo_realtime(text)
     text = _upsert_method(text, "_rick_tv_open_fifo", OPEN_METHOD_PATCH)
@@ -760,14 +791,11 @@ def patch_text(text: str) -> str:
     )
     text = text.replace(PRIME_INTERSTITIAL_BACKGROUND_PATCH, PLAYER_PLAY_BLOCK)
     text = text.replace(PLAYER_PLAY_BLOCK, PRIME_INTERSTITIAL_BACKGROUND_PATCH)
-    if "if not self._firstStart and not self._rick_tv_skip_next_interstitial:" not in text:
+    text = text.replace(RUN_INTERSTITIAL_OLD_PATCH, RUN_INTERSTITIAL_GUARDED_PATCH)
+    if "self._rick_tv_should_prime_interstitial_background = (" not in text:
         text = text.replace(
             "                    movie.was_played() # type: ignore\n",
-            RUN_PLAYLIST_FILE_GUARD
-            + "                    if not self._firstStart and not self._rick_tv_skip_next_interstitial:\n"
-            + "                        self._rick_tv_show_interstitial_ad()\n"
-            + "                    self._rick_tv_skip_next_interstitial = False\n"
-            + "                    movie.was_played() # type: ignore\n",
+            RUN_INTERSTITIAL_GUARDED_PATCH,
         )
     return text
 
