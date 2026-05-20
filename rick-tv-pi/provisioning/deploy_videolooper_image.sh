@@ -7,6 +7,12 @@ PI_PASSWORD="${PI_PASSWORD:-video}"
 REMOTE_SRC="/opt/rick-tv-src"
 REMOTE_VENV="/opt/rick-tv-pi/.venv"
 REMOTE_TMP="/tmp/rick-tv-deploy"
+PI_PROVISIONING="rick-tv-pi/provisioning"
+VIDEOLOOPER_PROVISIONING="$PI_PROVISIONING/videolooper"
+VIDEOLOOPER_OVERRIDES="$VIDEOLOOPER_PROVISIONING/overrides"
+VIDEOLOOPER_INSTALLER="$VIDEOLOOPER_PROVISIONING/rick_tv_fifo_patch.py"
+TRANSITION_FRAME="$VIDEOLOOPER_PROVISIONING/assets/transition-placeholder.fb"
+INTERSTITIAL_FRAME="$VIDEOLOOPER_PROVISIONING/assets/interstitial-ad.fb"
 
 usage() {
   cat <<'EOF'
@@ -92,6 +98,23 @@ package_project() {
     .
 }
 
+validate_deploy_payload() {
+  local required_paths=(
+    "$VIDEOLOOPER_INSTALLER"
+    "$VIDEOLOOPER_OVERRIDES/video_looper.py"
+    "$VIDEOLOOPER_OVERRIDES/omxplayer.py"
+    "$TRANSITION_FRAME"
+    "$INTERSTITIAL_FRAME"
+    "rick-tv-pi/systemd/rick-tv-pi.service"
+    "rick-tv-pi/provisioning/rick-tv-pi.env.example"
+  )
+
+  local path
+  for path in "${required_paths[@]}"; do
+    [[ -f "$ROOT_DIR/$path" ]] || die "missing deploy payload file: $path"
+  done
+}
+
 deploy() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -106,6 +129,7 @@ deploy() {
   require_cmd scp
   require_cmd ssh
   require_cmd tar
+  validate_deploy_payload
 
   local archive
   archive="$(mktemp -t rick-tv-src.XXXXXX.tar.gz)"
@@ -136,6 +160,7 @@ fi
 
 cp /opt/rick-tv-src/rick-tv-pi/systemd/rick-tv-pi.service /etc/systemd/system/rick-tv-pi.service
 python3 /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/configure_rick_tv_videolooper.py
+echo "Installing pinned Rick TV pi_video_looper overrides"
 python3 /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/rick_tv_fifo_patch.py
 cp /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/assets/transition-placeholder.fb /home/pi/rick-tv/system/transition-placeholder.fb
 cp /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/assets/interstitial-ad.fb /home/pi/rick-tv/system/interstitial-ad.fb

@@ -32,8 +32,8 @@ The deploy script:
 - installs `rick-tv-pi` into `/opt/rick-tv-pi/.venv`;
 - writes the systemd unit;
 - configures `/boot/video_looper.ini`;
-- patches the installed Adafruit Video Looper egg;
-- generates `/home/pi/rick-tv/system/transition-placeholder.fb`;
+- installs pinned Rick TV `pi_video_looper` overrides into the Adafruit Video Looper egg;
+- installs `/home/pi/rick-tv/system/transition-placeholder.fb`;
 - installs `/home/pi/rick-tv/system/interstitial-ad.fb`;
 - restarts `rick-tv-pi.service` and supervisor `video_looper`.
 
