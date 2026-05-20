@@ -214,17 +214,57 @@ PLAYLIST_MTIME_METHOD_PATCH = """\
 """
 
 TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
+    def _rick_tv_framebuffer_bytes(self):
+        try:
+            width, height = self._rick_tv_framebuffer_size()
+            stride = self._rick_tv_read_int('/sys/class/graphics/fb0/stride')
+        except OSError as exc:
+            self._print(f\"Rick TV transition placeholder framebuffer size unavailable: {exc}\")
+            return None
+        return stride * height
+
+    def _rick_tv_frame_for_display(self, frame_path):
+        expected_bytes = self._rick_tv_framebuffer_bytes()
+        if expected_bytes is None:
+            return None
+
+        try:
+            fd = os.open(frame_path, os.O_RDONLY)
+            try:
+                frame = os.read(fd, 8 * 1024 * 1024)
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            self._print(f\"Rick TV transition/interstitial frame unavailable: {exc}\")
+            return None
+
+        if len(frame) == expected_bytes:
+            return frame
+        if len(frame) > expected_bytes:
+            self._print(
+                f\"Rick TV frame too large: got {len(frame)} bytes, expected {expected_bytes} bytes. Truncating.\"
+            )
+            return frame[:expected_bytes]
+        self._print(
+            f\"Rick TV frame too small: got {len(frame)} bytes, expected {expected_bytes} bytes. Zero-padding.\"
+        )
+        return frame + b\"\\0\" * (expected_bytes - len(frame))
+
     def _rick_tv_show_transition_placeholder(self):
         frame = self._rick_tv_transition_frame
+        expected_bytes = self._rick_tv_framebuffer_bytes()
+        if expected_bytes is None:
+            return
         if frame is None:
-            try:
-                fd = os.open(self._rick_tv_transition_frame_path, os.O_RDONLY)
-                try:
-                    frame = os.read(fd, 8 * 1024 * 1024)
-                finally:
-                    os.close(fd)
-            except OSError as exc:
-                self._print(f\"Rick TV transition placeholder unavailable: {exc}\")
+            frame = self._rick_tv_frame_for_display(self._rick_tv_transition_frame_path)
+            if frame is None:
+                return
+            if len(frame) != expected_bytes:
+                return
+            self._rick_tv_transition_frame = frame
+        elif len(frame) != expected_bytes:
+            frame = self._rick_tv_frame_for_display(self._rick_tv_transition_frame_path)
+            if frame is None or len(frame) != expected_bytes:
                 return
             self._rick_tv_transition_frame = frame
         if not frame:
@@ -240,15 +280,19 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
 
     def _rick_tv_show_interstitial_ad(self):
         frame = self._rick_tv_interstitial_frame
+        expected_bytes = self._rick_tv_framebuffer_bytes()
+        if expected_bytes is None:
+            return
         if frame is None:
-            try:
-                fd = os.open(self._rick_tv_interstitial_frame_path, os.O_RDONLY)
-                try:
-                    frame = os.read(fd, 8 * 1024 * 1024)
-                finally:
-                    os.close(fd)
-            except OSError as exc:
-                self._print(f\"Rick TV interstitial ad unavailable: {exc}\")
+            frame = self._rick_tv_frame_for_display(self._rick_tv_interstitial_frame_path)
+            if frame is None:
+                return
+            if len(frame) != expected_bytes:
+                return
+            self._rick_tv_interstitial_frame = frame
+        elif len(frame) != expected_bytes:
+            frame = self._rick_tv_frame_for_display(self._rick_tv_interstitial_frame_path)
+            if frame is None or len(frame) != expected_bytes:
                 return
             self._rick_tv_interstitial_frame = frame
         if not frame:
