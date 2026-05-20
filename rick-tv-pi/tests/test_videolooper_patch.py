@@ -135,6 +135,36 @@ def test_fifo_patch_hides_framebuffer_console_before_drawing_raw_frames():
     assert patched.count("self._rick_tv_prepare_framebuffer_console()") >= 2
 
 
+def test_fifo_patch_primes_interstitial_background_after_starting_video():
+    patcher = load_patcher()
+
+    patched = patcher.patch_text(
+        "import urllib.parse\n"
+        "class VideoLooper:\n"
+        "    def __init__(self):\n"
+        "        self._playbackStopped = not self._play_on_startup\n"
+        "\n"
+        "    def _handle_keyboard_shortcuts(self):\n"
+        "        self._print(\"keyboard control thread started\")\n"
+        "        while self._running:\n"
+        "            event = pygame.event.wait()\n"
+        "\n"
+        "    def run(self):\n"
+        "        while self._running:\n"
+        "            if not self._player.is_playing() and not self._playbackStopped:\n"
+        "                if movie is not None: #just to avoid errors\n"
+        "                    self._player.play(movie, loop=player_loop, vol = self._sound_vol)\n"
+        "                    movie.was_played() # type: ignore\n"
+        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
+        "            time.sleep(0.002)\n"
+    )
+
+    play_index = patched.index("self._player.play(movie, loop=player_loop, vol = self._sound_vol)")
+    prime_index = patched.index("self._rick_tv_prime_interstitial_background()")
+    assert play_index < prime_index
+    assert "def _rick_tv_prime_interstitial_background(self):" in patched
+
+
 def test_fifo_patch_is_idempotent_for_rick_tv_runtime_hooks():
     patcher = load_patcher()
     source = (
@@ -161,4 +191,10 @@ def test_fifo_patch_is_idempotent_for_rick_tv_runtime_hooks():
 
     assert patched.count("_rick_tv_fifo_path = self._config.get") == 1
     assert patched.count("_rick_tv_interstitial_frame_path =") == 1
-    assert patched.count("self._rick_tv_show_interstitial_ad()") == 1
+    assert patched.count("if not self._firstStart and not self._rick_tv_skip_next_interstitial:") == 1
+    assert patched.count("def _rick_tv_frame_for_display(self, frame_path):") == 1
+    assert patched.count("def _rick_tv_show_transition_placeholder(self):") == 1
+    assert patched.count("def _rick_tv_show_interstitial_ad(self):") == 1
+    assert patched.count("def _rick_tv_prime_interstitial_background(self):") == 1
+    assert patched.count("self._rick_tv_prime_interstitial_background()") == 1
+    assert patched.count("if movie is None:\n                        continue") <= 1

@@ -146,6 +146,31 @@ RUN_PLAYLIST_FILE_GUARD = """\
                         continue
 
 """
+PRIME_INTERSTITIAL_BACKGROUND_PATCH = """\
+                    self._player.play(movie, loop=player_loop, vol = self._sound_vol)
+                    self._rick_tv_prime_interstitial_background()
+"""
+PLAYER_PLAY_BLOCK = """\
+                    self._player.play(movie, loop=player_loop, vol = self._sound_vol)
+"""
+RICK_TV_FRAME_METHODS = (
+    "_rick_tv_framebuffer_bytes",
+    "_rick_tv_frame_for_display",
+    "_rick_tv_show_transition_placeholder",
+    "_rick_tv_show_interstitial_ad",
+    "_rick_tv_prepare_framebuffer_console",
+    "_rick_tv_prime_interstitial_background",
+    "_rick_tv_build_transition_frame",
+    "_rick_tv_framebuffer_size",
+    "_rick_tv_read_int",
+    "_rick_tv_read_text",
+    "_rick_tv_set_pixel",
+    "_rick_tv_rect",
+    "_rick_tv_rect_outline",
+    "_rick_tv_draw_text",
+    "_rick_tv_guess_frame_size",
+    "_rick_tv_resize_frame_to_display",
+)
 
 OPEN_METHOD_PATCH = """\
     def _rick_tv_open_fifo(self):
@@ -326,6 +351,14 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
         except OSError:
             pass
 
+    def _rick_tv_prime_interstitial_background(self):
+        try:
+            time.sleep(0.25)
+            if self._player.is_playing():
+                self._rick_tv_show_interstitial_ad()
+        except Exception as exc:
+            self._print(f\"Rick TV interstitial background prime failed: {exc}\")
+
     def _rick_tv_build_transition_frame(self):
         try:
             width, height = self._rick_tv_framebuffer_size()
@@ -466,6 +499,36 @@ def _method_block_indices(lines: list[str], method_name: str) -> Tuple[int, int]
             return start, end
 
     return start, len(lines)
+
+
+def _remove_method(text: str, method_name: str) -> Tuple[str, bool]:
+    lines = text.splitlines(keepends=True)
+    marker = f"    def {method_name}(self"
+    start = None
+    for index, line in enumerate(lines):
+        if line.startswith(marker):
+            start = index
+            break
+    if start is None:
+        return text, False
+
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        if lines[index].startswith("    def "):
+            end = index
+            break
+    if start > 0 and lines[start - 1].strip() == "":
+        start -= 1
+    return "".join(lines[:start] + lines[end:]), True
+
+
+def _remove_methods(text: str, method_names: Tuple[str, ...]) -> str:
+    for method_name in method_names:
+        while True:
+            text, removed = _remove_method(text, method_name)
+            if not removed:
+                break
+    return text
 
 
 def _inject_run_fifo_realtime(text: str) -> str:
@@ -620,6 +683,7 @@ def _patch_target(
 def patch_text(text: str) -> str:
     for init_patch in LEGACY_INIT_PATCHES:
         text = text.replace(init_patch, "")
+    text = _remove_methods(text, RICK_TV_FRAME_METHODS)
     text = _remove_rick_tv_init_patch(text)
     text = insert_once(text, IMPORT_MARKER, IMPORT_PATCH, after=True)
     text = insert_once(text, INIT_MARKER, INIT_PATCH, after=False)
@@ -694,7 +758,9 @@ def patch_text(text: str) -> str:
         "                    if \".m3u\" in movie.filename: # type: ignore\n",
         "                    if movie is not None and \".m3u\" in movie.filename: # type: ignore\n",
     )
-    if "self._rick_tv_show_interstitial_ad()" not in text:
+    text = text.replace(PRIME_INTERSTITIAL_BACKGROUND_PATCH, PLAYER_PLAY_BLOCK)
+    text = text.replace(PLAYER_PLAY_BLOCK, PRIME_INTERSTITIAL_BACKGROUND_PATCH)
+    if "if not self._firstStart and not self._rick_tv_skip_next_interstitial:" not in text:
         text = text.replace(
             "                    movie.was_played() # type: ignore\n",
             RUN_PLAYLIST_FILE_GUARD
