@@ -108,6 +108,33 @@ def test_fifo_patch_draws_interstitial_ad_between_playlist_videos_only():
     assert interstitial_index < played_index
 
 
+def test_fifo_patch_hides_framebuffer_console_before_drawing_raw_frames():
+    patcher = load_patcher()
+
+    patched = patcher.patch_text(
+        "import urllib.parse\n"
+        "class VideoLooper:\n"
+        "    def __init__(self):\n"
+        "        self._playbackStopped = not self._play_on_startup\n"
+        "\n"
+        "    def _handle_keyboard_shortcuts(self):\n"
+        "        self._print(\"keyboard control thread started\")\n"
+        "        while self._running:\n"
+        "            event = pygame.event.wait()\n"
+        "\n"
+        "    def run(self):\n"
+        "        while self._running:\n"
+        "            if not self._player.is_playing() and not self._playbackStopped:\n"
+        "                if movie is not None: #just to avoid errors\n"
+        "                    movie.was_played() # type: ignore\n"
+        "            # Give the CPU some time to do other tasks. low values increase \"responsiveness to changes\" and reduce the pause between files\n"
+        "            time.sleep(0.002)\n"
+    )
+
+    assert "def _rick_tv_prepare_framebuffer_console(self):" in patched
+    assert patched.count("self._rick_tv_prepare_framebuffer_console()") >= 2
+
+
 def test_fifo_patch_is_idempotent_for_rick_tv_runtime_hooks():
     patcher = load_patcher()
     source = (

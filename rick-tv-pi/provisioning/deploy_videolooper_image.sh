@@ -137,7 +137,7 @@ fi
 cp /opt/rick-tv-src/rick-tv-pi/systemd/rick-tv-pi.service /etc/systemd/system/rick-tv-pi.service
 python3 /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/configure_rick_tv_videolooper.py
 python3 /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/rick_tv_fifo_patch.py
-python3 /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/show_transition_placeholder.py 0 /home/pi/rick-tv/system/transition-placeholder.fb
+cp /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/assets/transition-placeholder.fb /home/pi/rick-tv/system/transition-placeholder.fb
 cp /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/assets/interstitial-ad.fb /home/pi/rick-tv/system/interstitial-ad.fb
 python3 /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/generate_channel_playlists.py || true
 

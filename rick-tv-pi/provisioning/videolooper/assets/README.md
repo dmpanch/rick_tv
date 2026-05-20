@@ -1,8 +1,11 @@
 # Videolooper framebuffer assets
 
-`interstitial-ad.fb` is a 1024x768 BGRA framebuffer image used between videos inside the same Rick TV channel.
+Both `.fb` files are raw 640x480 BGRA framebuffer images for the project display:
 
-It is derived from a cropped, text-free visible region of the public-domain cover of *Amazing Stories*, April 1942:
+- `transition-placeholder.fb` is used while switching channels.
+- `interstitial-ad.fb` is used between videos inside the same Rick TV channel.
+
+`interstitial-ad.fb` is derived from a cropped, text-free visible region of the public-domain cover of *Amazing Stories*, April 1942:
 
 https://commons.wikimedia.org/wiki/File:Amazing_stories_194204.jpg
 

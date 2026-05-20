@@ -269,6 +269,7 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
             self._rick_tv_transition_frame = frame
         if not frame:
             return
+        self._rick_tv_prepare_framebuffer_console()
         try:
             fd = os.open('/dev/fb0', os.O_WRONLY)
             try:
@@ -297,6 +298,7 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
             self._rick_tv_interstitial_frame = frame
         if not frame:
             return
+        self._rick_tv_prepare_framebuffer_console()
         try:
             fd = os.open('/dev/fb0', os.O_WRONLY)
             try:
@@ -305,6 +307,24 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
                 os.close(fd)
         except OSError as exc:
             self._print(f\"Rick TV interstitial ad unavailable: {exc}\")
+
+    def _rick_tv_prepare_framebuffer_console(self):
+        try:
+            fd = os.open('/sys/class/graphics/fbcon/cursor_blink', os.O_WRONLY)
+            try:
+                os.write(fd, b'0')
+            finally:
+                os.close(fd)
+        except OSError:
+            pass
+        try:
+            fd = os.open('/dev/tty1', os.O_WRONLY | os.O_NONBLOCK)
+            try:
+                os.write(fd, b'\\033[?25l\\033[2J\\033[H')
+            finally:
+                os.close(fd)
+        except OSError:
+            pass
 
     def _rick_tv_build_transition_frame(self):
         try:
