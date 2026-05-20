@@ -126,7 +126,6 @@ INIT_PATCH = """\
         self._rick_tv_interstitial_frame_path = '/home/pi/rick-tv/system/interstitial-ad.fb'
         self._rick_tv_interstitial_frame = None
         self._rick_tv_skip_next_interstitial = False
-        self._rick_tv_should_prime_interstitial_background = False
 """
 LEGACY_INIT_PATCHES = (
     """\
@@ -160,7 +159,6 @@ RUN_INTERSTITIAL_GUARDED_PATCH = """\
                     if movie is None:
                         continue
 
-                    self._rick_tv_should_prime_interstitial_background = self._rick_tv_skip_next_interstitial
                     if not self._firstStart and not self._rick_tv_skip_next_interstitial:
                         self._rick_tv_show_interstitial_ad()
                     self._rick_tv_skip_next_interstitial = False
@@ -371,17 +369,6 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
         except OSError:
             pass
 
-    def _rick_tv_prime_interstitial_background(self):
-        try:
-            if not self._rick_tv_should_prime_interstitial_background:
-                return
-            self._rick_tv_should_prime_interstitial_background = False
-            time.sleep(1.0)
-            if self._player.is_playing():
-                self._rick_tv_show_interstitial_ad()
-        except Exception as exc:
-            self._print(f\"Rick TV interstitial background prime failed: {exc}\")
-
     def _rick_tv_build_transition_frame(self):
         try:
             width, height = self._rick_tv_framebuffer_size()
@@ -554,6 +541,64 @@ def _remove_methods(text: str, method_names: Tuple[str, ...]) -> str:
     return text
 
 
+def _remove_run_interstitial_injection(text: str) -> str:
+    lines = text.splitlines()
+    cleaned: list[str] = []
+    for line in lines:
+        if line.strip() == "movie.was_played() # type: ignore":
+            while _pop_last_interstitial_injection_block(cleaned):
+                pass
+        cleaned.append(line)
+    return "\n".join(cleaned)
+
+
+def _pop_last_interstitial_injection_block(lines: list[str]) -> bool:
+    while lines and lines[-1].strip() == "":
+        lines.pop()
+
+    if not lines:
+        return False
+
+    if lines[-1].strip() == "self._rick_tv_skip_next_interstitial = False":
+        lines.pop()
+        return True
+
+    if lines[-1].strip() == "self._rick_tv_show_interstitial_ad()":
+        lines.pop()
+        if lines and lines[-1].strip() in (
+            "if not self._firstStart and not self._rick_tv_skip_next_interstitial:",
+            "if self._rick_tv_should_prime_interstitial_background:",
+        ):
+            lines.pop()
+        return True
+
+    if lines[-1].strip() == ")":
+        lines.pop()
+        while lines:
+            previous = lines.pop()
+            if previous.strip().startswith("self._rick_tv_should_prime_interstitial_background ="):
+                break
+        return True
+
+    if lines[-1].strip() in (
+        "not self._firstStart and not self._rick_tv_skip_next_interstitial",
+        "not self._firstStart and not self._rick_tv_skip_next_interstitial",
+    ):
+        lines.pop()
+        return True
+
+    if lines[-1].strip() == "continue":
+        lines.pop()
+        while lines and lines[-1].strip() == "":
+            lines.pop()
+        if lines and lines[-1].strip() == "if movie is None:":
+            lines.pop()
+            return True
+        return True
+
+    return False
+
+
 def _inject_run_fifo_realtime(text: str) -> str:
     lines = text.splitlines()
     run_block = _method_block_indices(lines, "run")
@@ -625,7 +670,7 @@ def _remove_keyboard_fifo_injection(text: str) -> str:
 
 
 def _remove_rick_tv_init_patch(text: str) -> str:
-    marker_index = text.find(INIT_MARKER)
+    marker_index = _find_init_marker_index(text)
     if marker_index == -1:
         return text
 
@@ -638,6 +683,19 @@ def _remove_rick_tv_init_patch(text: str) -> str:
         return text
 
     return text[:block_start] + text[marker_index:]
+
+
+def _find_init_marker_index(text: str) -> int:
+    marker_index = text.find(INIT_MARKER)
+    if marker_index != -1:
+        return marker_index
+
+    line_start = 0
+    for line in text.splitlines(keepends=True):
+        if line.strip() == INIT_MARKER.strip():
+            return line_start
+        line_start += len(line)
+    return -1
 
 
 def _upsert_method(text: str, method_name: str, replacement: str) -> str:
@@ -707,16 +765,11 @@ def patch_text(text: str) -> str:
     for init_patch in LEGACY_INIT_PATCHES:
         text = text.replace(init_patch, "")
     text = _remove_methods(text, RICK_TV_FRAME_METHODS)
+    text = _remove_run_interstitial_injection(text)
     text = _remove_rick_tv_init_patch(text)
-    text = insert_once(text, IMPORT_MARKER, IMPORT_PATCH, after=True)
-    text = insert_once(text, INIT_MARKER, INIT_PATCH, after=False)
+    text = _insert_import_patch(text)
+    text = _insert_init_patch(text)
     text = text.replace(INIT_PATCH + INIT_PATCH, INIT_PATCH)
-    if "self._rick_tv_should_prime_interstitial_background = False" not in text:
-        text = text.replace(
-            "        self._rick_tv_skip_next_interstitial = False\n",
-            "        self._rick_tv_skip_next_interstitial = False\n"
-            "        self._rick_tv_should_prime_interstitial_background = False\n",
-        )
     text = _remove_keyboard_fifo_injection(text)
     text = _inject_run_fifo_realtime(text)
     text = _upsert_method(text, "_rick_tv_open_fifo", OPEN_METHOD_PATCH)
@@ -788,14 +841,50 @@ def patch_text(text: str) -> str:
         "                    if movie is not None and \".m3u\" in movie.filename: # type: ignore\n",
     )
     text = text.replace(PRIME_INTERSTITIAL_BACKGROUND_PATCH, PLAYER_PLAY_BLOCK)
-    text = text.replace(PLAYER_PLAY_BLOCK, PRIME_INTERSTITIAL_BACKGROUND_PATCH)
-    text = text.replace(RUN_INTERSTITIAL_OLD_PATCH, RUN_INTERSTITIAL_GUARDED_PATCH)
-    if "self._rick_tv_should_prime_interstitial_background = self._rick_tv_skip_next_interstitial" not in text:
+    if "if not self._firstStart and not self._rick_tv_skip_next_interstitial:" not in text:
         text = text.replace(
             "                    movie.was_played() # type: ignore\n",
             RUN_INTERSTITIAL_GUARDED_PATCH,
         )
     return text
+
+
+def _insert_import_patch(text: str) -> str:
+    if IMPORT_PATCH.strip() in text:
+        return text
+    if IMPORT_MARKER in text:
+        return insert_once(text, IMPORT_MARKER, IMPORT_PATCH, after=True)
+
+    lines = text.splitlines(keepends=True)
+    insert_index = 0
+    for index, line in enumerate(lines):
+        if line.startswith("import ") or line.startswith("from "):
+            insert_index = index + 1
+    lines.insert(insert_index, IMPORT_PATCH)
+    return "".join(lines)
+
+
+def _insert_init_patch(text: str) -> str:
+    if INIT_PATCH.strip() in text:
+        return text
+    if "self._rick_tv_fifo_path = self._config.get(" in text:
+        return text
+    if INIT_MARKER in text:
+        return insert_once(text, INIT_MARKER, INIT_PATCH, after=False)
+
+    lines = text.splitlines(keepends=True)
+    marker = INIT_MARKER.strip()
+    for index, line in enumerate(lines):
+        if line.strip() == marker:
+            lines.insert(index, INIT_PATCH)
+            return "".join(lines)
+
+    for index, line in enumerate(lines):
+        if line.strip() == "#used for not waiting the first time":
+            lines.insert(index, INIT_PATCH)
+            return "".join(lines)
+
+    raise ValueError("Unable to find VideoLooper init insertion point")
 
 
 def patch_omxplayer_text(text: str) -> str:
