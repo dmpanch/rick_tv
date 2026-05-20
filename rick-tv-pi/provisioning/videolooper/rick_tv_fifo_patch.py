@@ -160,10 +160,8 @@ RUN_INTERSTITIAL_GUARDED_PATCH = """\
                     if movie is None:
                         continue
 
-                    self._rick_tv_should_prime_interstitial_background = (
-                        not self._firstStart and not self._rick_tv_skip_next_interstitial
-                    )
-                    if self._rick_tv_should_prime_interstitial_background:
+                    self._rick_tv_should_prime_interstitial_background = self._rick_tv_skip_next_interstitial
+                    if not self._firstStart and not self._rick_tv_skip_next_interstitial:
                         self._rick_tv_show_interstitial_ad()
                     self._rick_tv_skip_next_interstitial = False
                     movie.was_played() # type: ignore
@@ -378,7 +376,7 @@ TRANSITION_PLACEHOLDER_METHOD_PATCH = """\
             if not self._rick_tv_should_prime_interstitial_background:
                 return
             self._rick_tv_should_prime_interstitial_background = False
-            time.sleep(0.25)
+            time.sleep(1.0)
             if self._player.is_playing():
                 self._rick_tv_show_interstitial_ad()
         except Exception as exc:
@@ -792,7 +790,7 @@ def patch_text(text: str) -> str:
     text = text.replace(PRIME_INTERSTITIAL_BACKGROUND_PATCH, PLAYER_PLAY_BLOCK)
     text = text.replace(PLAYER_PLAY_BLOCK, PRIME_INTERSTITIAL_BACKGROUND_PATCH)
     text = text.replace(RUN_INTERSTITIAL_OLD_PATCH, RUN_INTERSTITIAL_GUARDED_PATCH)
-    if "self._rick_tv_should_prime_interstitial_background = (" not in text:
+    if "self._rick_tv_should_prime_interstitial_background = self._rick_tv_skip_next_interstitial" not in text:
         text = text.replace(
             "                    movie.was_played() # type: ignore\n",
             RUN_INTERSTITIAL_GUARDED_PATCH,

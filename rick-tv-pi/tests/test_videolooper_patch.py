@@ -166,7 +166,8 @@ def test_fifo_patch_primes_interstitial_background_after_starting_video():
     assert play_index < prime_index
     assert "def _rick_tv_prime_interstitial_background(self):" in patched
     assert "if not self._rick_tv_should_prime_interstitial_background:" in patched
-    assert "self._rick_tv_should_prime_interstitial_background = (" in patched
+    assert "self._rick_tv_should_prime_interstitial_background = self._rick_tv_skip_next_interstitial" in patched
+    assert "time.sleep(1.0)" in patched
 
 
 def test_fifo_patch_is_idempotent_for_rick_tv_runtime_hooks():
@@ -200,8 +201,8 @@ def test_fifo_patch_is_idempotent_for_rick_tv_runtime_hooks():
         patched.splitlines().count("        self._rick_tv_should_prime_interstitial_background = False")
         == 1
     )
-    assert patched.count("self._rick_tv_should_prime_interstitial_background = (") == 1
-    assert patched.count("if self._rick_tv_should_prime_interstitial_background:") == 1
+    assert patched.count("self._rick_tv_should_prime_interstitial_background = self._rick_tv_skip_next_interstitial") == 1
+    assert patched.count("if not self._firstStart and not self._rick_tv_skip_next_interstitial:") == 1
     assert patched.count("def _rick_tv_frame_for_display(self, frame_path):") == 1
     assert patched.count("def _rick_tv_show_transition_placeholder(self):") == 1
     assert patched.count("def _rick_tv_show_interstitial_ad(self):") == 1
@@ -210,7 +211,7 @@ def test_fifo_patch_is_idempotent_for_rick_tv_runtime_hooks():
     assert patched.count("if movie is None:\n                        continue") <= 1
 
 
-def test_fifo_patch_does_not_prime_interstitial_after_skipped_channel_transition():
+def test_fifo_patch_primes_interstitial_background_only_after_skipped_channel_transition():
     patcher = load_patcher()
 
     patched = patcher.patch_text(
@@ -234,7 +235,9 @@ def test_fifo_patch_does_not_prime_interstitial_after_skipped_channel_transition
         "            time.sleep(0.002)\n"
     )
 
-    flag_index = patched.index("self._rick_tv_should_prime_interstitial_background = (")
+    flag_index = patched.index(
+        "self._rick_tv_should_prime_interstitial_background = self._rick_tv_skip_next_interstitial"
+    )
     skip_index = patched.index("self._rick_tv_skip_next_interstitial = False", flag_index)
     play_index = patched.index("self._player.play(movie, loop=player_loop, vol = self._sound_vol)")
     assert flag_index < skip_index < play_index
