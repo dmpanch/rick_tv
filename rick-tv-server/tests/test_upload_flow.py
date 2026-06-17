@@ -111,3 +111,37 @@ def test_duplicate_upload_id_does_not_replace_existing_uploaded_file(tmp_path: P
 
     uploaded_path = settings.media_dir / "uploaded" / "item-1.mov"
     assert uploaded_path.read_bytes() == b"original uploaded source"
+
+
+def test_failed_upload_state_persists_message_and_is_not_ready(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    store = DeliveryStateStore(settings)
+    original_path = settings.media_dir / "uploaded" / "item-1.mov"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"source bytes")
+
+    store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=original_path,
+    )
+    store.mark_converting("item-1")
+
+    failed = store.mark_failed(
+        "item-1",
+        message="Video could not be prepared for Rick TV playback.",
+        channel_id="01_Citadel",
+    )
+
+    assert failed.status == "failed"
+    assert failed.failure_message == "Video could not be prepared for Rick TV playback."
+    assert failed.channel_id == "01_Citadel"
+    assert store.ready_items_for_channels(["01_Citadel"]) == []
+    assert store.has_active_media_for_channel("01_Citadel") is False
+
+    reloaded = DeliveryStateStore(settings)
+    assert reloaded.items["item-1"].status == "failed"
+    assert (
+        reloaded.items["item-1"].failure_message
+        == "Video could not be prepared for Rick TV playback."
+    )

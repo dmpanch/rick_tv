@@ -76,6 +76,7 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
         if item is None or item.status in {
             "uploaded",
             "converting",
+            "failed",
             "canceled",
             "deleted_server_side",
             "deleted_from_library",

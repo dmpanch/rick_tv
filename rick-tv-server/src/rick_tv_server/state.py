@@ -16,6 +16,7 @@ DeliveryStatus = Literal[
     "uploaded",
     "converting",
     "pending",
+    "failed",
     "canceled",
     "delivered",
     "archived",
@@ -27,6 +28,7 @@ DELIVERY_STATUSES: tuple[DeliveryStatus, ...] = (
     "uploaded",
     "converting",
     "pending",
+    "failed",
     "canceled",
     "delivered",
     "archived",
@@ -52,6 +54,7 @@ class DeliveryItem:
     channel_id: str | None = None
     filename: str | None = None
     sha256: str | None = None
+    failure_message: str | None = None
 
     @classmethod
     def from_json(cls, data: dict[str, object]) -> "DeliveryItem":
@@ -66,6 +69,7 @@ class DeliveryItem:
             channel_id=data.get("channel_id"),  # type: ignore[arg-type]
             filename=data.get("filename"),  # type: ignore[arg-type]
             sha256=data.get("sha256"),  # type: ignore[arg-type]
+            failure_message=data.get("failure_message"),  # type: ignore[arg-type]
         )
 
     def to_json(self) -> dict[str, object]:
@@ -144,6 +148,27 @@ class DeliveryStateStore:
             item.filename = filename
             item.sha256 = sha256
             self.last_channel_by_user[item.user_id] = channel_id
+            self._persist()
+            return replace(item)
+
+    def mark_failed(
+        self,
+        item_id: str,
+        *,
+        message: str,
+        channel_id: str | None = None,
+    ) -> DeliveryItem:
+        with self._locked_state():
+            item = self.items[item_id]
+            if item.status not in ("uploaded", "converting"):
+                raise ValueError(
+                    f"delivery item must be uploaded or converting before failed: {item_id}"
+                )
+
+            item.status = "failed"
+            item.failure_message = message
+            if channel_id is not None:
+                item.channel_id = channel_id
             self._persist()
             return replace(item)
 
@@ -339,6 +364,7 @@ class DeliveryStateStore:
                 if item.channel_id != channel_id:
                     continue
                 if item.status not in {
+                    "failed",
                     "canceled",
                     "deleted_from_library",
                 }:
