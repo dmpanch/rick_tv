@@ -39,6 +39,14 @@ def test_docker_compose_supports_local_smoke_without_external_env() -> None:
     assert "RICK_TV_API_TOKEN: ${RICK_TV_API_TOKEN:?" not in content
 
 
+def test_docker_compose_runs_services_as_host_user_by_default() -> None:
+    compose_file = PROJECT_ROOT / "docker-compose.yml"
+
+    content = compose_file.read_text(encoding="utf-8")
+
+    assert content.count('user: "${RICK_TV_UID:-1000}:${RICK_TV_GID:-1000}"') == 2
+
+
 def test_docker_compose_runs_bot_service_with_shared_runtime_volumes() -> None:
     compose_file = PROJECT_ROOT / "docker-compose.yml"
 

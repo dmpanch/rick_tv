@@ -49,6 +49,7 @@ Rick TV — это связка серверного и клиентского �
 cd rick-tv-server
 cp .env.example .env
 # отредактировать .env значениями под окружение
+# RICK_TV_UID=$(id -u), RICK_TV_GID=$(id -g) сохраняют runtime-файлы доступными на хосте
 ```
 
 2) Запустить сервис.
@@ -59,6 +60,8 @@ docker compose up -d --build
 ```
 
 Файл `docker-compose.yml` берёт значения `RICK_TV_*` из окружения (или `.env`).
+Контейнеры запускаются под `RICK_TV_UID:RICK_TV_GID`, чтобы bind-mounted
+`media/config/state` оставались читаемыми и редактируемыми с хоста.
 
 API запускается обычным `docker compose up`. Telegram runner находится в том же Compose-файле как сервис `rick-tv-bot`; он использует тот же image и общие `media/config/state` volumes. Для запуска бота задайте `RICK_TV_TELEGRAM_BOT_TOKEN` и `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`, затем включите профиль:
 

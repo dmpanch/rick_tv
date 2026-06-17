@@ -22,6 +22,9 @@ Set these environment variables before starting the service:
   `/var/lib/rick-tv/state`.
 - `RICK_TV_CHANNELS_PATH`: YAML channel registry path shared by the API, bot,
   and Pi sync. Defaults to `<RICK_TV_CONFIG_DIR>/channels.yml`.
+- `RICK_TV_UID` and `RICK_TV_GID`: host user/group used by Docker Compose when
+  running the API and bot containers. Defaults to `1000:1000` so bind-mounted
+  runtime files stay editable from the host on a typical Linux workstation.
 - `RICK_TV_TELEGRAM_BOT_TOKEN`: Telegram bot token. Required only for the
   `rick-tv-bot` service.
 - `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`: comma-separated allowlist of Telegram
@@ -36,6 +39,8 @@ From `rick-tv-server/`, create local runtime directories and start the service:
 mkdir -p media config state
 export RICK_TV_API_TOKEN="$(openssl rand -hex 32)"
 export RICK_TV_PUBLIC_BASE_URL='http://localhost:8080'
+export RICK_TV_UID="$(id -u)"
+export RICK_TV_GID="$(id -g)"
 docker compose up -d --build
 ```
 
@@ -47,6 +52,14 @@ The Compose file mounts:
 
 It publishes `8080:8080` and uses `restart: unless-stopped` so the server
 comes back after host restarts unless it was explicitly stopped.
+
+If runtime files were created earlier by root-owned containers, change ownership
+once before restarting with `RICK_TV_UID/GID`:
+
+```bash
+docker compose run --rm --user root --entrypoint sh rick-tv-server \
+  -lc "chown -R $(id -u):$(id -g) /etc/rick-tv /var/lib/rick-tv/media /var/lib/rick-tv/state"
+```
 
 The same Compose file also defines `rick-tv-bot`, a separate service using the
 same image and the same mounted runtime directories. The bot is behind the
