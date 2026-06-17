@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 
 from rick_tv_pi.channels import Channel
 from rick_tv_pi.config import PiSettings
-import rick_tv_pi.poller as poller_module
 from rick_tv_pi.poller import Poller
 from rick_tv_server.api import create_app
 from rick_tv_server.config import ServerSettings
@@ -15,7 +14,6 @@ from rick_tv_server.state import DeliveryStateStore
 
 def test_pi_poll_downloads_pending_server_media_and_archives_ack(
     tmp_path: Path,
-    monkeypatch,
 ):
     api_token = "contract-token"
     item_id = "contract-item-1"
@@ -63,13 +61,6 @@ def test_pi_poll_downloads_pending_server_media_and_archives_ack(
         media_root=pi_media_root,
     )
 
-    monkeypatch.setattr(
-        poller_module,
-        "validate_ready_profile",
-        lambda path: True,
-        raising=False,
-    )
-
     app = create_app(server_settings, store)
     client = TestClient(app, base_url="https://server.example")
 
@@ -86,7 +77,6 @@ def test_pi_poll_downloads_pending_server_media_and_archives_ack(
 
 def test_registry_channel_first_delivery_reaches_empty_pi_media_root(
     tmp_path: Path,
-    monkeypatch,
 ):
     api_token = "contract-token"
     item_id = "contract-item-1"
@@ -139,13 +129,6 @@ channels:
         metadata_path=tmp_path / "fresh-pi-config" / "channels.yml",
     )
 
-    monkeypatch.setattr(
-        poller_module,
-        "validate_ready_profile",
-        lambda path: True,
-        raising=False,
-    )
-
     app = create_app(server_settings, store)
     client = TestClient(app, base_url="https://server.example")
 
@@ -161,7 +144,6 @@ channels:
 
 def test_restore_all_requeues_library_and_delivers_to_fresh_pi(
     tmp_path: Path,
-    monkeypatch,
 ):
     api_token = "contract-token"
     item_id = "contract-item-1"
@@ -216,13 +198,6 @@ channels:
         metadata_path=tmp_path / "replacement-pi-config" / "channels.yml",
     )
 
-    monkeypatch.setattr(
-        poller_module,
-        "validate_ready_profile",
-        lambda path: True,
-        raising=False,
-    )
-
     app = create_app(server_settings, store)
     client = TestClient(app, base_url="https://server.example")
 
@@ -237,7 +212,6 @@ channels:
 
 def test_pi_poll_deletes_server_removed_media_and_acks_delete(
     tmp_path: Path,
-    monkeypatch,
 ):
     api_token = "contract-token"
     item_id = "contract-item-1"
@@ -293,13 +267,6 @@ channels:
         api_token=api_token,
         media_root=pi_media_root,
         metadata_path=tmp_path / "pi-config" / "channels.yml",
-    )
-
-    monkeypatch.setattr(
-        poller_module,
-        "validate_ready_profile",
-        lambda path: True,
-        raising=False,
     )
 
     app = create_app(server_settings, store)
