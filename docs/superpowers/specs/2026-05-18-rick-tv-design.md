@@ -118,7 +118,7 @@ The server validates that converted files match the expected ready profile befor
 Server deployment expectations:
 
 - Mounted media volume for the readable server library under `media/library/<channel_id>/<item_id>/...`.
-- Mounted config volume for legacy import config and reserved runtime config.
+- Mounted config volume for reserved runtime config.
 - Mounted state volume for the canonical SQLite DB, including channel registry, media items, per-user last selected channel, and remote commands.
 - Published HTTP service reachable by the Pi over the local network or another permitted network path.
 - Restart policy enabled.

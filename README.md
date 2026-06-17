@@ -148,9 +148,9 @@ sudo systemctl status rick-tv-pi.service
 
 Канал участвует только если внутри есть хотя бы один `.mp4`. Пустые папки не попадают в навигацию, плейлисты и список каналов для polling API до появления playable `.mp4`.
 
-Серверная SQLite DB является canonical registry для выбора каналов в Telegram и для первого опроса Pi. Endpoint `/api/v1/channels` отдаёт JSON вида `{"channels": {"01_Citadel": {"display_name": "Citadel"}}}`. Старый `channels.yml` используется только как legacy import при первом старте пустой DB.
+Серверная SQLite DB является canonical registry для выбора каналов в Telegram и для первого опроса Pi. Endpoint `/api/v1/channels` отдаёт JSON вида `{"channels": {"01_Citadel": {"display_name": "Citadel"}}}`.
 
-Если сервер стартует впервые без legacy `channels.yml` и `queue.json`, он создаёт пустую SQLite DB. `/api/v1/channels` вернёт `{"channels": {}}`, бот позволит добавить первый канал, а Pi с настроенным `RICK_TV_METADATA_PATH` не будет fallback-иться на локальные каналы до появления registry-каналов на сервере.
+Если сервер стартует впервые без каналов, он создаёт пустую SQLite DB. `/api/v1/channels` вернёт `{"channels": {}}`, бот позволит добавить первый канал, а Pi с настроенным `RICK_TV_METADATA_PATH` не будет fallback-иться на локальные каналы до появления registry-каналов на сервере.
 
 Серверная медиатека хранится в читаемой структуре `media/library/<channel_id>/<item_id>/original/...` и `media/library/<channel_id>/<item_id>/converted/...`. В DB сохраняются относительные пути, статус, delivery filename и `sha256` converted-файла.
 

@@ -65,7 +65,7 @@ def test_docker_compose_runs_bot_service_with_shared_runtime_volumes() -> None:
     )
     assert "RICK_TV_TELEGRAM_BOT_TOKEN" in content
     assert "RICK_TV_TELEGRAM_ALLOWED_USER_IDS" in content
-    assert "RICK_TV_CHANNELS_PATH: /etc/rick-tv/channels.yml" in content
+    assert "RICK_TV_CHANNELS_PATH" not in content
 
 
 def test_dockerignore_excludes_runtime_volume_directories() -> None:

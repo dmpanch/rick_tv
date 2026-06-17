@@ -11,7 +11,6 @@ services:
       RICK_TV_DB_PATH: ${RICK_TV_DB_PATH:-/var/lib/rick-tv/state/rick-tv.sqlite3}
       RICK_TV_API_TOKEN: ${RICK_TV_API_TOKEN:-change-me-local}
       RICK_TV_PUBLIC_BASE_URL: ${RICK_TV_PUBLIC_BASE_URL:-http://localhost:8080}
-      RICK_TV_CHANNELS_PATH: /etc/rick-tv/channels.yml
     volumes:
       - ${RICK_TV_DATA_DIR:-./data}/media:/var/lib/rick-tv/media
       - ${RICK_TV_DATA_DIR:-./data}/config:/etc/rick-tv
@@ -31,7 +30,6 @@ services:
       RICK_TV_DB_PATH: ${RICK_TV_DB_PATH:-/var/lib/rick-tv/state/rick-tv.sqlite3}
       RICK_TV_API_TOKEN: ${RICK_TV_API_TOKEN:-change-me-local}
       RICK_TV_PUBLIC_BASE_URL: ${RICK_TV_PUBLIC_BASE_URL:-http://localhost:8080}
-      RICK_TV_CHANNELS_PATH: /etc/rick-tv/channels.yml
       RICK_TV_TELEGRAM_BOT_TOKEN: ${RICK_TV_TELEGRAM_BOT_TOKEN:-}
       RICK_TV_TELEGRAM_ALLOWED_USER_IDS: ${RICK_TV_TELEGRAM_ALLOWED_USER_IDS:-}
     volumes:

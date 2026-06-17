@@ -26,10 +26,10 @@ The server becomes the canonical media library: it keeps original uploads and co
 - Modify: `rick-tv-server/.env.example`
 - Modify: `rick-tv-server/tests/test_main.py`
 
-- [x] Add server settings for `telegram_bot_token`, `telegram_allowed_user_ids`, and `channels_path`.
-- [x] Load `RICK_TV_TELEGRAM_BOT_TOKEN`, `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`, and `RICK_TV_CHANNELS_PATH` from env.
+- [x] Add server settings for `telegram_bot_token` and `telegram_allowed_user_ids`.
+- [x] Load `RICK_TV_TELEGRAM_BOT_TOKEN` and `RICK_TV_TELEGRAM_ALLOWED_USER_IDS` from env.
 - [x] Keep API startup working without bot token so `rick-tv-server` can still run independently.
-- [x] Add tests for env parsing, default `channels_path`, and allowed-user-id parsing.
+- [x] Add tests for env parsing and allowed-user-id parsing.
 
 ### Task 2: Channel Registry Store
 
@@ -83,7 +83,7 @@ The server becomes the canonical media library: it keeps original uploads and co
 
 - [x] Store API/bot-visible state in SQLite with transactional writes.
 - [x] Test that an API store instance sees pending items created by a separate bot store instance.
-- [x] Test startup migration from legacy files only when the SQLite DB is empty.
+- [x] Test empty SQLite first-start behavior and DB-backed state sharing.
 
 ### Task 6: Server Media Library Semantics
 

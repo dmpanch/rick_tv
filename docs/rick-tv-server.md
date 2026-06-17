@@ -26,9 +26,6 @@ Set these environment variables before starting the service:
 - `RICK_TV_DB_PATH`: canonical SQLite database path for channels, media library,
   delivery statuses, and bot channel preferences. Defaults to
   `<RICK_TV_STATE_DIR>/rick-tv.sqlite3`.
-- `RICK_TV_CHANNELS_PATH`: legacy YAML channel registry import path. If the DB
-  is empty, startup imports this file once and deletes it after successful
-  migration. Runtime channel changes are stored in SQLite.
 - `RICK_TV_UID` and `RICK_TV_GID`: host user/group used by Docker Compose when
   running the API and bot containers. Defaults to `1000:1000` so bind-mounted
   runtime files stay editable from the host on a typical Linux workstation.
@@ -99,8 +96,8 @@ using this generated shape:
 }
 ```
 
-If the DB is empty and no legacy `channels.yml` or `queue.json` exists, startup
-creates an empty DB and `/api/v1/channels` returns `{"channels": {}}`.
+If the DB starts empty, startup creates the schema and `/api/v1/channels`
+returns `{"channels": {}}`.
 
 The server also exposes a small authenticated remote-control API for the current
 single Pi appliance. `GET /api/v1/commands` returns pending commands, and

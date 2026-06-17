@@ -23,7 +23,7 @@
 - `rick-tv-pi/systemd/rick-tv-pi.service`: Pi service template with stdout/stderr journaling only.
 - `rick-tv-server/pyproject.toml`: server package metadata, dependencies, pytest config.
 - `rick-tv-server/src/rick_tv_server/config.py`: server settings and conversion profile.
-- `rick-tv-server/src/rick_tv_server/database.py`: SQLite schema, connection setup, and legacy JSON/YAML startup migration.
+- `rick-tv-server/src/rick_tv_server/database.py`: SQLite schema and connection setup.
 - `rick-tv-server/src/rick_tv_server/state.py`: SQLite-backed media library, delivery lifecycle, and user selection state.
 - `rick-tv-server/src/rick_tv_server/remote.py`: SQLite-backed Telegram-to-Pi remote command queue.
 - `rick-tv-server/src/rick_tv_server/converter.py`: ffmpeg conversion to Pi-ready MP4 profile.

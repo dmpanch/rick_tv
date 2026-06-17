@@ -6,7 +6,7 @@
 
 **Architecture:** The server owns conversion and validation before an item reaches `/api/v1/ready`. `UploadProcessor` converts, validates with server-side `ffprobe`, retries once with a stricter conversion profile, and marks failed uploads with a persisted message. The Pi trusts server-ready media and only verifies delivery integrity through `sha256` before atomic placement and ack.
 
-**Tech Stack:** Python 3.12 server, server-side ffmpeg/ffprobe, Python >=3.7 appliance client, FastAPI, python-telegram-bot, httpx, pytest, SQLite state plus legacy JSON/YAML migration.
+**Tech Stack:** Python 3.12 server, server-side ffmpeg/ffprobe, Python >=3.7 appliance client, FastAPI, python-telegram-bot, httpx, pytest, SQLite state.
 
 ---
 
