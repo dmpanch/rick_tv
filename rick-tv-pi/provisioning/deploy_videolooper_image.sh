@@ -168,8 +168,8 @@ python3 /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/generate_channel_pl
 
 systemctl daemon-reload
 systemctl enable rick-tv-pi.service
-systemctl restart rick-tv-pi.service
 supervisorctl restart video_looper
+systemctl restart rick-tv-pi.service
 REMOTE
 printf '%s\n' '$PI_PASSWORD' | sudo -S bash '$REMOTE_TMP/install.sh'"
 }
