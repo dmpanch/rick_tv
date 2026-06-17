@@ -75,15 +75,14 @@ def test_omxplayer_override_uses_nonblocking_stop():
     assert "self.stop(3)  # Up to 3 second delay to let the old player stop." not in source
 
 
-def test_omxplayer_override_generates_top_left_ass_title_overlay():
+def test_omxplayer_override_generates_legacy_srt_title_overlay():
     source = OMX_PLAYER_OVERRIDE.read_text()
 
-    assert "video_looper.ass" in source
-    assert "[V4+ Styles]" in source
-    assert "Style: RickTVTitle" in source
-    assert ",7,20,20,20," in source
-    assert "Dialogue: 0,0:00:00.00," in source
-    assert "video_looper.srt" not in source
+    assert "video_looper.srt" in source
+    assert "f.write(self._subtitle_header)" in source
+    assert "args.extend(['--align', 'left'])" in source
+    assert "video_looper.ass" not in source
+    assert "[V4+ Styles]" not in source
 
 
 def test_installer_replaces_zip_entries_and_removes_stale_bytecode(tmp_path):

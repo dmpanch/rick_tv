@@ -103,8 +103,10 @@ Runtime playback is built around the prepared Adafruit `pi_video_looper`
 installation. Rick TV writes per-channel playlists plus a master playlist,
 then switches channels through the videolooper FIFO command path. This
 videolooper integration is the stable Pi playback path for the legacy image.
-Channel titles are still shown through the videolooper/omxplayer subtitle path,
-but Rick TV generates ASS subtitles aligned to the top-left corner.
+Channel titles are still shown through the videolooper/omxplayer subtitle path.
+The legacy `omxplayer` build only accepts external UTF-8 SRT subtitles, so Rick
+TV generates SRT title subtitles and forces left alignment through omxplayer
+arguments.
 
 The Pi exposes no inbound Rick TV ports. Delivery is initiated by authenticated outbound polling to the server.
 
