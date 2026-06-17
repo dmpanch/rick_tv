@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 
 rick-tv-server/.env
+rick-tv-server/media/
+rick-tv-server/config/
+rick-tv-server/state/

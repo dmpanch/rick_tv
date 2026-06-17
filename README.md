@@ -68,6 +68,13 @@ docker compose --profile bot up -d --build
 
 ## Установка и запуск на Raspberry Pi
 
+Для текущего legacy `videolooper` image дефолтный SSH-доступ:
+
+- user: `pi`
+- password: `video`
+
+После первого входа замените пароль или добавьте SSH key и отключите парольный доступ, если Pi будет жить в постоянной сети.
+
 Перед деплоем подготовьте `/etc/rick-tv-pi.env` из примера:
 
 ```bash
