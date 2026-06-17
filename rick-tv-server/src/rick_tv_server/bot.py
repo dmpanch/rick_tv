@@ -311,7 +311,7 @@ async def handle_restore_all_videos_command(
         return
 
     await update.message.reply_text(
-        "Confirm restore all archived media.",
+        "Confirm restore all available library media.",
         reply_markup=_build_reply_markup(build_restore_confirmation_keyboard()),
     )
 
@@ -636,13 +636,13 @@ async def handle_restore_callback(
 
     if data == "restore_all":
         await query.edit_message_text(
-            "Confirm restore all archived media.",
+            "Confirm restore all available library media.",
             reply_markup=_build_reply_markup(build_restore_confirmation_keyboard()),
         )
         return
 
     if data == "restore_all_confirm":
-        restored = state_store.restore_all_archived()
+        restored = state_store.restore_all_available()
         noun = "media item" if len(restored) == 1 else "media items"
         await query.edit_message_text(f"Requeued {len(restored)} {noun}.")
         return
@@ -667,7 +667,7 @@ def _active_channel_video_item(state_store: Any, item_id: str) -> Any | None:
     item = state_store.get_item(item_id)
     if item is None:
         return None
-    if getattr(item, "status", None) not in {"pending", "delivered", "archived"}:
+    if getattr(item, "status", None) not in {"pending_delivery", "available"}:
         return None
     if getattr(item, "channel_id", None) is None:
         return None
@@ -833,7 +833,6 @@ async def _process_pending_upload(
     try:
         item = await asyncio.to_thread(
             upload_processor.process_upload,
-            user_id=str(update.effective_user.id),
             channel_id=channel_id,
             source_path=temp_path,
             original_filename=original_filename,

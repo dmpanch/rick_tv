@@ -19,6 +19,7 @@ def import_main_with_env(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("RICK_TV_TELEGRAM_BOT_TOKEN", "bot-token")
     monkeypatch.setenv("RICK_TV_TELEGRAM_ALLOWED_USER_IDS", "42, 100")
     monkeypatch.setenv("RICK_TV_CHANNELS_PATH", str(tmp_path / "config" / "channels.yml"))
+    monkeypatch.setenv("RICK_TV_DB_PATH", str(tmp_path / "state" / "custom.sqlite3"))
     sys.modules.pop("rick_tv_server.main", None)
     return importlib.import_module("rick_tv_server.main")
 
@@ -37,6 +38,7 @@ def test_load_settings_from_env_uses_runtime_environment(monkeypatch, tmp_path: 
         telegram_bot_token="bot-token",
         telegram_allowed_user_ids=(42, 100),
         channels_path=tmp_path / "config" / "channels.yml",
+        db_path=tmp_path / "state" / "custom.sqlite3",
     )
 
 
@@ -48,12 +50,14 @@ def test_load_settings_from_env_defaults_channels_path_and_bot_settings(
     monkeypatch.delenv("RICK_TV_TELEGRAM_BOT_TOKEN")
     monkeypatch.delenv("RICK_TV_TELEGRAM_ALLOWED_USER_IDS")
     monkeypatch.delenv("RICK_TV_CHANNELS_PATH")
+    monkeypatch.delenv("RICK_TV_DB_PATH")
 
     settings = main.load_settings_from_env()
 
     assert settings.telegram_bot_token is None
     assert settings.telegram_allowed_user_ids == ()
     assert settings.channels_path == tmp_path / "config" / "channels.yml"
+    assert settings.db_path is None
 
 
 def test_load_settings_from_env_requires_api_token(monkeypatch, tmp_path: Path):

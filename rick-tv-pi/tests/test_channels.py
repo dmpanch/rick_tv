@@ -1,3 +1,5 @@
+import json
+
 from rick_tv_pi.channels import discover_channels
 
 
@@ -43,15 +45,21 @@ def test_metadata_only_names_existing_directories(tmp_path):
     (media_root / "Garage").mkdir()
     (media_root / "01_Citadel" / "episode.mp4").touch()
     (media_root / "Garage" / "episode.mp4").touch()
-    metadata_path = tmp_path / "channels.yml"
+    metadata_path = tmp_path / "channels.json"
     metadata_path.write_text(
-        """
-channels:
-  01_Citadel:
-    display_name: Citadel TV
-  Missing:
-    display_name: Ignored
-""".lstrip()
+        json.dumps(
+            {
+                "channels": {
+                    "01_Citadel": {
+                        "display_name": "Citadel TV",
+                    },
+                    "Missing": {
+                        "display_name": "Ignored",
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
     )
 
     channels = discover_channels(media_root, metadata_path=metadata_path)

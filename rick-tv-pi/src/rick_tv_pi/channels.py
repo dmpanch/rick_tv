@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+import json
 import os
-
-import yaml
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -59,7 +58,10 @@ def _load_display_names(metadata_path: Path | None) -> dict[str, str]:
     if metadata_path is None or not metadata_path.exists():
         return {}
 
-    metadata = yaml.safe_load(metadata_path.read_text())
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
     if not isinstance(metadata, dict):
         return {}
 

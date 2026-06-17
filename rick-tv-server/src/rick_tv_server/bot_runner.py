@@ -32,11 +32,8 @@ def main() -> None:
     for directory in (settings.media_dir, settings.config_dir, settings.state_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
-    channels_path = settings.channels_path or settings.config_dir / "channels.yml"
-    channels_path.parent.mkdir(parents=True, exist_ok=True)
-
     state_store = DeliveryStateStore(settings)
-    channel_store = ChannelRegistryStore(channels_path)
+    channel_store = ChannelRegistryStore(settings)
     upload_processor = UploadProcessor(settings=settings, state_store=state_store)
     application = build_application(
         settings,

@@ -15,14 +15,14 @@ def test_load_settings_from_env_reads_required_and_optional_values(monkeypatch):
     monkeypatch.setenv("RICK_TV_SERVER_URL", "https://rick-tv.example")
     monkeypatch.setenv("RICK_TV_API_TOKEN", "test-token")
     monkeypatch.setenv("RICK_TV_MEDIA_ROOT", "/var/lib/rick-tv/media")
-    monkeypatch.setenv("RICK_TV_METADATA_PATH", "/etc/rick-tv/channels.yml")
+    monkeypatch.setenv("RICK_TV_METADATA_PATH", "/etc/rick-tv/channels.json")
 
     settings = load_settings_from_env()
 
     assert settings.server_base_url == "https://rick-tv.example"
     assert settings.api_token == "test-token"
     assert settings.media_root == Path("/var/lib/rick-tv/media")
-    assert settings.metadata_path == Path("/etc/rick-tv/channels.yml")
+    assert settings.metadata_path == Path("/etc/rick-tv/channels.json")
     assert settings.poll_interval_seconds == 60
 
 

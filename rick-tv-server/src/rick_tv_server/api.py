@@ -49,20 +49,17 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
             ],
         }
 
-    @app.get("/api/v1/channels.yml", dependencies=[Depends(require_bearer_token)])
-    def channels_yml() -> Response:
-        channels_path = settings.channels_path or settings.config_dir / "channels.yml"
-        registry = ChannelRegistryStore(channels_path)
-        if not channels_path.exists():
-            return Response(content="channels: {}\n", media_type="application/yaml")
-        return Response(content=registry.dump_text(), media_type="application/yaml")
+    @app.get("/api/v1/channels", dependencies=[Depends(require_bearer_token)])
+    def channels() -> dict[str, dict[str, dict[str, str]]]:
+        registry = ChannelRegistryStore(settings)
+        return registry.dump_payload()
 
     @app.get("/api/v1/download/{item_id}", dependencies=[Depends(require_bearer_token)])
     def download(item_id: str) -> FileResponse:
         item = state_store.get_item(item_id)
         if (
             item is None
-            or item.status != "pending"
+            or item.status != "pending_delivery"
             or item.converted_path is None
             or not item.converted_path.exists()
         ):
@@ -78,12 +75,12 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
             "converting",
             "failed",
             "canceled",
-            "deleted_server_side",
-            "deleted_from_library",
+            "pending_device_delete",
+            "deleted",
         }:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
-        if item.status == "pending":
+        if item.status == "pending_delivery":
             state_store.ack_item(item_id)
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -94,13 +91,10 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
     )
     def delete_ack(item_id: str) -> Response:
         item = state_store.get_item(item_id)
-        if item is None or item.status not in {
-            "deleted_server_side",
-            "deleted_from_library",
-        }:
+        if item is None or item.status not in {"pending_device_delete", "deleted"}:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
-        if item.status == "deleted_server_side":
+        if item.status == "pending_device_delete":
             state_store.ack_device_delete(item_id)
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -42,8 +42,8 @@ def test_bot_runner_main_builds_application_and_runs_long_polling(
         built.append(
             {
                 "settings": built_settings,
-                "channel_path": channel_store.path,
-                "state_path": state_store.state_path,
+                "channel_settings": channel_store.settings,
+                "state_settings": state_store.settings,
                 "processor_settings": upload_processor.settings,
             }
         )
@@ -57,8 +57,8 @@ def test_bot_runner_main_builds_application_and_runs_long_polling(
     assert built == [
         {
             "settings": settings,
-            "channel_path": settings.channels_path,
-            "state_path": settings.state_dir / "queue.json",
+            "channel_settings": settings,
+            "state_settings": settings,
             "processor_settings": settings,
         }
     ]

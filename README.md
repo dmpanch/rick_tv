@@ -9,8 +9,8 @@ Rick TV — это связка серверного и клиентского �
 ## Что делает проект
 
 1. Видео загружаются на сервер и конвертируются в формат для проигрывания.
-2. Сервер держит статусы очереди доставки.
-3. Сервер хранит YAML registry каналов и отдаёт его Pi через `/api/v1/channels.yml`.
+2. Сервер держит SQLite-библиотеку каналов, видео и статусов доставки.
+3. Сервер отдаёт JSON registry для Pi через `/api/v1/channels`.
 4. Raspberry Pi периодически синхронизирует registry, запрашивает `/api/v1/ready`, скачивает новые ролики по каналам, применяет команды удаления и подтверждает получение через `/api/v1/ack/{id}` или удаление через `/api/v1/delete-ack/{id}`.
 5. `videolooper` проигрывает обновлённые плейлисты каналов и является выбранным стабильным runtime playback решением для Pi.
 
@@ -55,15 +55,17 @@ cp .env.example .env
 2) Запустить сервис.
 
 ```bash
-mkdir -p media config state
+mkdir -p data/media data/config data/state
 docker compose up -d --build
 ```
 
 Файл `docker-compose.yml` берёт значения `RICK_TV_*` из окружения (или `.env`).
 Контейнеры запускаются под `RICK_TV_UID:RICK_TV_GID`, чтобы bind-mounted
-`media/config/state` оставались читаемыми и редактируемыми с хоста.
+runtime-файлы оставались читаемыми и редактируемыми с хоста. По умолчанию
+Compose монтирует всё runtime-состояние из `./data`; для постоянной установки
+задайте `RICK_TV_DATA_DIR=/srv/rick-tv` или другой абсолютный путь на диске.
 
-API запускается обычным `docker compose up`. Telegram runner находится в том же Compose-файле как сервис `rick-tv-bot`; он использует тот же image и общие `media/config/state` volumes. Для запуска бота задайте `RICK_TV_TELEGRAM_BOT_TOKEN` и `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`, затем включите профиль:
+API запускается обычным `docker compose up`. Telegram runner находится в том же Compose-файле как сервис `rick-tv-bot`; он использует тот же image и общий `RICK_TV_DATA_DIR`. Для запуска бота задайте `RICK_TV_TELEGRAM_BOT_TOKEN` и `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`, затем включите профиль:
 
 ```bash
 docker compose --profile bot up -d --build
@@ -104,7 +106,7 @@ rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
 - `RICK_TV_SERVER_URL` — адрес сервера API (`http://...:8080`).
 - `RICK_TV_API_TOKEN` — общий токен доступа (тот же, что в `rick-tv-server/.env`).
 - `RICK_TV_MEDIA_ROOT` — корень папок каналов на Pi.
-- `RICK_TV_METADATA_PATH` — путь к `channels.yml` (опционально).
+- `RICK_TV_METADATA_PATH` — путь к `channels.json` (опционально).
 - `RICK_TV_POLL_INTERVAL_SECONDS` — интервал опроса сервера в секундах.
 - `RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT` — путь к рабочей папке `videolooper`.
 - `RICK_TV_VIDEOLOOPER_COMMAND_PATH` — FIFO для команд проигрывателю.
@@ -144,7 +146,11 @@ sudo systemctl status rick-tv-pi.service
 
 Канал участвует только если внутри есть хотя бы один `.mp4`. Пустые папки не попадают в навигацию, плейлисты и список каналов для polling API до появления playable `.mp4`.
 
-Серверный `channels.yml` является registry для выбора каналов в Telegram и для первого опроса Pi. Pi может знать ID канала из registry и получить первый ролик даже до появления локальной папки с `.mp4`; после доставки канал появится в навигации.
+Серверная SQLite DB является canonical registry для выбора каналов в Telegram и для первого опроса Pi. Endpoint `/api/v1/channels` отдаёт JSON вида `{"channels": {"01_Citadel": {"display_name": "Citadel"}}}`. Старый `channels.yml` используется только как legacy import при первом старте пустой DB.
+
+Если сервер стартует впервые без legacy `channels.yml` и `queue.json`, он создаёт пустую SQLite DB. `/api/v1/channels` вернёт `{"channels": {}}`, бот позволит добавить первый канал, а Pi с настроенным `RICK_TV_METADATA_PATH` не будет fallback-иться на локальные каналы до появления registry-каналов на сервере.
+
+Серверная медиатека хранится в читаемой структуре `media/library/<channel_id>/<item_id>/original/...` и `media/library/<channel_id>/<item_id>/converted/...`. В DB сохраняются относительные пути, статус, delivery filename и `sha256` converted-файла.
 
 ## Как заливать видео через бота
 
@@ -157,13 +163,13 @@ Telegram runner реализован в `rick_tv_server.bot_runner` и запу�
 3. `/list_channels` показывает каналы в виде `01 - Citadel`; выбор канала открывает `List all videos`, `Rename channel` и `Delete channel`.
 4. `List all videos` показывает каждое активное видео канала отдельной кнопкой. Внутри видео доступны `Download`, `Delete` и `Back`.
 5. `Download` отправляет converted Pi-ready `.mp4` обратно в Telegram.
-6. `Delete` удаляет original и converted файлы с сервера, убирает видео из активной библиотеки и ставит команду удаления для Pi. Pi удалит локальную копию при следующем успешном poll и подтвердит `/api/v1/delete-ack/{id}`.
+6. `Delete` удаляет original и converted файлы с сервера, убирает видео из active library и ставит команду удаления для Pi. Pi удалит локальную копию при следующем успешном poll и подтвердит `/api/v1/delete-ack/{id}`.
 7. `/restore_all_videos` запрашивает подтверждение на повторную доставку всей активной библиотеки.
 8. Пользователь отправляет Telegram `video` или `document`; бот после этого предлагает выбрать канал.
 9. После выбора канала бот скачивает файл локально и вызывает `UploadProcessor.process_upload(...)`.
-10. Сервер сохраняет original upload и converted Pi-ready `.mp4`.
-11. Ролик становится `pending`, затем Pi забирает его с сервера.
+10. Сервер сохраняет original upload и converted Pi-ready `.mp4` в `media/library/<channel_id>/<item_id>/...`.
+11. Ролик становится `pending_delivery`, затем Pi забирает его с сервера; после ack сервер переводит его в `available`.
 
 Сервер приводит файл к целевому профилю (`640x480`, `h264`, `aac`) и валидирует converted `.mp4` через `ffprobe` до появления файла в `/api/v1/ready`. Pi не требует `ffmpeg` или `ffprobe`: она скачивает уже проверенный сервером файл, сверяет `sha256`, кладет его в каталог канала и отправляет ack.
 
-Delete из экрана конкретного видео канала — физическое удаление с сервера плюс асинхронное удаление с Pi. Действие `restore all` в Telegram requeue-ит активные archived элементы, чтобы заменить или восстановить Pi и заново доставить библиотеку.
+Delete из экрана конкретного видео канала — физическое удаление с сервера плюс асинхронное удаление с Pi. Действие `restore all` в Telegram requeue-ит активные `available` элементы, чтобы заменить или восстановить Pi и заново доставить библиотеку.

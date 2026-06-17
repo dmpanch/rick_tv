@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 from pathlib import Path
 
@@ -51,20 +52,22 @@ def test_poll_sends_authenticated_known_channels(tmp_path):
     assert request.headers["Authorization"] == "Bearer test-token"
 
 
-def test_sync_channel_registry_downloads_channels_yml_atomically(tmp_path):
-    metadata_path = tmp_path / "config" / "channels.yml"
-    registry_text = """
-channels:
-  01_Citadel:
-    display_name: Citadel TV
-""".lstrip()
+def test_sync_channel_registry_downloads_channels_json_atomically(tmp_path):
+    metadata_path = tmp_path / "config" / "channels.json"
+    registry_payload = {
+        "channels": {
+            "01_Citadel": {
+                "display_name": "Citadel TV",
+            },
+        },
+    }
     seen_requests = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen_requests.append(request)
         assert request.headers["Authorization"] == "Bearer test-token"
-        if request.method == "GET" and request.url.path == "/api/v1/channels.yml":
-            return httpx.Response(200, text=registry_text)
+        if request.method == "GET" and request.url.path == "/api/v1/channels":
+            return httpx.Response(200, json=registry_payload)
         return httpx.Response(404)
 
     http_client = httpx.Client(
@@ -80,9 +83,9 @@ channels:
 
     Poller(settings, http_client).sync_channel_registry()
 
-    assert metadata_path.read_text(encoding="utf-8") == registry_text
+    assert json.loads(metadata_path.read_text(encoding="utf-8")) == registry_payload
     assert not list(metadata_path.parent.glob("*.tmp"))
-    assert [request.url.path for request in seen_requests] == ["/api/v1/channels.yml"]
+    assert [request.url.path for request in seen_requests] == ["/api/v1/channels"]
 
 
 def test_poll_uses_registry_channel_ids_for_first_delivery(
@@ -92,25 +95,33 @@ def test_poll_uses_registry_channel_ids_for_first_delivery(
     item_id = "delivery-123"
     channel_id = "01_Citadel"
     filename = "episode.mp4"
-    metadata_path = tmp_path / "config" / "channels.yml"
+    metadata_path = tmp_path / "config" / "channels.json"
     destination = tmp_path / "media" / channel_id / filename
     requests = []
 
     metadata_path.parent.mkdir(parents=True)
     metadata_path.write_text(
-        """
-channels:
-  01_Citadel:
-    display_name: Citadel TV
-""".lstrip(),
+        json.dumps(
+            {
+                "channels": {
+                    "01_Citadel": {
+                        "display_name": "Citadel TV",
+                    },
+                },
+            }
+        ),
         encoding="utf-8",
     )
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
 
-        if request.method == "GET" and request.url.path == "/api/v1/channels.yml":
-            return httpx.Response(200, text=metadata_path.read_text(encoding="utf-8"))
+        if request.method == "GET" and request.url.path == "/api/v1/channels":
+            return httpx.Response(
+                200,
+                content=metadata_path.read_bytes(),
+                headers={"content-type": "application/json"},
+            )
 
         if request.method == "GET" and request.url.path == "/api/v1/ready":
             assert request.url.query == b"channels=01_Citadel"
@@ -153,11 +164,48 @@ channels:
 
     assert destination.read_bytes() == media_bytes
     assert [request.url.path for request in requests] == [
-        "/api/v1/channels.yml",
+        "/api/v1/channels",
         "/api/v1/ready",
         "/downloads/episode.mp4",
         f"/api/v1/ack/{item_id}",
     ]
+
+
+def test_synced_empty_registry_does_not_fallback_to_local_channels(tmp_path):
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.headers["Authorization"] == "Bearer test-token"
+        if request.method == "GET" and request.url.path == "/api/v1/channels":
+            return httpx.Response(200, json={"channels": {}})
+        if request.method == "GET" and request.url.path == "/api/v1/ready":
+            raise AssertionError("empty synced registry must not poll local channels")
+        return httpx.Response(404)
+
+    http_client = httpx.Client(
+        base_url="https://server.example",
+        transport=httpx.MockTransport(handler),
+    )
+    settings = PiSettings(
+        server_base_url="https://server.example",
+        api_token="test-token",
+        media_root=tmp_path / "media",
+        metadata_path=tmp_path / "config" / "channels.json",
+    )
+    local_channels = [
+        Channel(
+            id="01_Local",
+            number=1,
+            display_name=None,
+            path=tmp_path / "media" / "01_Local",
+        )
+    ]
+
+    result = Poller(settings, http_client).poll_once(local_channels)
+
+    assert result == []
+    assert [request.url.path for request in requests] == ["/api/v1/channels"]
 
 
 def test_download_checksum_atomic_move_then_ack(tmp_path, monkeypatch):

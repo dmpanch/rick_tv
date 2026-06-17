@@ -158,7 +158,7 @@ def test_application_registers_direct_command_handlers(tmp_path: Path):
         telegram_bot_token="123456:ABC",
         telegram_allowed_user_ids=(42,),
     )
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     state_store = DeliveryStateStore(settings)
 
     application = bot.build_application(
@@ -229,7 +229,6 @@ def test_pending_delete_marks_canceled(tmp_path: Path):
     ]:
         state_store.create_uploaded_item(
             item_id=item_id,
-            user_id="user-1",
             original_path=tmp_path / "media" / "uploads" / f"{item_id}.mov",
         )
         state_store.mark_converting(item_id)
@@ -256,7 +255,7 @@ def test_pending_delete_marks_canceled(tmp_path: Path):
 
 def test_unauthorized_user_is_rejected_before_add_channel_command(tmp_path: Path):
     settings = make_settings(tmp_path)
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     message = FakeMessage()
     update = FakeUpdate(effective_user=FakeUser(id=99), message=message)
 
@@ -275,7 +274,7 @@ def test_unauthorized_user_is_rejected_before_add_channel_command(tmp_path: Path
 
 def test_add_channel_command_starts_add_flow(tmp_path: Path):
     settings = make_settings(tmp_path)
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     context = FakeContext()
     message = FakeMessage()
 
@@ -296,7 +295,7 @@ def test_add_channel_command_starts_add_flow(tmp_path: Path):
 
 def test_list_channels_command_opens_channel_list(tmp_path: Path):
     settings = make_settings(tmp_path)
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     channel_store.add_channel("01_Citadel", "Citadel")
     channel_store.add_channel("02_Interdimensional_Cable", "Interdimensional Cable")
     message = FakeMessage()
@@ -326,7 +325,7 @@ def test_list_channels_command_opens_channel_list(tmp_path: Path):
 
 def test_channels_list_opens_per_channel_actions(tmp_path: Path):
     settings = make_settings(tmp_path)
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     channel_store.add_channel("01_Citadel", "Citadel")
     channel_store.add_channel("02_Interdimensional_Cable", "Interdimensional Cable")
     state_store = DeliveryStateStore(settings)
@@ -362,7 +361,7 @@ def test_channels_list_opens_per_channel_actions(tmp_path: Path):
 
 def test_channel_video_list_opens_video_detail_actions(tmp_path: Path):
     settings = make_settings(tmp_path)
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     channel_store.add_channel("01_Citadel", "Citadel")
     state_store = DeliveryStateStore(settings)
     for item_id, channel_id, filename in [
@@ -378,7 +377,6 @@ def test_channel_video_list_opens_video_detail_actions(tmp_path: Path):
         converted_path.write_bytes(f"converted {item_id}".encode())
         state_store.create_uploaded_item(
             item_id=item_id,
-            user_id="user-1",
             original_path=original_path,
         )
         state_store.mark_converting(item_id)
@@ -437,7 +435,7 @@ def test_channel_video_list_opens_video_detail_actions(tmp_path: Path):
 
 def test_channel_video_download_sends_converted_mp4(tmp_path: Path):
     settings = make_settings(tmp_path)
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     channel_store.add_channel("01_Citadel", "Citadel")
     state_store = DeliveryStateStore(settings)
     original_path = settings.media_dir / "uploads" / "item-1.mov"
@@ -448,7 +446,6 @@ def test_channel_video_download_sends_converted_mp4(tmp_path: Path):
     converted_path.write_bytes(b"converted media bytes")
     state_store.create_uploaded_item(
         item_id="item-1",
-        user_id="user-1",
         original_path=original_path,
     )
     state_store.mark_converting("item-1")
@@ -481,7 +478,7 @@ def test_channel_video_delete_removes_server_files_and_returns_to_video_list(
     tmp_path: Path,
 ):
     settings = make_settings(tmp_path)
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     channel_store.add_channel("01_Citadel", "Citadel")
     state_store = DeliveryStateStore(settings)
     original_path = settings.media_dir / "uploads" / "item-1.mov"
@@ -492,7 +489,6 @@ def test_channel_video_delete_removes_server_files_and_returns_to_video_list(
     converted_path.write_bytes(b"converted media bytes")
     state_store.create_uploaded_item(
         item_id="item-1",
-        user_id="user-1",
         original_path=original_path,
     )
     state_store.mark_converting("item-1")
@@ -515,7 +511,7 @@ def test_channel_video_delete_removes_server_files_and_returns_to_video_list(
         )
     )
 
-    assert state_store.items["item-1"].status == "deleted_server_side"
+    assert state_store.items["item-1"].status == "pending_device_delete"
     assert state_store.device_delete_items_for_channels(["01_Citadel"])[0].item_id == (
         "item-1"
     )
@@ -548,7 +544,7 @@ def test_restore_all_videos_command_requires_confirmation(tmp_path: Path):
 
 def test_channel_add_generates_incremental_channel_id(tmp_path: Path):
     settings = make_settings(tmp_path)
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     channel_store.add_channel("01_Citadel", "Citadel")
     channel_store.add_channel("02_Interdimensional_Cable", "Interdimensional Cable")
     channel_store.add_channel("03_Test_Channel", "Test Channel")
@@ -587,7 +583,7 @@ def test_channel_add_generates_incremental_channel_id(tmp_path: Path):
 
 def test_channel_rename_and_delete_flow_stays_on_selected_channel(tmp_path: Path):
     settings = make_settings(tmp_path)
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     channel_store.add_channel("01_Citadel", "Citadel")
     state_store = DeliveryStateStore(settings)
     context = FakeContext()
@@ -650,7 +646,7 @@ def test_channel_rename_and_delete_flow_stays_on_selected_channel(tmp_path: Path
 def test_channel_upload_flow_accepts_video_before_channel_choice(tmp_path: Path):
     settings = make_settings(tmp_path)
     state_store = DeliveryStateStore(settings)
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     channel_store.add_channel("01_Citadel", "Citadel")
     channel_store.add_channel("02_Interdimensional_Cable", "Interdimensional Cable")
     upload_processor = RecordingUploadProcessor()
@@ -693,7 +689,6 @@ def test_channel_upload_flow_accepts_video_before_channel_choice(tmp_path: Path)
 
     assert upload_processor.calls == [
         {
-            "user_id": "42",
             "channel_id": "01_Citadel",
             "source_path": upload_processor.calls[0]["source_path"],
             "original_filename": "episode.mov",
@@ -707,7 +702,7 @@ def test_channel_upload_flow_accepts_video_before_channel_choice(tmp_path: Path)
 def test_channel_upload_flow_reports_failure_without_deliverable(tmp_path: Path):
     settings = make_settings(tmp_path)
     state_store = DeliveryStateStore(settings)
-    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store = ChannelRegistryStore(settings)
     channel_store.add_channel("01_Citadel", "Citadel")
     upload_processor = RecordingUploadProcessor(fail=True)
     context = FakeContext()
@@ -745,7 +740,7 @@ def test_channel_upload_flow_reports_failure_without_deliverable(tmp_path: Path)
     assert "prepared for rick tv playback" in str(select_query.edits[0]["text"]).lower()
 
 
-def test_restore_all_callback_requires_confirmation_and_requeues_archived(tmp_path: Path):
+def test_restore_all_callback_requires_confirmation_and_requeues_available(tmp_path: Path):
     settings = make_settings(tmp_path)
     state_store = DeliveryStateStore(settings)
     converted_path = tmp_path / "media" / "converted" / "item-1.mp4"
@@ -753,7 +748,6 @@ def test_restore_all_callback_requires_confirmation_and_requeues_archived(tmp_pa
     converted_path.write_bytes(b"converted")
     state_store.create_uploaded_item(
         item_id="item-1",
-        user_id="user-1",
         original_path=tmp_path / "media" / "uploads" / "item-1.mov",
     )
     state_store.mark_converting("item-1")
@@ -774,7 +768,7 @@ def test_restore_all_callback_requires_confirmation_and_requeues_archived(tmp_pa
         )
     )
     assert "Confirm" in str(request_query.edits[0]["text"])
-    assert state_store.items["item-1"].status == "archived"
+    assert state_store.items["item-1"].status == "available"
 
     confirm_query = FakeCallbackQuery("restore_all_confirm")
     asyncio.run(
@@ -787,4 +781,4 @@ def test_restore_all_callback_requires_confirmation_and_requeues_archived(tmp_pa
     )
 
     assert "1 media item" in str(confirm_query.edits[0]["text"])
-    assert state_store.items["item-1"].status == "pending"
+    assert state_store.items["item-1"].status == "pending_delivery"

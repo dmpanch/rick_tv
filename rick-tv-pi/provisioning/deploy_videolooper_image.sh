@@ -143,7 +143,7 @@ deploy() {
 set -euo pipefail
 
 apt-get update
-apt-get install -y --no-install-recommends python3-venv python3-pip python3-evdev python3-yaml
+apt-get install -y --no-install-recommends python3-venv python3-pip python3-evdev
 
 rm -rf /opt/rick-tv-src
 mkdir -p /opt/rick-tv-src /home/pi/rick-tv/media /home/pi/rick-tv/playlists /home/pi/rick-tv/system

@@ -45,10 +45,26 @@ def test_upload_processor_stores_converted_media_as_pending(tmp_path: Path):
     source_path.parent.mkdir()
     source_path.write_bytes(b"uploaded source bytes")
     converted_bytes = b"ready mp4 bytes"
+    original_path = (
+        settings.media_dir
+        / "library"
+        / "01_Citadel"
+        / "item-1"
+        / "original"
+        / "citadel.mov"
+    )
+    converted_path = (
+        settings.media_dir
+        / "library"
+        / "01_Citadel"
+        / "item-1"
+        / "converted"
+        / "citadel--item-1.mp4"
+    )
 
     def convert_success(input_path: Path, output_path: Path):
-        assert input_path == settings.media_dir / "uploaded" / "item-1.mov"
-        assert output_path == settings.media_dir / "converted" / "item-1.mp4"
+        assert input_path == original_path
+        assert output_path == converted_path
         output_path.write_bytes(converted_bytes)
 
     processor = UploadProcessor(
@@ -60,19 +76,18 @@ def test_upload_processor_stores_converted_media_as_pending(tmp_path: Path):
     )
 
     pending = processor.process_upload(
-        user_id="user-1",
         channel_id="01_Citadel",
         source_path=source_path,
         original_filename="citadel.mov",
     )
 
-    assert store.statuses == ["uploaded", "converting", "pending"]
-    assert pending.status == "pending"
-    assert pending.original_path == settings.media_dir / "uploaded" / "item-1.mov"
+    assert store.statuses == ["uploaded", "converting", "pending_delivery"]
+    assert pending.status == "pending_delivery"
+    assert pending.original_path == original_path
     assert pending.original_path.read_bytes() == b"uploaded source bytes"
-    assert pending.converted_path == settings.media_dir / "converted" / "item-1.mp4"
+    assert pending.converted_path == converted_path
     assert pending.converted_path.read_bytes() == converted_bytes
-    assert pending.filename == "item-1.mp4"
+    assert pending.filename == "citadel--item-1.mp4"
     assert pending.channel_id == "01_Citadel"
     assert pending.sha256 == hashlib.sha256(converted_bytes).hexdigest()
 
@@ -97,7 +112,6 @@ def test_duplicate_upload_id_does_not_replace_existing_uploaded_file(tmp_path: P
         item_id_factory=lambda: "item-1",
     )
     processor.process_upload(
-        user_id="user-1",
         channel_id="01_Citadel",
         source_path=first_source,
         original_filename="first.mov",
@@ -105,13 +119,19 @@ def test_duplicate_upload_id_does_not_replace_existing_uploaded_file(tmp_path: P
 
     with pytest.raises(ValueError, match="already exists"):
         processor.process_upload(
-            user_id="user-2",
             channel_id="Garage",
             source_path=duplicate_source,
             original_filename="duplicate.mov",
         )
 
-    uploaded_path = settings.media_dir / "uploaded" / "item-1.mov"
+    uploaded_path = (
+        settings.media_dir
+        / "library"
+        / "01_Citadel"
+        / "item-1"
+        / "original"
+        / "first.mov"
+    )
     assert uploaded_path.read_bytes() == b"original uploaded source"
 
 
@@ -124,7 +144,6 @@ def test_failed_upload_state_persists_message_and_is_not_ready(tmp_path: Path):
 
     store.create_uploaded_item(
         item_id="item-1",
-        user_id="user-1",
         original_path=original_path,
     )
     store.mark_converting("item-1")
@@ -173,15 +192,21 @@ def test_upload_processor_validates_converted_media_before_pending(tmp_path: Pat
     )
 
     pending = processor.process_upload(
-        user_id="user-1",
         channel_id="01_Citadel",
         source_path=source_path,
         original_filename="citadel.mov",
     )
 
-    assert validator_calls == [settings.media_dir / "converted" / "item-1.mp4"]
-    assert store.statuses == ["uploaded", "converting", "pending"]
-    assert pending.status == "pending"
+    assert validator_calls == [
+        settings.media_dir
+        / "library"
+        / "01_Citadel"
+        / "item-1"
+        / "converted"
+        / "citadel--item-1.mp4"
+    ]
+    assert store.statuses == ["uploaded", "converting", "pending_delivery"]
+    assert pending.status == "pending_delivery"
 
 
 def test_upload_processor_retries_conversion_once_after_validation_failure(
@@ -216,16 +241,22 @@ def test_upload_processor_retries_conversion_once_after_validation_failure(
     )
 
     pending = processor.process_upload(
-        user_id="user-1",
         channel_id="01_Citadel",
         source_path=source_path,
         original_filename="citadel.mov",
     )
 
-    converted_path = settings.media_dir / "converted" / "item-1.mp4"
+    converted_path = (
+        settings.media_dir
+        / "library"
+        / "01_Citadel"
+        / "item-1"
+        / "converted"
+        / "citadel--item-1.mp4"
+    )
     assert converter_calls == [("first", converted_path), ("retry", converted_path)]
     assert converted_path.read_bytes() == b"retry converted bytes"
-    assert pending.status == "pending"
+    assert pending.status == "pending_delivery"
     assert pending.converted_path == converted_path
 
 
@@ -250,7 +281,6 @@ def test_upload_processor_marks_failed_when_retry_validation_fails(tmp_path: Pat
 
     with pytest.raises(UploadProcessingError, match="prepared for Rick TV playback"):
         processor.process_upload(
-            user_id="user-1",
             channel_id="01_Citadel",
             source_path=source_path,
             original_filename="citadel.mov",

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import httpx
-import yaml
-
 from rick_tv_pi.channels import Channel
 from rick_tv_pi.config import PiSettings
 
@@ -42,6 +42,8 @@ class Poller:
         base_url = self._settings.server_base_url.rstrip("/")
         self.sync_channel_registry()
         poll_channel_ids = self._poll_channel_ids(channels)
+        if not poll_channel_ids:
+            return []
         channel_ids = ",".join(poll_channel_ids)
         response = self._http_client.get(
             f"{base_url}/api/v1/ready?channels={channel_ids}",
@@ -88,7 +90,7 @@ class Poller:
 
         base_url = self._settings.server_base_url.rstrip("/")
         response = self._http_client.get(
-            f"{base_url}/api/v1/channels.yml",
+            f"{base_url}/api/v1/channels",
             headers=self._auth_headers(),
         )
         response.raise_for_status()
@@ -162,21 +164,24 @@ class Poller:
 
     def _poll_channel_ids(self, channels: list[Channel]) -> list[str]:
         registry_channel_ids = self._registry_channel_ids()
-        if registry_channel_ids:
+        if registry_channel_ids is not None:
             return registry_channel_ids
         return [channel.id for channel in channels]
 
-    def _registry_channel_ids(self) -> list[str]:
+    def _registry_channel_ids(self) -> Optional[list[str]]:
         metadata_path = self._settings.metadata_path
         if metadata_path is None or not metadata_path.exists():
-            return []
+            return None
 
-        metadata = yaml.safe_load(metadata_path.read_text(encoding="utf-8"))
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return None
         if not isinstance(metadata, dict):
-            return []
+            return None
         channels = metadata.get("channels")
         if not isinstance(channels, dict):
-            return []
+            return None
         return [channel_id for channel_id in channels if isinstance(channel_id, str)]
 
     def _write_metadata(self, metadata_path: Path, content: str) -> None:

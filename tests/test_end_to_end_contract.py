@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -38,7 +39,6 @@ def test_pi_poll_downloads_pending_server_media_and_archives_ack(
     store = DeliveryStateStore(server_settings)
     store.create_uploaded_item(
         item_id=item_id,
-        user_id="user-1",
         original_path=original_path,
     )
     store.mark_converting(item_id)
@@ -71,8 +71,7 @@ def test_pi_poll_downloads_pending_server_media_and_archives_ack(
     assert delivered_path.read_bytes() == media_bytes
 
     reloaded_store = DeliveryStateStore(server_settings)
-    assert reloaded_store.items[item_id].status == "archived"
-    assert reloaded_store.archive_index[item_id]["status"] == "archived"
+    assert reloaded_store.items[item_id].status == "available"
 
 
 def test_registry_channel_first_delivery_reaches_empty_pi_media_root(
@@ -111,7 +110,6 @@ channels:
     store = DeliveryStateStore(server_settings)
     store.create_uploaded_item(
         item_id=item_id,
-        user_id="user-1",
         original_path=original_path,
     )
     store.mark_converting(item_id)
@@ -126,7 +124,7 @@ channels:
         server_base_url="https://server.example",
         api_token=api_token,
         media_root=pi_media_root,
-        metadata_path=tmp_path / "fresh-pi-config" / "channels.yml",
+        metadata_path=tmp_path / "fresh-pi-config" / "channels.json",
     )
 
     app = create_app(server_settings, store)
@@ -135,11 +133,15 @@ channels:
     Poller(pi_settings, client).poll_once([])
 
     delivered_path = pi_media_root / channel_id / filename
-    assert pi_settings.metadata_path.read_text(encoding="utf-8") == (
-        server_settings.channels_path.read_text(encoding="utf-8")
-    )
+    assert json.loads(pi_settings.metadata_path.read_text(encoding="utf-8")) == {
+        "channels": {
+            "01_Citadel": {
+                "display_name": "Citadel TV",
+            },
+        },
+    }
     assert delivered_path.read_bytes() == media_bytes
-    assert DeliveryStateStore(server_settings).items[item_id].status == "archived"
+    assert DeliveryStateStore(server_settings).items[item_id].status == "available"
 
 
 def test_restore_all_requeues_library_and_delivers_to_fresh_pi(
@@ -178,7 +180,6 @@ channels:
     store = DeliveryStateStore(server_settings)
     store.create_uploaded_item(
         item_id=item_id,
-        user_id="user-1",
         original_path=original_path,
     )
     store.mark_converting(item_id)
@@ -188,14 +189,14 @@ channels:
         channel_id=channel_id,
     )
     store.ack_item(item_id)
-    restored = store.restore_all_archived()
+    restored = store.restore_all_available()
 
     fresh_pi_media_root = tmp_path / "replacement-pi-media"
     pi_settings = PiSettings(
         server_base_url="https://server.example",
         api_token=api_token,
         media_root=fresh_pi_media_root,
-        metadata_path=tmp_path / "replacement-pi-config" / "channels.yml",
+        metadata_path=tmp_path / "replacement-pi-config" / "channels.json",
     )
 
     app = create_app(server_settings, store)
@@ -207,7 +208,7 @@ channels:
     assert (fresh_pi_media_root / channel_id / filename).read_bytes() == media_bytes
     assert original_path.exists()
     assert converted_path.exists()
-    assert DeliveryStateStore(server_settings).items[item_id].status == "archived"
+    assert DeliveryStateStore(server_settings).items[item_id].status == "available"
 
 
 def test_pi_poll_deletes_server_removed_media_and_acks_delete(
@@ -245,7 +246,6 @@ channels:
     store = DeliveryStateStore(server_settings)
     store.create_uploaded_item(
         item_id=item_id,
-        user_id="user-1",
         original_path=original_path,
     )
     store.mark_converting(item_id)
@@ -266,7 +266,7 @@ channels:
         server_base_url="https://server.example",
         api_token=api_token,
         media_root=pi_media_root,
-        metadata_path=tmp_path / "pi-config" / "channels.yml",
+        metadata_path=tmp_path / "pi-config" / "channels.json",
     )
 
     app = create_app(server_settings, store)
@@ -278,5 +278,5 @@ channels:
     assert not converted_path.exists()
     assert not local_path.exists()
     assert DeliveryStateStore(server_settings).items[item_id].status == (
-        "deleted_from_library"
+        "deleted"
     )

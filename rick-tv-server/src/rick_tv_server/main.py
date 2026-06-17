@@ -49,6 +49,11 @@ def load_settings_from_env() -> ServerSettings:
             os.environ.get("RICK_TV_TELEGRAM_ALLOWED_USER_IDS", "")
         ),
         channels_path=channels_path,
+        db_path=(
+            Path(db_path)
+            if (db_path := os.environ.get("RICK_TV_DB_PATH"))
+            else None
+        ),
     )
 
 

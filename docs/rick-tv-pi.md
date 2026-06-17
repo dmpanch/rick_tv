@@ -37,7 +37,7 @@ Create `/etc/rick-tv-pi.env` for the systemd service:
 RICK_TV_SERVER_URL=https://rick-tv.example
 RICK_TV_API_TOKEN=replace-me
 RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media
-RICK_TV_METADATA_PATH=/home/pi/rick-tv/channels.yml
+RICK_TV_METADATA_PATH=/home/pi/rick-tv/channels.json
 RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT=/home/pi/rick-tv/playlists
 RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo
 RICK_TV_CHANNEL_SHUFFLE_SECONDS=3600
@@ -45,7 +45,7 @@ RICK_TV_CHANNEL_SHUFFLE_SECONDS=3600
 
 `RICK_TV_METADATA_PATH` is optional, but it should be set when the Pi is expected
 to receive the first file for a registry channel that does not yet exist locally.
-The Pi downloads `/api/v1/channels.yml` to this path and uses registry channel
+The Pi downloads `/api/v1/channels` JSON to this path and uses registry channel
 IDs for delivery polling. `RICK_TV_POLL_INTERVAL_SECONDS` is optional and
 defaults to `60`. `RICK_TV_CHANNEL_SHUFFLE_SECONDS` controls how often files
 inside each channel playlist are reshuffled; the default is `3600` seconds.
@@ -85,7 +85,9 @@ A directory is a navigation/playback channel only when it contains at least one
 playable `.mp4`. Empty directories are ignored by navigation and generated
 playlists until a playable `.mp4` appears. When `RICK_TV_METADATA_PATH` is set,
 the Pi polls delivery with registry channel IDs from server-synced
-`channels.yml`, so the first media item can create a local channel directory.
+`channels.json`, so the first media item can create a local channel directory.
+If the synced server registry is empty, the Pi polls no channels and does not
+fallback to local playable folders until the server has at least one channel.
 
 Runtime playback is built around the prepared Adafruit `pi_video_looper`
 installation. Rick TV writes per-channel playlists plus a master playlist,
