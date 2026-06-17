@@ -107,6 +107,15 @@ class FakeStateStore:
         self.last_channel_by_user = {"42": "garage"}
 
 
+class RecordingRemoteCommandStore:
+    def __init__(self) -> None:
+        self.selected_channels: list[str] = []
+
+    def enqueue_select_channel(self, channel_id: str):
+        self.selected_channels.append(channel_id)
+        return type("Command", (), {"command_id": "cmd-1"})()
+
+
 def markup_labels(markup: InlineKeyboardMarkup) -> list[str]:
     return [
         button.text
@@ -346,17 +355,43 @@ def test_channels_list_opens_per_channel_actions(tmp_path: Path):
     view_markup = view_query.edits[0]["reply_markup"]
     assert isinstance(view_markup, InlineKeyboardMarkup)
     assert markup_labels(view_markup) == [
+        "Switch channel on Pi",
         "List all videos",
         "Rename channel",
         "Delete channel",
         "Back to list",
     ]
     assert markup_callback_data(view_markup) == [
+        "channel_switch:01_Citadel",
         "channel_videos:01_Citadel",
         "channel_rename:01_Citadel",
         "channel_delete:01_Citadel",
         "channel_list",
     ]
+
+
+def test_selected_channel_can_queue_remote_pi_switch(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    channel_store = ChannelRegistryStore(settings)
+    channel_store.add_channel("01_Citadel", "Citadel")
+    state_store = DeliveryStateStore(settings)
+    remote_store = RecordingRemoteCommandStore()
+
+    switch_query = FakeCallbackQuery("channel_switch:01_Citadel")
+    asyncio.run(
+        bot.handle_channel_callback(
+            FakeUpdate(effective_user=FakeUser(id=42), callback_query=switch_query),
+            FakeContext(),
+            channel_store,
+            state_store,
+            remote_command_store=remote_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
+    assert remote_store.selected_channels == ["01_Citadel"]
+    assert "queued" in str(switch_query.edits[0]["text"]).lower()
+    assert "01 - Citadel" in str(switch_query.edits[0]["text"])
 
 
 def test_channel_video_list_opens_video_detail_actions(tmp_path: Path):

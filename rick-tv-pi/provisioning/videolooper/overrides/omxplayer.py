@@ -42,11 +42,9 @@ class OMXPlayer:
         if self._show_titles:
             title_duration = config.getint('omxplayer', 'title_duration')
             if title_duration >= 0:
-                m, s = divmod(title_duration, 60)
-                h, m = divmod(m, 60)
-                self._subtitle_header = '00:00:00,00 --> {:d}:{:02d}:{:02d},00\n'.format(h, m, s)
+                self._subtitle_end = self._ass_timestamp(title_duration)
             else:
-                self._subtitle_header = '00:00:00,00 --> 99:59:59,00\n'
+                self._subtitle_end = '99:59:59.00'
 
     def supported_extensions(self):
         """Return list of supported file extensions."""
@@ -66,11 +64,10 @@ class OMXPlayer:
         if loop <= -1:
             args.append('--loop')  # Add loop parameter if necessary.
         if self._show_titles and movie.title:
-            srt_path = os.path.join(self._get_temp_directory(), 'video_looper.srt')
-            with open(srt_path, 'w') as f:
-                f.write(self._subtitle_header)
-                f.write(movie.title)
-            args.extend(['--subtitles', srt_path])
+            ass_path = os.path.join(self._get_temp_directory(), 'video_looper.ass')
+            with open(ass_path, 'w') as f:
+                f.write(self._ass_document(movie.title))
+            args.extend(['--subtitles', ass_path])
         args.append(movie.target)       # Add movie file path.
         # Run omxplayer process and direct standard output to /dev/null.
         # Establish input pipe for commands
@@ -86,6 +83,33 @@ class OMXPlayer:
         if self.is_playing():
             self._process.stdin.write(key.encode())
             self._process.stdin.flush()
+
+    def _ass_document(self, title):
+        return (
+            '[Script Info]\n'
+            'ScriptType: v4.00+\n'
+            'PlayResX: 640\n'
+            'PlayResY: 480\n'
+            '\n'
+            '[V4+ Styles]\n'
+            'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, '
+            'Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, '
+            'Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n'
+            'Style: RickTVTitle,Arial,28,&H00FFFFFF,&H000000FF,&H90000000,&H90000000,'
+            '0,0,0,0,100,100,0,0,1,2,1,7,20,20,20,1\n'
+            '\n'
+            '[Events]\n'
+            'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
+            'Dialogue: 0,0:00:00.00,{end},RickTVTitle,,0,0,0,,{title}\n'
+        ).format(end=self._subtitle_end, title=self._escape_ass_text(title))
+
+    def _ass_timestamp(self, seconds):
+        m, s = divmod(seconds, 60)
+        h, m = divmod(m, 60)
+        return '{:d}:{:02d}:{:02d}.00'.format(h, m, s)
+
+    def _escape_ass_text(self, value):
+        return str(value).replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}').replace('\n', '\\N')
 
     def is_playing(self):
         """Return true if the video player is running, false otherwise."""

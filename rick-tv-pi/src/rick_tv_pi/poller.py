@@ -33,6 +33,13 @@ class DeleteItem:
     filename: str
 
 
+@dataclass(frozen=True)
+class RemoteCommand:
+    id: str
+    type: str
+    channel_id: str
+
+
 class Poller:
     def __init__(self, settings: PiSettings, http_client: httpx.Client) -> None:
         self._settings = settings
@@ -95,6 +102,31 @@ class Poller:
         )
         response.raise_for_status()
         self._write_metadata(metadata_path, response.text)
+
+    def poll_remote_commands(self) -> list[RemoteCommand]:
+        base_url = self._settings.server_base_url.rstrip("/")
+        response = self._http_client.get(
+            f"{base_url}/api/v1/commands",
+            headers=self._auth_headers(),
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return [
+            RemoteCommand(
+                id=command["id"],
+                type=command["type"],
+                channel_id=command["channel_id"],
+            )
+            for command in payload.get("commands", [])
+        ]
+
+    def ack_remote_command(self, command_id: str) -> None:
+        base_url = self._settings.server_base_url.rstrip("/")
+        response = self._http_client.post(
+            f"{base_url}/api/v1/commands/{command_id}/ack",
+            headers=self._auth_headers(),
+        )
+        response.raise_for_status()
 
     def _deliver(self, item: ReadyItem, base_url: str) -> None:
         downloads_dir = self._settings.media_root / ".downloads"

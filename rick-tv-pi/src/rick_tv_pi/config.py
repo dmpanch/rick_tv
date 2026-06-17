@@ -11,3 +11,4 @@ class PiSettings:
     media_root: Path
     poll_interval_seconds: int = 60
     metadata_path: Path | None = None
+    remote_poll_interval_seconds: int = 2

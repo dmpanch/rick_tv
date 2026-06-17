@@ -122,10 +122,27 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             )
             """
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS remote_commands (
+                command_id TEXT PRIMARY KEY,
+                command_type TEXT NOT NULL CHECK (command_type IN ('select_channel')),
+                channel_id TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (status IN ('pending', 'completed')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                completed_at TEXT
+            )
+            """
+        )
 
 
 def _database_is_empty(connection: sqlite3.Connection) -> bool:
-    for table_name in ("channels", "media_items", "user_channel_preferences"):
+    for table_name in (
+        "channels",
+        "media_items",
+        "user_channel_preferences",
+        "remote_commands",
+    ):
         count = connection.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
         if count:
             return False

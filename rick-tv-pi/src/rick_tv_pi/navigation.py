@@ -54,3 +54,12 @@ class ChannelNavigator:
         elif action == "previous":
             self._current_index = (self._current_index - 1) % len(self._channels)
         player.select_channel(self._channels[self._current_index])
+
+    def select_channel_id(self, channel_id: str, player: ChannelPlayer) -> bool:
+        for index, channel in enumerate(self._channels):
+            if channel.id != channel_id:
+                continue
+            self._current_index = index
+            player.select_channel(channel)
+            return True
+        return False

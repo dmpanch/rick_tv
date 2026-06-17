@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from rick_tv_server.api import create_app
 from rick_tv_server.config import ServerSettings
+from rick_tv_server.remote import RemoteCommandStore
 from rick_tv_server.state import DeliveryStateStore
 
 
@@ -316,6 +317,57 @@ def test_channels_json_missing_registry_returns_empty_channels_document(tmp_path
 
     assert response.status_code == 200
     assert response.json() == {"channels": {}}
+
+
+def test_remote_commands_require_bearer_token_and_ack_idempotently(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    store = DeliveryStateStore(settings)
+    remote_store = RemoteCommandStore(
+        settings,
+        command_id_factory=lambda: "cmd-1",
+    )
+    remote_store.enqueue_select_channel("02_Cable")
+    client = TestClient(create_app(settings, store))
+
+    unauthenticated_list = client.get("/api/v1/commands")
+    authenticated_list = client.get(
+        "/api/v1/commands",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    unauthenticated_ack = client.post("/api/v1/commands/cmd-1/ack")
+    first_ack = client.post(
+        "/api/v1/commands/cmd-1/ack",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    second_ack = client.post(
+        "/api/v1/commands/cmd-1/ack",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    empty_list = client.get(
+        "/api/v1/commands",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    missing_ack = client.post(
+        "/api/v1/commands/missing/ack",
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert unauthenticated_list.status_code == 401
+    assert authenticated_list.status_code == 200
+    assert authenticated_list.json() == {
+        "commands": [
+            {
+                "id": "cmd-1",
+                "type": "select_channel",
+                "channel_id": "02_Cable",
+            }
+        ]
+    }
+    assert unauthenticated_ack.status_code == 401
+    assert first_ack.status_code == 204
+    assert second_ack.status_code == 204
+    assert empty_list.json() == {"commands": []}
+    assert missing_ack.status_code == 404
 
 
 def test_ready_endpoint_returns_device_deletions_for_deleted_server_side_items(

@@ -24,6 +24,7 @@ def test_load_settings_from_env_reads_required_and_optional_values(monkeypatch):
     assert settings.media_root == Path("/var/lib/rick-tv/media")
     assert settings.metadata_path == Path("/etc/rick-tv/channels.json")
     assert settings.poll_interval_seconds == 60
+    assert settings.remote_poll_interval_seconds == 2
 
 
 def test_load_videolooper_settings_from_env_reads_playlist_root_and_command_path(monkeypatch):
@@ -186,6 +187,60 @@ def test_runtime_cycle_applies_touch_navigation_between_server_polls(tmp_path):
     ]
 
 
+def test_runtime_cycle_applies_remote_navigation_between_delivery_polls(tmp_path):
+    (tmp_path / "01_Citadel").mkdir()
+    (tmp_path / "02_Cable").mkdir()
+    (tmp_path / "01_Citadel" / "episode.mp4").touch()
+    (tmp_path / "02_Cable" / "episode.mp4").touch()
+    settings = PiSettings(
+        server_base_url="https://rick-tv.example",
+        api_token="test-token",
+        media_root=tmp_path,
+        poll_interval_seconds=60,
+        remote_poll_interval_seconds=2,
+    )
+    player = FakePlayer()
+    poller = RemoteCommandPoller(
+        [
+            [],
+            [FakeRemoteCommand("cmd-1", "select_channel", "02_Cable")],
+        ]
+    )
+    state = RuntimeState()
+
+    run_runtime_cycle(settings=settings, player=player, poller=poller, state=state, now=0.0)
+    run_runtime_cycle(settings=settings, player=player, poller=poller, state=state, now=2.1)
+
+    assert poller.poll_count == 1
+    assert poller.remote_poll_count == 2
+    assert poller.acked_commands == ["cmd-1"]
+    assert [channel.id for channel in player.selected_channels] == [
+        "01_Citadel",
+        "02_Cable",
+    ]
+
+
+def test_runtime_cycle_acks_remote_navigation_for_missing_local_channel(tmp_path):
+    (tmp_path / "01_Citadel").mkdir()
+    (tmp_path / "01_Citadel" / "episode.mp4").touch()
+    settings = PiSettings(
+        server_base_url="https://rick-tv.example",
+        api_token="test-token",
+        media_root=tmp_path,
+        remote_poll_interval_seconds=2,
+    )
+    player = FakePlayer()
+    poller = RemoteCommandPoller(
+        [[FakeRemoteCommand("cmd-1", "select_channel", "99_Missing")]]
+    )
+    state = RuntimeState()
+
+    run_runtime_cycle(settings=settings, player=player, poller=poller, state=state, now=0.0)
+
+    assert poller.acked_commands == ["cmd-1"]
+    assert [channel.id for channel in player.selected_channels] == ["01_Citadel"]
+
+
 def test_touch_action_queue_returns_none_without_blocking_when_empty():
     queue = TouchActionQueue()
 
@@ -228,6 +283,36 @@ class SuccessfulPoller:
     def poll_once(self, channels):
         self.poll_count += 1
         return []
+
+    def poll_remote_commands(self):
+        return []
+
+    def ack_remote_command(self, command_id):
+        del command_id
+
+
+class FakeRemoteCommand:
+    def __init__(self, command_id: str, command_type: str, channel_id: str):
+        self.id = command_id
+        self.type = command_type
+        self.channel_id = channel_id
+
+
+class RemoteCommandPoller(SuccessfulPoller):
+    def __init__(self, remote_batches):
+        super().__init__()
+        self._remote_batches = list(remote_batches)
+        self.remote_poll_count = 0
+        self.acked_commands = []
+
+    def poll_remote_commands(self):
+        self.remote_poll_count += 1
+        if not self._remote_batches:
+            return []
+        return self._remote_batches.pop(0)
+
+    def ack_remote_command(self, command_id):
+        self.acked_commands.append(command_id)
 
 
 class FakeTouchActions:

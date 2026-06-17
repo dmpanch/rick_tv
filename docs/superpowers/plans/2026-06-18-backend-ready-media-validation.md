@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Move Rick TV media-profile validation to the server, retry conversion once on validation failure, and make the Pi delivery client independent of `ffprobe`.
+**Goal:** Move Rick TV media-profile validation to the server, retry conversion once on validation failure, and make the appliance delivery client independent of `ffprobe`.
 
 **Architecture:** The server owns conversion and validation before an item reaches `/api/v1/ready`. `UploadProcessor` converts, validates with server-side `ffprobe`, retries once with a stricter conversion profile, and marks failed uploads with a persisted message. The Pi trusts server-ready media and only verifies delivery integrity through `sha256` before atomic placement and ack.
 
-**Tech Stack:** Python 3.12 server, Python >=3.7 Pi client, FastAPI, python-telegram-bot, httpx, pytest, ffmpeg/ffprobe in the server Docker image, JSON/YAML state files.
+**Tech Stack:** Python 3.12 server, server-side ffmpeg/ffprobe, Python >=3.7 appliance client, FastAPI, python-telegram-bot, httpx, pytest, SQLite state plus legacy JSON/YAML migration.
 
 ---
 
@@ -21,7 +21,7 @@
 - Modify `rick-tv-server/src/rick_tv_server/uploads.py`: validate converted output, retry once, mark failed, and raise a user-facing upload error.
 - Modify `rick-tv-server/src/rick_tv_server/bot.py`: report the upload preparation error text when `UploadProcessor` raises it.
 - Modify `rick-tv-server/tests/test_bot.py`: verify Telegram upload failure message can mention media preparation.
-- Modify `rick-tv-pi/src/rick_tv_pi/poller.py`: remove Pi-side `validate_ready_profile()` call and `ffprobe` dependency.
+- Modify `rick-tv-pi/src/rick_tv_pi/poller.py`: remove appliance-side `validate_ready_profile()` call and `ffprobe` dependency.
 - Delete `rick-tv-pi/src/rick_tv_pi/validator.py`: validation no longer belongs to Pi runtime.
 - Delete `rick-tv-pi/tests/test_validator.py`: validator tests move to the server.
 - Modify `rick-tv-pi/tests/test_poller.py`: rewrite delivery tests around checksum and atomic placement, not media-profile validation.
@@ -446,13 +446,12 @@ Update `rick-tv-server/src/rick_tv_server/state.py`:
 DeliveryStatus = Literal[
     "uploaded",
     "converting",
-    "pending",
+    "pending_delivery",
+    "available",
     "failed",
     "canceled",
-    "delivered",
-    "archived",
-    "deleted_server_side",
-    "deleted_from_library",
+    "pending_device_delete",
+    "deleted",
 ]
 ```
 
@@ -501,7 +500,7 @@ Update `has_active_media_for_channel(...)` so failed uploads are not active:
                 if item.status not in {
                     "failed",
                     "canceled",
-                    "deleted_from_library",
+                    "deleted",
                 }:
                     return True
 ```
@@ -811,7 +810,7 @@ git commit -m "feat: validate uploads before delivery"
 - Modify: `rick-tv-pi/tests/test_poller.py`
 - Delete: `rick-tv-pi/tests/test_validator.py`
 
-- [ ] **Step 1: Rewrite Pi poller tests around checksum, not ffprobe**
+- [ ] **Step 1: Rewrite appliance poller tests around checksum, not ffprobe**
 
 In `rick-tv-pi/tests/test_poller.py`, remove `import rick_tv_pi.poller as poller_module` if it is only used for validator monkeypatches after the edits.
 
@@ -912,8 +911,8 @@ Use `failed_sha` for the failed item payload, remove `validated_paths`, remove v
 ```python
     assert not failed_destination.exists()
     assert not failed_temp_path.exists()
-    assert delivered_destination.read_bytes() == delivered_media_bytes
-    assert not delivered_temp_path.exists()
+    assert downloaded_destination.read_bytes() == downloaded_media_bytes
+    assert not downloaded_temp_path.exists()
 ```
 
 Remove all remaining `poller_module.validate_ready_profile` monkeypatches in `test_poller.py`.
@@ -1024,7 +1023,7 @@ git commit -m "test: update media delivery contract"
 Run:
 
 ```bash
-rg -n "Pi проверяет|ffprobe|validate_ready_profile|validator.py|server.*valid|готовый файл" README.md docs
+rg -n "локально проверяет|ffprobe|validate_ready_profile|validator.py|server.*valid|готовый файл" README.md docs
 ```
 
 Update docs so the current contract is explicit:
@@ -1040,8 +1039,8 @@ In Russian README text, use:
 
 ```markdown
 Сервер конвертирует загрузку в Rick TV ready-profile и валидирует результат
-через `ffprobe` до появления файла в `/api/v1/ready`. Pi не требует `ffmpeg` или
-`ffprobe`: она скачивает уже проверенный сервером `.mp4`, сверяет `sha256`,
+через `ffprobe` до появления файла в `/api/v1/ready`. `ffmpeg` и `ffprobe`
+нужны только серверу: Pi скачивает уже проверенный сервером `.mp4`, сверяет `sha256`,
 кладет файл в каталог канала и отправляет ack.
 ```
 
@@ -1050,12 +1049,12 @@ In Russian README text, use:
 Run:
 
 ```bash
-rg -n "Pi проверяет|Pi validates|rick_tv_pi.validator|validate_ready_profile|ffprobe" README.md docs rick-tv-pi rick-tv-server
+rg -n "локально проверяет|rick_tv_pi.validator|validate_ready_profile|ffprobe" README.md docs rick-tv-pi rick-tv-server
 ```
 
 Expected:
 - `ffprobe` remains in server docs, server Docker docs, server validator code/tests, and historical implementation plan lines that are updated to say server-side.
-- No docs claim Pi runtime needs `ffprobe`.
+- No docs claim appliance runtime needs `ffprobe`.
 - No production Pi code imports `validate_ready_profile`.
 
 - [ ] **Step 3: Commit docs**
@@ -1152,7 +1151,7 @@ ssh -tt pi@192.168.1.68 'sleep 35; sudo find /home/pi/rick-tv/media/04_Pipa_Panc
 
 Expected: output includes `a37a668d54c244acae1e5947b14b77f9.mp4` or another newly uploaded item for `04_Pipa_Panch`.
 
-- [ ] **Step 4: Verify server acked the delivered item**
+- [ ] **Step 4: Verify server acked the available item**
 
 Run:
 
@@ -1162,14 +1161,18 @@ docker compose exec -T rick-tv-server python - <<'PY'
 import json
 from pathlib import Path
 
-state = json.loads(Path('/var/lib/rick-tv/state/queue.json').read_text())
-for item_id, item in sorted(state.get('items', {}).items()):
-    if item.get('channel_id') == '04_Pipa_Panch':
-        print(item_id, item.get('status'), item.get('filename'))
+import sqlite3
+
+with sqlite3.connect('/var/lib/rick-tv/state/rick-tv.sqlite3') as connection:
+    for item_id, status, filename in connection.execute(
+        "SELECT item_id, status, filename FROM media_items WHERE channel_id = ?",
+        ('04_Pipa_Panch',),
+    ):
+        print(item_id, status, filename)
 PY
 ```
 
-Expected: the uploaded `04_Pipa_Panch` item is `archived` after ack.
+Expected: the uploaded `04_Pipa_Panch` item is `available` after ack.
 
 - [ ] **Step 5: Push branch**
 

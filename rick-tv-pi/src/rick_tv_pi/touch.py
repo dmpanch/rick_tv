@@ -40,7 +40,7 @@ class TouchInterpreter:
             return None
         if abs(horizontal_delta) <= abs(vertical_delta) * 1.3:
             return None
-        if horizontal_delta < 0:
+        if horizontal_delta > 0:
             action: SwipeAction = "next"
         else:
             action = "previous"

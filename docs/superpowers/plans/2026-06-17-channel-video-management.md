@@ -18,12 +18,12 @@
 
 - [x] **Step 1: Write failing state tests**
 
-Add tests that create uploaded/converted media in one channel, ack it to archive, call a new `delete_item_from_channel(item_id)` method, and assert:
+Add tests that create uploaded/converted media in one channel, ack it to available, call `delete_item_from_channel(item_id)`, and assert:
 - active channel lists exclude deleted media;
 - original and converted files under `settings.media_dir` are removed;
-- the item becomes `deleted_server_side`;
+- the item becomes `pending_device_delete`;
 - `device_delete_items_for_channels([channel_id])` returns the item until `ack_device_delete(item_id)`;
-- `ack_device_delete(item_id)` changes status to `deleted_from_library`.
+- `ack_device_delete(item_id)` changes status to `deleted`.
 
 - [x] **Step 2: Run state tests red**
 
@@ -67,7 +67,7 @@ Add tests asserting `/api/v1/ready?channels=01_Citadel` returns both:
 - `items`: existing pending download items;
 - `deletions`: deleted-server-side items with `id`, `channel_id`, and `filename`.
 
-Add tests for `POST /api/v1/delete-ack/{item_id}` requiring bearer auth and moving the item from `deleted_server_side` to `deleted_from_library`.
+Add tests for `POST /api/v1/delete-ack/{item_id}` requiring bearer auth and moving the item from `pending_device_delete` to `deleted`.
 
 - [x] **Step 2: Run API tests red**
 
@@ -205,4 +205,3 @@ git push
 ```
 
 Expected: feature branch is pushed with the implementation.
-

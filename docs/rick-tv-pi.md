@@ -37,18 +37,21 @@ Create `/etc/rick-tv-pi.env` for the systemd service:
 RICK_TV_SERVER_URL=https://rick-tv.example
 RICK_TV_API_TOKEN=replace-me
 RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media
-RICK_TV_METADATA_PATH=/home/pi/rick-tv/channels.json
+RICK_TV_METADATA_PATH=/home/pi/rick-tv/config/channels.json
 RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT=/home/pi/rick-tv/playlists
 RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo
 RICK_TV_CHANNEL_SHUFFLE_SECONDS=3600
+RICK_TV_REMOTE_POLL_INTERVAL_SECONDS=2
 ```
 
 `RICK_TV_METADATA_PATH` is optional, but it should be set when the Pi is expected
 to receive the first file for a registry channel that does not yet exist locally.
 The Pi downloads `/api/v1/channels` JSON to this path and uses registry channel
 IDs for delivery polling. `RICK_TV_POLL_INTERVAL_SECONDS` is optional and
-defaults to `60`. `RICK_TV_CHANNEL_SHUFFLE_SECONDS` controls how often files
-inside each channel playlist are reshuffled; the default is `3600` seconds.
+defaults to `60`. `RICK_TV_REMOTE_POLL_INTERVAL_SECONDS` controls the faster
+Telegram remote-control command poll and defaults to `2`. `RICK_TV_CHANNEL_SHUFFLE_SECONDS`
+controls how often files inside each channel playlist are reshuffled; the
+default is `3600` seconds.
 
 Touch gestures also can be tuned for DPI orientation:
 
@@ -81,6 +84,13 @@ commands. For each deletion, the Pi removes
 `/api/v1/delete-ack/{item_id}`; a missing local file is treated as already
 deleted.
 
+The Pi also polls `/api/v1/commands` on the faster remote interval. The current
+command type is `select_channel`, queued by the Telegram bot. If the requested
+channel is playable locally, the Pi selects it through the existing
+videolooper playlist/FIFO path and acknowledges the command. If the channel is
+not locally playable yet, the Pi logs that fact and still acknowledges the
+command so it does not remain pending forever.
+
 A directory is a navigation/playback channel only when it contains at least one
 playable `.mp4`. Empty directories are ignored by navigation and generated
 playlists until a playable `.mp4` appears. When `RICK_TV_METADATA_PATH` is set,
@@ -93,6 +103,8 @@ Runtime playback is built around the prepared Adafruit `pi_video_looper`
 installation. Rick TV writes per-channel playlists plus a master playlist,
 then switches channels through the videolooper FIFO command path. This
 videolooper integration is the stable Pi playback path for the legacy image.
+Channel titles are still shown through the videolooper/omxplayer subtitle path,
+but Rick TV generates ASS subtitles aligned to the top-left corner.
 
 The Pi exposes no inbound Rick TV ports. Delivery is initiated by authenticated outbound polling to the server.
 

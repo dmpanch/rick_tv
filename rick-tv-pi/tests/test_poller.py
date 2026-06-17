@@ -8,7 +8,7 @@ import httpx
 
 from rick_tv_pi.channels import Channel
 from rick_tv_pi.config import PiSettings
-from rick_tv_pi.poller import Poller
+from rick_tv_pi.poller import Poller, RemoteCommand
 
 
 def test_poll_sends_authenticated_known_channels(tmp_path):
@@ -88,6 +88,50 @@ def test_sync_channel_registry_downloads_channels_json_atomically(tmp_path):
     assert stat.S_IMODE(metadata_path.stat().st_mode) == 0o644
     assert not list(metadata_path.parent.glob("*.tmp"))
     assert [request.url.path for request in seen_requests] == ["/api/v1/channels"]
+
+
+def test_remote_command_poll_and_ack_use_bearer_token(tmp_path):
+    seen_requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(request)
+        assert request.headers["Authorization"] == "Bearer test-token"
+        if request.method == "GET" and request.url.path == "/api/v1/commands":
+            return httpx.Response(
+                200,
+                json={
+                    "commands": [
+                        {
+                            "id": "cmd-1",
+                            "type": "select_channel",
+                            "channel_id": "02_Cable",
+                        }
+                    ]
+                },
+            )
+        if request.method == "POST" and request.url.path == "/api/v1/commands/cmd-1/ack":
+            return httpx.Response(204)
+        return httpx.Response(404)
+
+    http_client = httpx.Client(
+        base_url="https://server.example",
+        transport=httpx.MockTransport(handler),
+    )
+    settings = PiSettings(
+        server_base_url="https://server.example",
+        api_token="test-token",
+        media_root=tmp_path,
+    )
+    poller = Poller(settings, http_client)
+
+    commands = poller.poll_remote_commands()
+    poller.ack_remote_command(commands[0].id)
+
+    assert commands == [RemoteCommand(id="cmd-1", type="select_channel", channel_id="02_Cable")]
+    assert [(request.method, request.url.path) for request in seen_requests] == [
+        ("GET", "/api/v1/commands"),
+        ("POST", "/api/v1/commands/cmd-1/ack"),
+    ]
 
 
 def test_poll_uses_registry_channel_ids_for_first_delivery(

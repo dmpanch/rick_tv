@@ -21,6 +21,7 @@ from telegram.ext import (
 
 from rick_tv_server.channels import ChannelRegistryStore
 from rick_tv_server.config import ServerSettings
+from rick_tv_server.remote import RemoteCommandStore
 from rick_tv_server.uploads import UploadProcessingError
 
 
@@ -120,6 +121,7 @@ def build_channel_list_keyboard(channel_store: ChannelRegistryStore) -> Keyboard
 
 def build_selected_channel_keyboard(channel_id: str) -> Keyboard:
     return [
+        [{"text": "Switch channel on Pi", "callback_data": f"channel_switch:{channel_id}"}],
         [{"text": "List all videos", "callback_data": f"channel_videos:{channel_id}"}],
         [{"text": "Rename channel", "callback_data": f"channel_rename:{channel_id}"}],
         [{"text": "Delete channel", "callback_data": f"channel_delete:{channel_id}"}],
@@ -321,6 +323,7 @@ async def handle_channel_callback(
     context: Any,
     channel_store: ChannelRegistryStore,
     state_store: Any,
+    remote_command_store: Any | None = None,
     *,
     allowed_user_ids: tuple[int, ...],
 ) -> None:
@@ -344,6 +347,21 @@ async def handle_channel_callback(
             format_selected_channel(channel_store, channel_id),
             reply_markup=_build_reply_markup(build_selected_channel_keyboard(channel_id)),
         )
+        return
+
+    if data.startswith("channel_switch:"):
+        channel_id = data.removeprefix("channel_switch:")
+        label = format_selected_channel(channel_store, channel_id).removeprefix(
+            "Channel: "
+        )
+        if label == "Channel is not available.":
+            await query.edit_message_text("Channel is not available.")
+            return
+        if remote_command_store is None:
+            await query.edit_message_text("Remote command store is not available.")
+            return
+        remote_command_store.enqueue_select_channel(channel_id)
+        await query.edit_message_text(f"Queued switch to {label} on Pi.")
         return
 
     if data.startswith("channel_videos:"):
@@ -702,6 +720,7 @@ def build_application(
         raise RuntimeError("RICK_TV_TELEGRAM_BOT_TOKEN must be set for bot runner")
 
     allowed_user_ids = settings.telegram_allowed_user_ids
+    remote_command_store = RemoteCommandStore(settings)
     application = (
         ApplicationBuilder()
         .token(settings.telegram_bot_token)
@@ -744,6 +763,7 @@ def build_application(
                 handle_channel_callback,
                 channel_store=channel_store,
                 state_store=state_store,
+                remote_command_store=remote_command_store,
                 allowed_user_ids=allowed_user_ids,
             ),
             pattern=r"^channel_",

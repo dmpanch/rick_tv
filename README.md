@@ -13,6 +13,7 @@ Rick TV — это связка серверного и клиентского �
 3. Сервер отдаёт JSON registry для Pi через `/api/v1/channels`.
 4. Raspberry Pi периодически синхронизирует registry, запрашивает `/api/v1/ready`, скачивает новые ролики по каналам, применяет команды удаления и подтверждает получение через `/api/v1/ack/{id}` или удаление через `/api/v1/delete-ack/{id}`.
 5. `videolooper` проигрывает обновлённые плейлисты каналов и является выбранным стабильным runtime playback решением для Pi.
+6. Telegram bot может поставить команду переключения канала; Pi забирает её через `/api/v1/commands` и подтверждает `/api/v1/commands/{id}/ack`.
 
 ## Аппаратные требования
 
@@ -108,6 +109,7 @@ rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
 - `RICK_TV_MEDIA_ROOT` — корень папок каналов на Pi.
 - `RICK_TV_METADATA_PATH` — путь к `channels.json` (опционально).
 - `RICK_TV_POLL_INTERVAL_SECONDS` — интервал опроса сервера в секундах.
+- `RICK_TV_REMOTE_POLL_INTERVAL_SECONDS` — быстрый интервал опроса Telegram remote-control команд.
 - `RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT` — путь к рабочей папке `videolooper`.
 - `RICK_TV_VIDEOLOOPER_COMMAND_PATH` — FIFO для команд проигрывателю.
 - `RICK_TV_CHANNEL_SHUFFLE_SECONDS` — как часто перемешивать плейлист внутри канала.
@@ -160,16 +162,17 @@ Telegram runner реализован в `rick_tv_server.bot_runner` и запу�
 
 1. Allowlisted пользователь открывает Telegram command menu.
 2. `/add_channel` просит только название; stable channel ID создаётся автоматически инкрементом, например `04_Birdperson_TV`.
-3. `/list_channels` показывает каналы в виде `01 - Citadel`; выбор канала открывает `List all videos`, `Rename channel` и `Delete channel`.
+3. `/list_channels` показывает каналы в виде `01 - Citadel`; выбор канала открывает `Switch channel on Pi`, `List all videos`, `Rename channel` и `Delete channel`.
 4. `List all videos` показывает каждое активное видео канала отдельной кнопкой. Внутри видео доступны `Download`, `Delete` и `Back`.
-5. `Download` отправляет converted Pi-ready `.mp4` обратно в Telegram.
-6. `Delete` удаляет original и converted файлы с сервера, убирает видео из active library и ставит команду удаления для Pi. Pi удалит локальную копию при следующем успешном poll и подтвердит `/api/v1/delete-ack/{id}`.
-7. `/restore_all_videos` запрашивает подтверждение на повторную доставку всей активной библиотеки.
-8. Пользователь отправляет Telegram `video` или `document`; бот после этого предлагает выбрать канал.
-9. После выбора канала бот скачивает файл локально и вызывает `UploadProcessor.process_upload(...)`.
-10. Сервер сохраняет original upload и converted Pi-ready `.mp4` в `media/library/<channel_id>/<item_id>/...`.
-11. Ролик становится `pending_delivery`, затем Pi забирает его с сервера; после ack сервер переводит его в `available`.
+5. `Switch channel on Pi` ставит remote command; Pi забирает её быстрым poll и переключается через videolooper FIFO, если канал уже playable локально.
+6. `Download` отправляет converted Pi-ready `.mp4` обратно в Telegram.
+7. `Delete` удаляет original и converted файлы с сервера, убирает видео из active library и ставит команду удаления для Pi. Pi удалит локальную копию при следующем успешном poll и подтвердит `/api/v1/delete-ack/{id}`.
+8. `/restore_all_videos` запрашивает подтверждение на повторную доставку всей активной библиотеки.
+9. Пользователь отправляет Telegram `video` или `document`; бот после этого предлагает выбрать канал.
+10. После выбора канала бот скачивает файл локально и вызывает `UploadProcessor.process_upload(...)`.
+11. Сервер сохраняет original upload и converted Pi-ready `.mp4` в `media/library/<channel_id>/<item_id>/...`.
+12. Ролик становится `pending_delivery`, затем Pi забирает его с сервера; после ack сервер переводит его в `available`.
 
-Сервер приводит файл к целевому профилю (`640x480`, `h264`, `aac`) и валидирует converted `.mp4` через `ffprobe` до появления файла в `/api/v1/ready`. Pi не требует `ffmpeg` или `ffprobe`: она скачивает уже проверенный сервером файл, сверяет `sha256`, кладет его в каталог канала и отправляет ack.
+Сервер приводит файл к целевому профилю (`640x480`, `h264`, `aac`) и валидирует converted `.mp4` через `ffprobe` до появления файла в `/api/v1/ready`. `ffmpeg` и `ffprobe` нужны только серверу: Pi скачивает уже проверенный файл, сверяет `sha256`, кладет его в каталог канала и отправляет ack.
 
 Delete из экрана конкретного видео канала — физическое удаление с сервера плюс асинхронное удаление с Pi. Действие `restore all` в Telegram requeue-ит активные `available` элементы, чтобы заменить или восстановить Pi и заново доставить библиотеку.

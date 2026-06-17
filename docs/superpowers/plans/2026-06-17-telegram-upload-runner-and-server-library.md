@@ -4,9 +4,9 @@
 
 **Goal:** Add a full Telegram upload runner, channel registry management, Pi channel sync, and server-side media library restore flow.
 
-**Architecture:** Run the Telegram bot as a separate Docker Compose service using the same `rick-tv-server` image and shared media/config/state volumes. Store channel registry in server config YAML, expose it to the Pi through an authenticated API endpoint, and keep server-side original plus converted media as the recovery source for a replacement Pi.
+**Architecture:** Run the Telegram bot as a separate Docker Compose service using the same `rick-tv-server` image and shared media/config/state volumes. Store channel registry and media state in SQLite, expose the channel registry to the Pi through authenticated JSON, and keep server-side original plus converted media as the recovery source for a replacement Pi.
 
-**Tech Stack:** Python 3.12, python-telegram-bot, FastAPI, PyYAML, pytest, Docker Compose, server-side ffmpeg/ffprobe, JSON/YAML files on mounted volumes.
+**Tech Stack:** Python 3.12, python-telegram-bot, FastAPI, SQLite, pytest, Docker Compose, server-side ffmpeg/ffprobe, mounted media/state/config volumes.
 
 ---
 
@@ -37,17 +37,15 @@ The server becomes the canonical media library: it keeps original uploads and co
 - Create: `rick-tv-server/src/rick_tv_server/channels.py`
 - Create: `rick-tv-server/tests/test_channels.py`
 
-- [x] Implement YAML-backed channel registry using the current shape:
+- [x] Implement SQLite-backed channel registry exposed through the current JSON shape:
 
-```yaml
-channels:
-  01_Citadel:
-    display_name: Citadel TV
+```json
+{"channels": {"01_Citadel": {"display_name": "Citadel TV"}}}
 ```
 
 - [x] Provide list/add/rename/delete operations.
 - [x] Validate stable filesystem/API channel IDs in the registry.
-- [x] Write YAML atomically using a temporary file plus replace.
+- [x] Persist registry changes transactionally in SQLite.
 - [x] Reject delete when `DeliveryStateStore` has active media references for that channel.
 
 ### Task 3: Authenticated Channel Registry API
@@ -57,10 +55,10 @@ channels:
 - Modify: `rick-tv-server/src/rick_tv_server/main.py`
 - Modify: `rick-tv-server/tests/test_api.py`
 
-- [x] Add authenticated `GET /api/v1/channels.yml`.
-- [x] Return the channel registry YAML from `RICK_TV_CHANNELS_PATH`.
+- [x] Add authenticated `GET /api/v1/channels`.
+- [x] Return the channel registry JSON from SQLite.
 - [x] Preserve existing `/health`, `/ready`, `/download`, and `/ack` behavior.
-- [x] Test auth required, content returned, and missing registry returns an empty `channels: {}` document.
+- [x] Test auth required, content returned, and empty first start returns `{"channels": {}}`.
 
 ### Task 4: Pi Channel Registry Sync
 
@@ -71,8 +69,8 @@ channels:
 - Modify: `rick-tv-pi/tests/test_poller.py`
 - Modify: `rick-tv-pi/tests/test_main.py`
 
-- [x] Add a Pi-side registry sync method that downloads `/api/v1/channels.yml` with the existing bearer token.
-- [x] Write the downloaded YAML to `RICK_TV_METADATA_PATH` atomically when that path is configured.
+- [x] Add a Pi-side registry sync method that downloads `/api/v1/channels` with the existing bearer token.
+- [x] Write the downloaded JSON to `RICK_TV_METADATA_PATH` atomically when that path is configured.
 - [x] Use registry channel IDs for `/api/v1/ready` polling.
 - [x] Keep navigation/playlists limited to local playable `.mp4` directories.
 - [x] Test first-delivery behavior for a channel known from registry but not yet playable locally.
@@ -83,11 +81,9 @@ channels:
 - Modify: `rick-tv-server/src/rick_tv_server/state.py`
 - Modify: `rick-tv-server/tests/test_state.py`
 
-- [x] Reload state from disk before read operations that affect API/bot visibility.
-- [x] Add file locking around read-modify-write operations.
-- [x] Keep the existing atomic temp-file replace behavior.
+- [x] Store API/bot-visible state in SQLite with transactional writes.
 - [x] Test that an API store instance sees pending items created by a separate bot store instance.
-- [x] Test that two sequential store instances preserve both updates instead of overwriting stale state.
+- [x] Test startup migration from legacy files only when the SQLite DB is empty.
 
 ### Task 6: Server Media Library Semantics
 
@@ -100,7 +96,7 @@ channels:
 - [x] Preserve both original upload and converted Pi-ready MP4 after successful conversion.
 - [x] Treat converted MP4 as the active delivery/restoration artifact.
 - [x] Keep acknowledged media restorable until a concrete channel-video delete removes it from the library.
-- [x] Add restore-all state operation that requeues every active archived library item as pending without duplicating media files.
+- [x] Add restore-all state operation that requeues every active available library item as pending without duplicating media files.
 - [x] Keep restore scope single-Pi; do not add device IDs or per-device ack state.
 
 ### Task 7: Telegram Access Control And Runner Entry Point
@@ -135,7 +131,7 @@ channels:
 - Modify: `rick-tv-server/tests/test_bot.py`
 
 - [x] Implement video-first upload flow.
-- [x] Accept media first, then show explicit channel choices from the YAML registry with remembered-channel ordering.
+- [x] Accept media first, then show explicit channel choices from the SQLite registry with remembered-channel ordering.
 - [x] Accept Telegram `video` and `document` attachments.
 - [x] Download the selected attachment to a server-side temporary upload path.
 - [x] Call `UploadProcessor.process_upload(...)` through `asyncio.to_thread(...)`.
@@ -150,7 +146,7 @@ channels:
 
 - [x] Add admin action "restore all".
 - [x] Require confirmation before requeueing media.
-- [x] Requeue every active archived library item for delivery.
+- [x] Requeue every active available library item for delivery.
 - [x] Exclude soft-deleted library items.
 - [x] Reply with the number of media items requeued.
 
@@ -165,7 +161,7 @@ channels:
 
 - [x] Add `rick-tv-bot` service sharing image/build and `media/config/state` volumes with `rick-tv-server`.
 - [x] Set bot-specific env vars in Compose.
-- [x] Document bot token, allowed Telegram users, channel registry YAML path, upload flow, channel video deletion, and restore-all behavior.
+- [x] Document bot token, allowed Telegram users, SQLite/JSON channel registry, upload flow, channel video deletion, and restore-all behavior.
 - [x] Test Compose includes both services and shared volumes.
 
 ### Task 12: End-To-End Contract Coverage
@@ -173,18 +169,18 @@ channels:
 **Files:**
 - Modify: `tests/test_end_to_end_contract.py`
 
-- [x] Test first upload to a new registry channel is delivered to an empty Pi media root.
-- [x] Test Pi downloads channel registry YAML, polls with registry IDs, downloads pending media, atomically places it, and acks it.
-- [x] Test restore all requeues archived library media and delivers it to a fresh Pi media root.
+- [x] Test first upload to a new registry channel is available to an empty Pi media root.
+- [x] Test Pi downloads channel registry JSON, polls with registry IDs, downloads pending media, atomically places it, and acks it.
+- [x] Test restore all requeues available library media and delivers it to a fresh Pi media root.
 
 ## Acceptance Criteria
 
 - Unauthorized Telegram users cannot upload, manage channels, or restore media.
 - Allowlisted users can create channels, upload video/document media, and see the media become pending for Pi delivery.
-- Server keeps original uploads and converted ready MP4 files after ack/archive.
+- Server keeps original uploads and converted ready MP4 files after ack.
 - Deleting a channel video removes its server files and queues deletion for the Pi.
-- Restore all requeues active archived media and allows a replacement Pi to redownload the library.
-- API and bot processes can share state safely through mounted state files.
+- Restore all requeues active available media and allows a replacement Pi to redownload the library.
+- API and bot processes can share state safely through mounted SQLite state.
 - Pi can learn registry channels from the server while still showing only local playable `.mp4` channels.
 
 ## Verification Commands
@@ -213,7 +209,7 @@ docker compose down
 
 - Bot uses long polling, not Telegram webhooks.
 - Channel IDs are manually entered and stable; renaming does not change IDs.
-- Bot CRUD channel registry is the source of truth for upload choices and Pi polling IDs.
+- SQLite channel registry is the source of truth for upload choices and Pi polling IDs.
 - Empty channel directories remain hidden from Pi navigation until `.mp4` exists.
 - Server stores both original uploads and converted Pi-ready MP4 until a concrete channel-video delete removes that video from the server library.
 - Restore is single-Pi for now; no multi-device identities or per-device ack state.

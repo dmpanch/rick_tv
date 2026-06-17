@@ -7,7 +7,7 @@ whether an uploaded video is playable by the Pi videolooper runtime. The server
 already owns media conversion through `ffmpeg`, so it should also validate the
 converted MP4 through `ffprobe` before exposing the item through `/api/v1/ready`.
 
-The Pi should not require `ffmpeg` or `ffprobe`. It should download server-ready
+The appliance should not require `ffmpeg` or `ffprobe`. It should download server-ready
 media, verify the payload checksum, atomically place the file into the target
 channel directory, and acknowledge delivery.
 
@@ -28,7 +28,7 @@ legacy playback appliance that should stay small and stable.
 - Ensure `/api/v1/ready` only exposes media that passed backend validation.
 - Retry backend conversion once if the first converted output fails validation.
 - Keep Pi delivery lightweight: download, checksum, atomic placement, ack.
-- Remove Pi runtime dependency on `ffprobe` and `ffmpeg`.
+- Remove appliance runtime dependency on `ffprobe` and `ffmpeg`.
 - Make Telegram upload failures understandable when backend validation fails.
 
 ## Non-Goals
@@ -114,5 +114,5 @@ requiring local `ffprobe`.
 ## Documentation
 
 README and Pi documentation should say that the server prepares and validates
-playable MP4 files for videolooper. Pi setup should not list `ffmpeg` or
+playable MP4 files for videolooper. Appliance setup should not list `ffmpeg` or
 `ffprobe` as runtime requirements.

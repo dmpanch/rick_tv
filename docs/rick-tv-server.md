@@ -102,11 +102,18 @@ using this generated shape:
 If the DB is empty and no legacy `channels.yml` or `queue.json` exists, startup
 creates an empty DB and `/api/v1/channels` returns `{"channels": {}}`.
 
+The server also exposes a small authenticated remote-control API for the current
+single Pi appliance. `GET /api/v1/commands` returns pending commands, and
+`POST /api/v1/commands/{command_id}/ack` completes a command after the Pi has
+handled it. The first command type is `select_channel`, queued from Telegram.
+
 Allowlisted Telegram users can use the Telegram command menu to manage the
 registry. `/add_channel` asks only for the display name; the bot generates the
 next stable filesystem/API channel ID, for example `04_Birdperson_TV`.
 `/list_channels` shows channels as `01 - Citadel`; selecting one channel opens
-its own `List all videos`, `Rename channel`, and `Delete channel` actions.
+its own `Switch channel on Pi`, `List all videos`, `Rename channel`, and
+`Delete channel` actions. `Switch channel on Pi` queues a remote command and
+does not wait for the Pi to acknowledge it synchronously.
 `List all videos` shows each active channel video as a separate button. A video
 detail view can send the converted Pi-ready MP4 back to Telegram, delete the
 video, or go back to the channel video list. `/restore_all_videos` starts the

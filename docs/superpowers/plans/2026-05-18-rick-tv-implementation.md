@@ -4,26 +4,28 @@
 
 **Goal:** Build the first working Rick TV system: a non-Dockerized Raspberry Pi appliance client and a Dockerized Telegram/upload/conversion/delivery server.
 
-**Architecture:** Use two Python projects in one repo: `rick-tv-pi` for playable channel discovery, server registry sync, videolooper playback control, touch swipes, polling, download, checksum verification, and atomic placement; `rick-tv-server` for the Telegram upload runner, channel registry management, conversion, ready-profile validation, authenticated HTTP delivery, and server-authoritative state/library. Server state lives in mounted files/volumes and Docker logs go to stdout/stderr; the Pi keeps no durable delivery logs.
+**Architecture:** Use two Python projects in one repo: `rick-tv-pi` for playable channel discovery, server registry sync, videolooper playback control, touch swipes, remote command polling, media polling, download, checksum verification, and atomic placement; `rick-tv-server` for the Telegram upload runner, SQLite channel registry management, conversion, ready-profile validation, authenticated HTTP delivery, remote commands, and server-authoritative state/library. Server runtime data lives in mounted media/state/config volumes and Docker logs go to stdout/stderr; the Pi keeps no durable delivery logs.
 
-**Tech Stack:** Pi Python `>=3.7` for the legacy Raspberry Pi OS image; server Python 3.12; pytest, FastAPI, Uvicorn, python-telegram-bot, PyYAML, httpx, server-side ffmpeg/ffprobe, Docker Compose, systemd service docs for Pi runtime.
+**Tech Stack:** Legacy appliance Python `>=3.7`; server Python 3.12 with server-side ffmpeg/ffprobe; pytest, FastAPI, Uvicorn, python-telegram-bot, PyYAML, httpx, Docker Compose, systemd service docs for Pi runtime.
 
 ---
 
 ## File Map
 
 - `rick-tv-pi/pyproject.toml`: Pi package metadata, dependencies, pytest config.
-- `rick-tv-pi/src/rick_tv_pi/config.py`: Pi settings loaded from env or YAML.
-- `rick-tv-pi/src/rick_tv_pi/channels.py`: playable channel directory discovery, ordering, metadata merge.
+- `rick-tv-pi/src/rick_tv_pi/config.py`: Pi settings loaded from env.
+- `rick-tv-pi/src/rick_tv_pi/channels.py`: playable channel directory discovery, ordering, JSON metadata merge.
 - `rick-tv-pi/src/rick_tv_pi/videolooper.py`: videolooper playlist generation, playback-facing state, and FIFO channel switching.
 - `rick-tv-pi/src/rick_tv_pi/touch.py`: swipe/tap interpretation with cooldown.
-- `rick-tv-pi/src/rick_tv_pi/poller.py`: authenticated channel registry sync, polling, download, checksum verification, atomic move, ack timing.
+- `rick-tv-pi/src/rick_tv_pi/poller.py`: authenticated JSON channel registry sync, media polling, remote command polling, download, checksum verification, atomic move, ack timing.
 - `rick-tv-pi/src/rick_tv_pi/main.py`: Pi CLI entrypoint that wires scanner, videolooper, touch, and poller.
 - `rick-tv-pi/tests/`: Pi unit and fake-server tests.
 - `rick-tv-pi/systemd/rick-tv-pi.service`: Pi service template with stdout/stderr journaling only.
 - `rick-tv-server/pyproject.toml`: server package metadata, dependencies, pytest config.
 - `rick-tv-server/src/rick_tv_server/config.py`: server settings and conversion profile.
-- `rick-tv-server/src/rick_tv_server/state.py`: JSON-backed queue, archive, user selection state.
+- `rick-tv-server/src/rick_tv_server/database.py`: SQLite schema, connection setup, and legacy JSON/YAML startup migration.
+- `rick-tv-server/src/rick_tv_server/state.py`: SQLite-backed media library, delivery lifecycle, and user selection state.
+- `rick-tv-server/src/rick_tv_server/remote.py`: SQLite-backed Telegram-to-Pi remote command queue.
 - `rick-tv-server/src/rick_tv_server/converter.py`: ffmpeg conversion to Pi-ready MP4 profile.
 - `rick-tv-server/src/rick_tv_server/validator.py`: ffprobe validation for server-ready MP4 profile.
 - `rick-tv-server/src/rick_tv_server/api.py`: authenticated FastAPI polling, download, ack endpoints.
@@ -37,6 +39,9 @@
 - `docs/rick-tv-server.md`: server setup/runtime notes.
 
 ## Implementation Tasks
+
+Historical task steps below preserve the original TDD execution path. The
+Completion Audit is the current source of truth for what exists now.
 
 ## Completion Audit
 
@@ -59,12 +64,14 @@ Audited against the current repository state on 2026-06-17. These checkboxes mar
 - [x] Task 15: Server pending-until-ack lifecycle exists.
 - [x] Task 16: Authenticated ready endpoint exists.
 - [x] Task 17: Download and ack endpoints exist.
+- [x] Follow-Up Task: Authenticated remote command API exists with `/api/v1/commands` and ack endpoint.
 - [x] Task 18: Server conversion profile exists.
 - [x] Task 19: Upload-to-pending processing exists.
 - [x] Task 20: Telegram explicit channel choice helpers exist.
 - [x] Task 21: Telegram pending list/cancel helpers exist.
 - [x] Task 22: Telegram channel video list/download/delete helpers exist.
 - [x] Follow-Up Task: Full Telegram upload runner exists in `rick_tv_server.bot_runner`.
+- [x] Follow-Up Task: Telegram selected-channel view can queue a Pi channel switch command.
 - [x] Task 23: Server main, logging setup, Dockerfile, Compose file, and deployment docs exist.
 - [x] Task 24: Runtime Docker smoke is confirmed with `docker compose build`, `docker compose up -d`, `/health`, logs, and `docker compose down`.
 - [x] Task 25: Public server health endpoint exists.
@@ -187,7 +194,7 @@ Run: `git add rick-tv-pi/src/rick_tv_pi/channels.py rick-tv-pi/tests/test_channe
 
 - [ ] **Step 1: Write failing metadata test**
 
-Add a test that writes `channels.yml` containing `01_Citadel: {display_name: "Citadel TV"}` and `Missing: {display_name: "Ignored"}`. Assert `01_Citadel.display_name == "Citadel TV"`, missing metadata creates no channel, and `Garage.display_name is None`.
+Add a test that writes JSON metadata containing `{"channels": {"01_Citadel": {"display_name": "Citadel TV"}, "Missing": {"display_name": "Ignored"}}}`. Assert `01_Citadel.display_name == "Citadel TV"`, missing metadata creates no channel, and `Garage.display_name is None`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -197,7 +204,7 @@ Expected: FAIL because metadata is not loaded.
 
 - [ ] **Step 3: Implement metadata loading**
 
-Update `discover_channels` to load YAML only when `metadata_path` exists. Accept only mapping shape `channels: {channel_id: {display_name: str}}`. Ignore malformed entries and entries for missing directories. Never derive display names from folder names.
+Update `discover_channels` to load JSON only when `metadata_path` exists. Accept only mapping shape `{"channels": {channel_id: {"display_name": str}}}`. Ignore malformed entries and entries for missing directories. Never derive display names from folder names.
 
 - [ ] **Step 4: Run tests**
 
@@ -277,7 +284,7 @@ Run: `git add rick-tv-pi/src/rick_tv_pi/videolooper.py rick-tv-pi/tests/test_vid
 
 - [ ] **Step 1: Write failing swipe tests**
 
-Test `TouchInterpreter(cooldown_seconds=0.5)`: left swipe from `(200, 100)` to `(20, 100)` returns `"next"`, right swipe returns `"previous"`, tap movement under threshold returns `None`.
+Test `TouchInterpreter(cooldown_seconds=0.5)`: right swipe from `(20, 100)` to `(200, 100)` returns `"next"`, left swipe returns `"previous"`, tap movement under threshold returns `None`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -307,7 +314,7 @@ Run: `git add rick-tv-pi/src/rick_tv_pi/touch.py rick-tv-pi/tests/test_touch.py 
 
 - [ ] **Step 1: Write failing cooldown test**
 
-Call two valid left swipes with timestamps less than `cooldown_seconds` apart. Assert first returns `"next"` and second returns `None`. Add a third swipe after cooldown and assert it returns `"next"`.
+Call two valid right swipes with timestamps less than `cooldown_seconds` apart. Assert first returns `"next"` and second returns `None`. Add a third swipe after cooldown and assert it returns `"next"`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -418,7 +425,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
-Run: `git add rick-tv-pi/src/rick_tv_pi/poller.py rick-tv-pi/tests/test_poller.py && git commit -m "feat: download and acknowledge delivered media"`
+Run: `git add rick-tv-pi/src/rick_tv_pi/poller.py rick-tv-pi/tests/test_poller.py && git commit -m "feat: download and acknowledge available media"`
 
 ### Task 12: Pi Retry And Redelivery Behavior
 
@@ -491,7 +498,7 @@ Run: `git add rick-tv-pi docs/rick-tv-pi.md && git commit -m "feat: wire pi runt
 
 - [ ] **Step 1: Write failing state test**
 
-Test `DeliveryStateStore` can create uploaded item, mark converting, mark pending, and persist/reload JSON from `state/queue.json`.
+Test `DeliveryStateStore` can create an uploaded item, mark converting, mark pending, and persist/reload through SQLite.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -501,7 +508,7 @@ Expected: FAIL with missing modules.
 
 - [ ] **Step 3: Implement JSON-backed state**
 
-Define `ServerSettings(media_dir: Path, config_dir: Path, state_dir: Path, api_token: str, public_base_url: str)`. Define item statuses `uploaded`, `converting`, `pending`, `canceled`, `delivered`, `archived`, `deleted_server_side`. Implement atomic JSON write using temp file plus replace. Store items, per-user last channel, acknowledgements, and archive index in state JSON.
+Define `ServerSettings(media_dir: Path, config_dir: Path, state_dir: Path, api_token: str, public_base_url: str)`. Define item statuses `uploaded`, `converting`, `pending_delivery`, `available`, `failed`, `canceled`, `pending_device_delete`, and `deleted`. Store media items and per-user last channel in SQLite.
 
 - [ ] **Step 4: Run state test**
 
@@ -521,7 +528,7 @@ Run: `git add rick-tv-server/src/rick_tv_server/config.py rick-tv-server/src/ric
 
 - [ ] **Step 1: Write failing ack lifecycle test**
 
-Create a pending item. Assert repeated `ready_items_for_channels(["01_Citadel"])` returns it. Call `ack_item(item_id)` and assert status transitions to `delivered`, then `archived`, and ready list no longer includes it.
+Create a pending item. Assert repeated `ready_items_for_channels(["01_Citadel"])` returns it. Call `ack_item(item_id)` and assert status transitions to `available`, then `available`, and ready list no longer includes it.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -531,7 +538,7 @@ Expected: FAIL because ready/ack behavior is missing.
 
 - [ ] **Step 3: Implement ready and ack methods**
 
-Add `ready_items_for_channels(channel_ids)`, `ack_item(item_id)`, and archive indexing. Keep pending items pending until ack; do not infer delivery from download.
+Add `ready_items_for_channels(channel_ids)` and `ack_item(item_id)`. Keep pending items pending until ack; do not infer delivery from download.
 
 - [ ] **Step 4: Run tests**
 
@@ -581,7 +588,7 @@ Run: `git add rick-tv-server/src/rick_tv_server/api.py rick-tv-server/tests/test
 
 - [ ] **Step 1: Write failing download/ack test**
 
-Create pending converted file under mounted media path. Assert authenticated `GET /api/v1/download/{item_id}` returns file bytes and does not change status. Assert authenticated `POST /api/v1/ack/{item_id}` changes status to delivered/archive and returns 204.
+Create pending converted file under mounted media path. Assert authenticated `GET /api/v1/download/{item_id}` returns file bytes and does not change status. Assert authenticated `POST /api/v1/ack/{item_id}` changes status to available and returns 204.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -591,7 +598,7 @@ Expected: FAIL because endpoints are missing.
 
 - [ ] **Step 3: Implement endpoints**
 
-Add download endpoint with auth, 404 for missing/canceled/non-pending items, and `FileResponse` from converted media path. Add ack endpoint with auth and idempotent success for already delivered/archive items.
+Add download endpoint with auth, 404 for missing/canceled/non-pending items, and `FileResponse` from converted media path. Add ack endpoint with auth and idempotent success for already available items.
 
 - [ ] **Step 4: Run API tests**
 
@@ -746,7 +753,7 @@ Expected: FAIL before the channel video callbacks and state operation exist.
 
 - [x] **Step 3: Implement channel video deletion**
 
-Add per-channel video list/detail callbacks. On video delete, remove server-side original and converted files, mark the item `deleted_server_side`, and expose the device deletion until Pi confirms it.
+Add per-channel video list/detail callbacks. On video delete, remove server-side original and converted files, mark the item `pending_device_delete`, and expose the device deletion until Pi confirms it.
 
 - [x] **Step 4: Run tests**
 
@@ -887,7 +894,7 @@ Run: `git add rick-tv-server/src/rick_tv_server/api.py rick-tv-server/tests/test
 
 - [ ] **Step 1: Write failing cross-project test**
 
-Create a repo-level pytest that initializes server state with a pending converted MP4, starts FastAPI TestClient or ASGI transport, creates Pi `Poller` with known channel `01_Citadel`, stubs Pi validator to true, runs one poll, and asserts file exists in Pi media root and server state is archived.
+Create a repo-level pytest that initializes server state with a pending converted MP4, starts FastAPI TestClient or ASGI transport, creates Pi `Poller` with known channel `01_Citadel`, stubs Pi validator to true, runs one poll, and asserts file exists in Pi media root and server state is available.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -926,7 +933,7 @@ Expected: PASS for channel discovery/metadata, playable-channel filtering, video
 
 - [ ] **Step 2: Inspect for durable delivery logs**
 
-Run: `rg -n "delivery.log|sqlite|queue.json|ack.json|open\\(.*log|FileHandler" rick-tv-pi/src rick-tv-pi/tests`
+Run: `rg -n "delivery.log|sqlite|ack.json|open\\(.*log|FileHandler" rick-tv-pi/src rick-tv-pi/tests`
 
 Expected: no Pi durable delivery log/state files. Any stdout/stderr or journald references are acceptable.
 
@@ -968,9 +975,9 @@ Expected: all tests pass.
 
 - [ ] **Step 2: Run local E2E flow**
 
-Run the documented manual flow from `docs/rick-tv-server.md`: place sample upload in server media volume, select `01_Citadel`, convert to pending, poll with Pi client pointed at local server, download, validate, atomic move, ack, and confirm server state transitions to delivered/archive.
+Run the documented manual flow from `docs/rick-tv-server.md`: place sample upload in server media volume, select `01_Citadel`, convert to pending, poll with Pi client pointed at local server, download, validate, atomic move, ack, and confirm server state transitions to available.
 
-Expected: converted MP4 appears under Pi `media_root/01_Citadel`, server item is archived, and no Pi durable delivery log is created.
+Expected: converted MP4 appears under Pi `media_root/01_Citadel`, server item is available, and no Pi durable delivery log is created.
 
 - [ ] **Step 3: Review spec coverage**
 

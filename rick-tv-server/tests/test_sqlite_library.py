@@ -37,7 +37,12 @@ def test_state_store_creates_sqlite_schema_at_default_db_path(tmp_path: Path):
             )
         }
 
-    assert {"channels", "media_items", "user_channel_preferences"} <= table_names
+    assert {
+        "channels",
+        "media_items",
+        "user_channel_preferences",
+        "remote_commands",
+    } <= table_names
 
 
 def test_channel_registry_is_backed_by_sqlite_and_dumps_json_payload(tmp_path: Path):

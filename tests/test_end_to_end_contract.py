@@ -7,9 +7,11 @@ from fastapi.testclient import TestClient
 
 from rick_tv_pi.channels import Channel
 from rick_tv_pi.config import PiSettings
+from rick_tv_pi.main import RuntimeState, run_runtime_cycle
 from rick_tv_pi.poller import Poller
 from rick_tv_server.api import create_app
 from rick_tv_server.config import ServerSettings
+from rick_tv_server.remote import RemoteCommandStore
 from rick_tv_server.state import DeliveryStateStore
 
 
@@ -280,3 +282,65 @@ channels:
     assert DeliveryStateStore(server_settings).items[item_id].status == (
         "deleted"
     )
+
+
+def test_telegram_remote_command_reaches_pi_and_is_acked(tmp_path: Path):
+    api_token = "contract-token"
+    server_settings = ServerSettings(
+        media_dir=tmp_path / "server-media",
+        config_dir=tmp_path / "server-config",
+        state_dir=tmp_path / "server-state",
+        api_token=api_token,
+        public_base_url="https://server.example",
+    )
+    store = DeliveryStateStore(server_settings)
+    remote_store = RemoteCommandStore(
+        server_settings,
+        command_id_factory=lambda: "cmd-1",
+    )
+    remote_store.enqueue_select_channel("02_Cable")
+
+    pi_media_root = tmp_path / "pi-media"
+    for channel_id in ("01_Citadel", "02_Cable"):
+        channel_path = pi_media_root / channel_id
+        channel_path.mkdir(parents=True)
+        (channel_path / "episode.mp4").write_bytes(b"media")
+
+    pi_settings = PiSettings(
+        server_base_url="https://server.example",
+        api_token=api_token,
+        media_root=pi_media_root,
+        poll_interval_seconds=60,
+        remote_poll_interval_seconds=2,
+    )
+    app = create_app(server_settings, store)
+    client = TestClient(app, base_url="https://server.example")
+    player = RecordingPlayer()
+
+    run_runtime_cycle(
+        settings=pi_settings,
+        player=player,
+        poller=Poller(pi_settings, client),
+        state=RuntimeState(),
+        now=0.0,
+    )
+
+    assert [channel.id for channel in player.selected_channels] == [
+        "01_Citadel",
+        "02_Cable",
+    ]
+    assert RemoteCommandStore(server_settings).pending_commands() == []
+
+
+class RecordingPlayer:
+    def __init__(self) -> None:
+        self.selected_channels = []
+
+    def sync_channels(self, channels, now=None):
+        del channels, now
+
+    def select_channel(self, channel):
+        self.selected_channels.append(channel)
+
+    def rescan_current_channel(self, now=None):
+        del now
