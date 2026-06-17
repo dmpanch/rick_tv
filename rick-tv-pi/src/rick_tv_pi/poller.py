@@ -12,7 +12,6 @@ import yaml
 
 from rick_tv_pi.channels import Channel
 from rick_tv_pi.config import PiSettings
-from rick_tv_pi.validator import validate_ready_profile
 
 
 logger = logging.getLogger(__name__)
@@ -114,10 +113,6 @@ class Poller:
                 if digest != item.sha256:
                     self._remove_temp(temp_path)
                     return
-
-            if not validate_ready_profile(temp_path):
-                self._remove_temp(temp_path)
-                return
 
             destination_dir = self._settings.media_root / item.channel_id
             destination_dir.mkdir(parents=True, exist_ok=True)
