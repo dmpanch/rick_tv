@@ -37,7 +37,7 @@ Channel switching stays local on the Pi and does not require server access.
 
 ## Channel Model
 
-Channels are directories directly under a configured `media_root`.
+Channels are playable directories directly under a configured `media_root`.
 
 Example Pi storage:
 
@@ -48,12 +48,13 @@ Example Pi storage:
   Garage/
 ```
 
-Ordering rules:
+Eligibility and ordering rules:
 
-1. Immediate directories under `media_root` are channels.
-2. Directories with a leading numeric prefix sort first by that number.
-3. Directories without a leading numeric prefix sort after numbered directories, alphabetically by directory name.
-4. Nested directories are not channels.
+1. An immediate directory under `media_root` becomes a channel only when it contains at least one playable `.mp4`.
+2. Empty directories are ignored by navigation, playlist generation, and the Pi polling channel list until a playable `.mp4` appears.
+3. Eligible directories with a leading numeric prefix sort first by that number.
+4. Eligible directories without a leading numeric prefix sort after numbered directories, alphabetically by directory name.
+5. Nested directories are not channels.
 
 Optional central YAML metadata may add only `display_name` for existing directories. YAML never creates channels. If metadata is missing for a channel, the UI shows only the channel number; it does not show a placeholder and does not derive a display name from the folder name.
 
@@ -67,7 +68,7 @@ channels:
 
 The Pi stores ready-to-play media on its SD card under `media_root`, for example `~/Videos/rick_tv_channels`.
 
-An empty channel remains selectable. When selected, the Pi shows an empty screen, periodically rescans the channel directory, and automatically starts playback when a playable file appears.
+Empty directories are not selectable channels. When a playable `.mp4` appears in an immediate directory, the next channel scan can include that directory as a channel and the videolooper playlist generation path can make it playable.
 
 The Pi performs only local validation, download, atomic placement, scanning, and playback. It does not transcode uploaded media.
 
@@ -182,7 +183,7 @@ flowchart LR
         Poller["Polling downloader"]
         Validator["Light profile validator"]
         Scanner["Channel scanner"]
-        Player["Video player"]
+        Player["Videolooper playlists/FIFO"]
         Touch["Touch swipe handler"]
         MediaRoot["SD card media_root"]
         Poller --> Validator --> MediaRoot
@@ -211,15 +212,15 @@ stateDiagram-v2
     Delivered --> DeletedServerSide: confirmed bot deletion
 ```
 
-The Pi channel scanner is authoritative only for local playback availability. It may discover existing local media, empty channels, or newly delivered files, but it does not own cross-device delivery truth.
+The Pi channel scanner is authoritative only for local playback availability. It discovers eligible local media directories and newly delivered files, but it does not own cross-device delivery truth.
 
 ## Error Handling
 
 Pi behavior:
 
-- If a channel directory is empty, stay on that channel and show an empty screen.
-- Rescan periodically while empty.
-- Start playback automatically when a playable file appears.
+- Ignore empty channel directories until they contain a playable `.mp4`.
+- Include a directory as a channel on a later scan once a playable `.mp4` exists.
+- Use generated videolooper playlists and FIFO commands for Pi playback and channel switching.
 - Ignore malformed metadata entries that reference missing directories.
 - Ignore taps and reject additional swipes during cooldown.
 - Do not expose inbound network services for Rick TV.
@@ -236,10 +237,11 @@ Server behavior:
 
 Pi-focused verification:
 
-- Channel scanner test fixture with numbered directories, non-numbered directories, nested directories, empty directories, and YAML metadata that references both existing and missing directories.
+- Channel scanner test fixture with numbered directories, non-numbered directories, nested directories, empty directories, playable `.mp4` files, and YAML metadata that references both existing and missing directories.
 - Verify numeric-prefix ordering before alphabetical non-numbered ordering.
+- Verify empty directories are ignored until they contain a playable `.mp4`.
 - Verify missing metadata shows only channel number, no placeholder, and no folder-derived display name.
-- Verify empty selected channel shows empty screen, rescans, and autostarts when a playable file appears.
+- Verify videolooper playlist generation includes only playable channels and channel switching uses the videolooper command path.
 - Verify swipe left/right changes channels, taps are ignored, and cooldown prevents repeated channel changes.
 - Fake server tests for polling, authenticated HTTPS request shape, ready item download, failed validation retry, successful validation, atomic move, and acknowledgement timing.
 - Fake server redelivery test confirming redownload plus atomic overwrite is acceptable.

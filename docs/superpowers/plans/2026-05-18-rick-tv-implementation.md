@@ -4,9 +4,9 @@
 
 **Goal:** Build the first working Rick TV system: a non-Dockerized Raspberry Pi appliance client and a Dockerized Telegram/upload/conversion/delivery server.
 
-**Architecture:** Use two Python projects in one repo: `rick-tv-pi` for local channel discovery, playback control, touch swipes, polling, download, validation, and atomic placement; `rick-tv-server` for Telegram flows, conversion, authenticated HTTP delivery, and server-authoritative state. Server state lives in mounted files/volumes and Docker logs go to stdout/stderr; the Pi keeps no durable delivery logs.
+**Architecture:** Use two Python projects in one repo: `rick-tv-pi` for playable channel discovery, videolooper playback control, touch swipes, polling, download, validation, and atomic placement; `rick-tv-server` for Telegram flow building blocks, conversion, authenticated HTTP delivery, and server-authoritative state. Server state lives in mounted files/volumes and Docker logs go to stdout/stderr; the Pi keeps no durable delivery logs.
 
-**Tech Stack:** Python 3.12, pytest, FastAPI, Uvicorn, python-telegram-bot, PyYAML, httpx, ffmpeg/ffprobe, Docker Compose, systemd service docs for Pi runtime.
+**Tech Stack:** Pi Python `>=3.7` for the legacy Raspberry Pi OS image; server Python 3.12; pytest, FastAPI, Uvicorn, python-telegram-bot, PyYAML, httpx, ffmpeg/ffprobe, Docker Compose, systemd service docs for Pi runtime.
 
 ---
 
@@ -14,12 +14,12 @@
 
 - `rick-tv-pi/pyproject.toml`: Pi package metadata, dependencies, pytest config.
 - `rick-tv-pi/src/rick_tv_pi/config.py`: Pi settings loaded from env or YAML.
-- `rick-tv-pi/src/rick_tv_pi/channels.py`: channel directory discovery, ordering, metadata merge.
-- `rick-tv-pi/src/rick_tv_pi/player.py`: playback-facing state machine for empty channels and playable files.
+- `rick-tv-pi/src/rick_tv_pi/channels.py`: playable channel directory discovery, ordering, metadata merge.
+- `rick-tv-pi/src/rick_tv_pi/videolooper.py`: videolooper playlist generation, playback-facing state, and FIFO channel switching.
 - `rick-tv-pi/src/rick_tv_pi/touch.py`: swipe/tap interpretation with cooldown.
 - `rick-tv-pi/src/rick_tv_pi/validator.py`: light ffprobe profile validation.
 - `rick-tv-pi/src/rick_tv_pi/poller.py`: authenticated polling, download, validation, atomic move, ack timing.
-- `rick-tv-pi/src/rick_tv_pi/main.py`: Pi CLI entrypoint that wires scanner, player, touch, and poller.
+- `rick-tv-pi/src/rick_tv_pi/main.py`: Pi CLI entrypoint that wires scanner, videolooper, touch, and poller.
 - `rick-tv-pi/tests/`: Pi unit and fake-server tests.
 - `rick-tv-pi/systemd/rick-tv-pi.service`: Pi service template with stdout/stderr journaling only.
 - `rick-tv-server/pyproject.toml`: server package metadata, dependencies, pytest config.
@@ -36,6 +36,41 @@
 - `docs/rick-tv-server.md`: server setup/runtime notes.
 
 ## Implementation Tasks
+
+## Completion Audit
+
+Audited against the current repository state on 2026-06-17. These checkboxes mark implementation artifacts present in code, tests, docs, and git history. Historical red/green test-run steps remain below as originally planned; current pytest execution is not available in this shell because `python -m pytest` fails with `No module named pytest`.
+
+- [x] Task 1: Pi package scaffold exists.
+- [x] Task 2: Server package scaffold exists.
+- [x] Task 3: Pi channel discovery ordering exists and tests cover playable `.mp4` channel filtering.
+- [x] Task 4: Pi channel metadata rules exist and tests cover missing metadata behavior.
+- [x] Task 5: Pi videolooper playable channel filtering exists and tests cover master playlist filtering.
+- [x] Task 6: Pi videolooper channel switch rescan exists and tests cover playlist rewrite/FIFO command behavior.
+- [x] Task 7: Pi touch swipe interpretation exists and tests cover left/right/tap behavior.
+- [x] Task 8: Pi touch cooldown exists and tests cover repeated swipe suppression.
+- [x] Task 9: Pi ready-profile validator exists and tests cover ffprobe profile acceptance/rejection.
+- [x] Task 10: Pi poll request shape exists and tests cover authenticated ready polling.
+- [x] Task 11: Pi download, validation, atomic move, and ack timing exist and tests cover ack-after-placement.
+- [x] Task 12: Pi retry/redelivery behavior exists and tests cover failed validation/download and overwrite redelivery.
+- [x] Task 13: Pi main wiring, systemd service, touch queue, videolooper settings, and runtime docs exist.
+- [x] Task 14: Server settings and JSON-backed delivery state exist.
+- [x] Task 15: Server pending-until-ack lifecycle exists.
+- [x] Task 16: Authenticated ready endpoint exists.
+- [x] Task 17: Download and ack endpoints exist.
+- [x] Task 18: Server conversion profile exists.
+- [x] Task 19: Upload-to-pending processing exists.
+- [x] Task 20: Telegram explicit channel choice helpers exist.
+- [x] Task 21: Telegram pending list/cancel helpers exist.
+- [x] Task 22: Telegram archive list/delete confirmation helpers exist.
+- [ ] Follow-Up Task: Full Telegram upload runner is not implemented.
+- [x] Task 23: Server main, logging setup, Dockerfile, Compose file, and deployment docs exist.
+- [ ] Task 24: Runtime Docker smoke is not confirmed in this audit. Documentation and Compose support exist, but `docker compose build/up` was not run here.
+- [x] Task 25: Public server health endpoint exists.
+- [x] Task 26: Repo-level Pi/server contract test exists.
+- [ ] Task 27: Full Pi verification is not complete in this audit. Durable delivery log scan passed, but the Pi pytest suite was not run.
+- [ ] Task 28: Full server verification is not complete in this audit. Server pytest and Docker smoke were not run.
+- [ ] Task 29: Final end-to-end verification is not complete in this audit. Manual E2E was not run.
 
 ### Task 1: Scaffold Pi Package
 
@@ -63,7 +98,7 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'rick_tv_pi'`.
 
 - [ ] **Step 3: Add minimal package metadata**
 
-Create `rick-tv-pi/pyproject.toml` with project name `rick-tv-pi`, Python `>=3.12`, dependencies `httpx`, `PyYAML`, and test dependency `pytest`. Create `rick-tv-pi/src/rick_tv_pi/__init__.py` defining `__version__ = "0.1.0"`. Keep `tests/conftest.py` empty for now.
+Create `rick-tv-pi/pyproject.toml` with project name `rick-tv-pi`, Python `>=3.7`, dependencies `httpx`, `PyYAML`, and test dependency `pytest`. Create `rick-tv-pi/src/rick_tv_pi/__init__.py` defining `__version__ = "0.1.0"`. Keep `tests/conftest.py` empty for now.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -121,7 +156,7 @@ Run: `git add rick-tv-server && git commit -m "chore: scaffold server package"`
 
 - [ ] **Step 1: Write failing channel ordering test**
 
-In `rick-tv-pi/tests/test_channels.py`, create directories `01_Citadel`, `02_Interdimensional_Cable`, `Garage`, `10_Late`, `Garage/Nested`, and a regular file `not_a_channel.mp4`. Assert `discover_channels(media_root, metadata_path=None)` returns channel ids in order `["01_Citadel", "02_Interdimensional_Cable", "10_Late", "Garage"]`.
+In `rick-tv-pi/tests/test_channels.py`, create directories `01_Citadel`, `02_Interdimensional_Cable`, `03_Empty`, `Garage`, `10_Late`, `Garage/Nested`, and a regular file `not_a_channel.mp4`. Add `episode.mp4` only to `01_Citadel`, `02_Interdimensional_Cable`, `10_Late`, and `Garage`. Assert `discover_channels(media_root, metadata_path=None)` returns channel ids in order `["01_Citadel", "02_Interdimensional_Cable", "10_Late", "Garage"]`, excluding `03_Empty`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -131,7 +166,7 @@ Expected: FAIL with import or function missing.
 
 - [ ] **Step 3: Implement minimal discovery**
 
-In `channels.py`, define frozen dataclass `Channel(id: str, number: int, display_name: str | None, path: Path)`. Implement `discover_channels(media_root: Path, metadata_path: Path | None) -> list[Channel]`; include only immediate directories, parse leading digits before `_`, sort numbered channels by integer prefix, sort unnumbered channels alphabetically after numbered channels, and assign one-based `number` by final list position.
+In `channels.py`, define frozen dataclass `Channel(id: str, number: int, display_name: str | None, path: Path)`. Implement `discover_channels(media_root: Path, metadata_path: Path | None) -> list[Channel]`; include only immediate directories containing at least one `.mp4`, parse leading digits before `_`, sort numbered channels by integer prefix, sort unnumbered channels alphabetically after numbered channels, and assign one-based `number` by final list position.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -173,65 +208,65 @@ Expected: PASS.
 
 Run: `git add rick-tv-pi/src/rick_tv_pi/channels.py rick-tv-pi/tests/test_channels.py && git commit -m "feat: apply pi channel metadata"`
 
-### Task 5: Pi Empty Channel Playback State
+### Task 5: Pi Videolooper Playable Channel Filtering
 
 **Files:**
-- Create: `rick-tv-pi/src/rick_tv_pi/player.py`
-- Create: `rick-tv-pi/tests/test_player.py`
+- Create: `rick-tv-pi/src/rick_tv_pi/videolooper.py`
+- Create: `rick-tv-pi/tests/test_videolooper.py`
 
-- [ ] **Step 1: Write failing empty-channel test**
+- [ ] **Step 1: Write failing playable-channel playlist test**
 
-Test `PlaybackController.select_channel(channel)` with an empty directory. Assert `screen_state == "empty"`, `current_file is None`, and no exception is raised.
+Test `VideolooperController.sync_channels(channels)` with one playable channel containing `episode.mp4` and one defensive input entry whose directory has no `.mp4`. Assert the master playlist includes only the playable channel playlist.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd rick-tv-pi && pytest tests/test_player.py::test_empty_channel_is_selectable -v`
+Run: `cd rick-tv-pi && pytest tests/test_videolooper.py::test_sync_channels_skips_empty_channel_playlists -v`
 
-Expected: FAIL with missing module.
+Expected: FAIL with missing module or missing playlist behavior.
 
-- [ ] **Step 3: Implement minimal playback controller**
+- [ ] **Step 3: Implement minimal videolooper playlist controller**
 
-Create `PlayableFile` dataclass with `path: Path`. Create `PlaybackController` with `select_channel(channel: Channel)`, `rescan_current_channel()`, `screen_state`, and `current_file`. Treat `.mp4` files as playable; empty channel sets `screen_state` to `"empty"`.
+Create `PlayableFile` dataclass with `path: Path`. Create `VideolooperController` with `sync_channels(channels)`, `select_channel(channel)`, `rescan_current_channel()`, `screen_state`, and `current_file`. Treat `.mp4` files as playable; write per-channel playlists, but include only channels with playable files in the master playlist.
 
 - [ ] **Step 4: Run test**
 
-Run: `cd rick-tv-pi && pytest tests/test_player.py -v`
+Run: `cd rick-tv-pi && pytest tests/test_videolooper.py -v`
 
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
-Run: `git add rick-tv-pi/src/rick_tv_pi/player.py rick-tv-pi/tests/test_player.py && git commit -m "feat: handle empty pi channels"`
+Run: `git add rick-tv-pi/src/rick_tv_pi/videolooper.py rick-tv-pi/tests/test_videolooper.py && git commit -m "feat: generate videolooper playlists"`
 
-### Task 6: Pi Rescan Autostart
+### Task 6: Pi Videolooper Channel Switch Rescan
 
 **Files:**
-- Modify: `rick-tv-pi/src/rick_tv_pi/player.py`
-- Modify: `rick-tv-pi/tests/test_player.py`
+- Modify: `rick-tv-pi/src/rick_tv_pi/videolooper.py`
+- Modify: `rick-tv-pi/tests/test_videolooper.py`
 
-- [ ] **Step 1: Write failing autostart test**
+- [ ] **Step 1: Write failing rescan command test**
 
-Select an empty channel, create `episode.mp4` in that channel directory, call `rescan_current_channel()`, and assert `screen_state == "playing"` and `current_file.path.name == "episode.mp4"`.
+Select a playable channel, add a new `.mp4`, call `rescan_current_channel()`, and assert the channel playlist is rewritten, `screen_state == "playing"`, `current_file.path.name` reflects a playable file, and the videolooper FIFO command writer receives that channel playlist path.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd rick-tv-pi && pytest tests/test_player.py::test_empty_channel_autostarts_when_file_appears -v`
+Run: `cd rick-tv-pi && pytest tests/test_videolooper.py::test_rescan_sends_command_when_channel_files_change -v`
 
-Expected: FAIL because rescan does not start playback yet.
+Expected: FAIL because rescan does not update videolooper state yet.
 
-- [ ] **Step 3: Implement rescan start**
+- [ ] **Step 3: Implement rescan command path**
 
-Update `rescan_current_channel()` to scan the selected channel for `.mp4` files sorted by name. If at least one exists, set `current_file` to the first file and `screen_state` to `"playing"`.
+Update `rescan_current_channel()` to rescan `.mp4` files sorted by name, rewrite the channel playlist when files change, set `current_file` and `screen_state`, and send the updated playlist path through the videolooper command writer.
 
 - [ ] **Step 4: Run tests**
 
-Run: `cd rick-tv-pi && pytest tests/test_player.py -v`
+Run: `cd rick-tv-pi && pytest tests/test_videolooper.py -v`
 
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
-Run: `git add rick-tv-pi/src/rick_tv_pi/player.py rick-tv-pi/tests/test_player.py && git commit -m "feat: autostart pi playback after rescan"`
+Run: `git add rick-tv-pi/src/rick_tv_pi/videolooper.py rick-tv-pi/tests/test_videolooper.py && git commit -m "feat: switch videolooper channels on rescan"`
 
 ### Task 7: Pi Touch Swipes
 
@@ -434,7 +469,7 @@ Expected: FAIL because entrypoint/config loading is missing.
 
 - [ ] **Step 3: Implement Pi entrypoint and service docs**
 
-Add `main.py` with `load_settings_from_env()` and `main()` loop that discovers channels, initializes player/touch/poller, polls every 60 seconds, and rescans empty channel periodically. Add systemd unit with `ExecStart=/usr/bin/python -m rick_tv_pi.main`, environment file `/etc/rick-tv-pi.env`, no app log file path, and stdout/stderr to journal. Document hardware assumptions and no inbound Rick TV ports in `docs/rick-tv-pi.md`.
+Add `main.py` with `load_settings_from_env()` and `main()` loop that discovers playable channels, initializes videolooper/touch/poller, polls every 60 seconds, and rescans the selected videolooper channel for file changes. Add systemd unit with `ExecStart=/usr/bin/python -m rick_tv_pi.main`, environment file `/etc/rick-tv-pi.env`, no app log file path, and stdout/stderr to journal. Document hardware assumptions, playable-channel filtering, videolooper playback, and no inbound Rick TV ports in `docs/rick-tv-pi.md`.
 
 - [ ] **Step 4: Run tests**
 
@@ -722,6 +757,39 @@ Expected: PASS.
 
 Run: `git add rick-tv-server/src/rick_tv_server/bot.py rick-tv-server/src/rick_tv_server/state.py rick-tv-server/tests && git commit -m "feat: delete archived media server-side"`
 
+### Follow-Up Task: Full Telegram Upload Runner
+
+**Status:** Not implemented in the current codebase. The existing bot module provides channel-choice keyboards, pending/archive list helpers, and callback handlers; it does not yet run a complete Telegram media ingestion flow.
+
+**Files:**
+- Modify: `rick-tv-server/src/rick_tv_server/bot.py`
+- Modify: `rick-tv-server/src/rick_tv_server/main.py`
+- Test: `rick-tv-server/tests/test_bot.py`
+
+- [ ] **Step 1: Write failing Telegram media runner test**
+
+Using fake Telegram update/context objects, simulate user `42` selecting channel `01_Citadel` and then sending a media file. Assert the runner downloads the Telegram file to server media storage and calls `UploadProcessor.process_upload(user_id="42", channel_id="01_Citadel", source_path=<downloaded file>, original_filename=<telegram filename>)`.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd rick-tv-server && pytest tests/test_bot.py::test_telegram_media_runner_processes_upload -v`
+
+Expected: FAIL because the full Telegram media runner does not exist yet.
+
+- [ ] **Step 3: Implement the runner**
+
+Add a thin Telegram SDK boundary that records explicit channel selection, accepts a subsequent media message, downloads it to a server-side temporary upload path, and calls `UploadProcessor.process_upload(...)`. Keep conversion and state transitions inside `UploadProcessor`.
+
+- [ ] **Step 4: Run bot tests**
+
+Run: `cd rick-tv-server && pytest tests/test_bot.py -v`
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+Run: `git add rick-tv-server/src/rick_tv_server/bot.py rick-tv-server/src/rick_tv_server/main.py rick-tv-server/tests/test_bot.py && git commit -m "feat: run telegram upload ingestion"`
+
 ### Task 23: Server Main, Logging, And Docker
 
 **Files:**
@@ -853,7 +921,7 @@ Run: `git add pyproject.toml tests/test_end_to_end_contract.py rick-tv-pi rick-t
 
 Run: `cd rick-tv-pi && pytest -v`
 
-Expected: PASS for channel discovery/metadata, empty channel autostart, swipes/taps/cooldown, validation, fake-server polling, failed validation retry, atomic move/ack, and redelivery overwrite.
+Expected: PASS for channel discovery/metadata, playable-channel filtering, videolooper playlist/channel switching, swipes/taps/cooldown, validation, fake-server polling, failed validation retry, atomic move/ack, and redelivery overwrite.
 
 - [ ] **Step 2: Inspect for durable delivery logs**
 
@@ -907,7 +975,7 @@ Expected: converted MP4 appears under Pi `media_root/01_Citadel`, server item is
 
 Run: `rg -n "TO""DO|TB""D|place""holder|implement ""later" .`
 
-Expected: no unfinished markers remain except irrelevant tool-generated metadata.
+Expected: no unfinished markers remain except irrelevant tool-generated metadata and the explicitly scoped full Telegram upload runner follow-up.
 
 - [ ] **Step 4: Commit final docs/test adjustments**
 
@@ -915,6 +983,6 @@ Run: `git add docs rick-tv-pi rick-tv-server tests pyproject.toml && git commit 
 
 ## Self-Review
 
-- Spec coverage: The plan covers both projects, Pi channel discovery/metadata, empty channel behavior, touch swipes and cooldown, polling/download/validation/atomic move/ack, retry/redelivery, no Pi durable delivery state, Telegram upload/list/delete/archive flows, server conversion profile, Docker deployment, mounted volumes, stdout/stderr logs, and final end-to-end verification.
-- Marker scan: No unfinished markers or unspecified "add tests" steps are intentionally present in the implementation tasks.
+- Spec coverage: The plan covers both projects, Pi channel discovery/metadata, playable-channel filtering, videolooper playback, touch swipes and cooldown, polling/download/validation/atomic move/ack, retry/redelivery, no Pi durable delivery state, Telegram upload-list/delete/archive building blocks, the required full Telegram upload runner follow-up, server conversion profile, Docker deployment, mounted volumes, stdout/stderr logs, and final end-to-end verification.
+- Marker scan: No unfinished markers or unspecified "add tests" steps are intentionally present, except the explicitly scoped full Telegram upload runner follow-up.
 - Type consistency: Shared protocol names are stable across tasks: `Channel`, `ReadyItem`, `PiSettings`, `ServerSettings`, `DeliveryStateStore`, `ConversionProfile`, `UploadProcessor`, and `/api/v1/ready`, `/api/v1/download/{item_id}`, `/api/v1/ack/{item_id}`.

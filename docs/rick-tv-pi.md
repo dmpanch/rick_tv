@@ -65,7 +65,19 @@ RICK_TV_RUNTIME_TICK_SECONDS=0.1
 
 ## Runtime
 
-The Pi discovers channel directories under `RICK_TV_MEDIA_ROOT`, polls the server for ready media, downloads and validates files, atomically places them into channel directories, and acknowledges only after placement succeeds. Empty channels stay selectable and are rescanned during the polling loop.
+The Pi discovers playable channel directories under `RICK_TV_MEDIA_ROOT`,
+polls the server for ready media, downloads and validates files, atomically
+places them into channel directories, and acknowledges only after placement
+succeeds.
+
+A directory is a channel only when it contains at least one playable `.mp4`.
+Empty directories are ignored by navigation, generated playlists, and the
+channel list sent to the polling API until a playable `.mp4` appears.
+
+Runtime playback is built around the prepared Adafruit `pi_video_looper`
+installation. Rick TV writes per-channel playlists plus a master playlist,
+then switches channels through the videolooper FIFO command path. This
+videolooper integration is the stable Pi playback path for the legacy image.
 
 The Pi exposes no inbound Rick TV ports. Delivery is initiated by authenticated outbound polling to the server.
 
