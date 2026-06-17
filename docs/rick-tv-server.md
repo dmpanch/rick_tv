@@ -96,16 +96,14 @@ If the first converted output does not match the Rick TV ready profile, the
 server retries conversion once with stricter output flags. If validation still
 fails, the upload is marked failed and is not returned by `/api/v1/ready`.
 
-Archive delete is a soft delete from the active library: original and converted
-files remain on disk. The Telegram restore-all action requeues active archived
-library items so a replacement Pi can download the media again.
-
-Deleting a concrete video from the channel video detail view is a hard library
-delete. The server removes both original and converted media files immediately,
-marks the item `deleted_server_side`, and returns it in `/api/v1/ready` under
-`deletions` until the Pi confirms `/api/v1/delete-ack/{item_id}`. The Pi delete
-command contains `id`, `channel_id`, and `filename`; missing local files are
-treated as already deleted and still acknowledged.
+The Telegram restore-all action requeues active archived library items so a
+replacement Pi can download the media again. Deleting a concrete video from the
+channel video detail view is a hard library delete. The server removes both
+original and converted media files immediately, marks the item
+`deleted_server_side`, and returns it in `/api/v1/ready` under `deletions` until
+the Pi confirms `/api/v1/delete-ack/{item_id}`. The Pi delete command contains
+`id`, `channel_id`, and `filename`; missing local files are treated as already
+deleted and still acknowledged.
 
 ## Smoke Test
 

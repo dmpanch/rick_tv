@@ -88,7 +88,6 @@ class DeliveryStateStore:
         self.last_channel_by_user: dict[str, str] = {}
         self.acknowledgements: dict[str, object] = {}
         self.archive_index: dict[str, object] = {}
-        self.archive_delete_requests: dict[str, object] = {}
         self._load()
 
     def create_uploaded_item(
@@ -194,14 +193,6 @@ class DeliveryStateStore:
                 if item.status == "pending"
             ]
 
-    def list_archived_items(self) -> list[DeliveryItem]:
-        with self._locked_state():
-            return [
-                replace(item)
-                for item in self.items.values()
-                if item.status in ("delivered", "archived")
-            ]
-
     def list_active_items_for_channel(self, channel_id: str) -> list[DeliveryItem]:
         with self._locked_state():
             return [
@@ -219,48 +210,6 @@ class DeliveryStateStore:
 
             item.status = "canceled"
             self._persist()
-            return replace(item)
-
-    def request_archive_delete(self, item_id: str) -> DeliveryItem:
-        with self._locked_state():
-            item = self.items[item_id]
-            if item.status not in ("delivered", "archived"):
-                raise ValueError(
-                    f"delivery item must be archived before archive delete: {item_id}"
-                )
-
-            self.archive_delete_requests[item_id] = {"status": "requested"}
-            self._persist()
-            return replace(item)
-
-    def confirm_archive_delete(self, item_id: str) -> DeliveryItem:
-        with self._locked_state():
-            item = self.items[item_id]
-            if item.status not in ("delivered", "archived"):
-                raise ValueError(
-                    f"delivery item must be archived before archive delete: {item_id}"
-                )
-            if item_id not in self.archive_delete_requests:
-                raise ValueError(
-                    f"archive delete must be requested before confirm: {item_id}"
-                )
-
-            previous_status = item.status
-            previous_archive_entry = self.archive_index.get(item_id)
-            previous_request = self.archive_delete_requests.get(item_id)
-            item.status = "deleted_from_library"
-            self.archive_index.pop(item_id, None)
-            self.archive_delete_requests.pop(item_id, None)
-            try:
-                self._persist()
-            except Exception:
-                item.status = previous_status
-                if previous_archive_entry is not None:
-                    self.archive_index[item_id] = previous_archive_entry
-                if previous_request is not None:
-                    self.archive_delete_requests[item_id] = previous_request
-                raise
-
             return replace(item)
 
     def ack_item(self, item_id: str) -> DeliveryItem:
@@ -308,20 +257,16 @@ class DeliveryStateStore:
 
             previous_status = item.status
             previous_archive_entry = self.archive_index.get(item_id)
-            previous_request = self.archive_delete_requests.get(item_id)
             moved_paths: list[tuple[Path, Path]] = []
             try:
                 moved_paths = self._quarantine_server_side_media(item)
                 item.status = "deleted_server_side"
                 self.archive_index.pop(item_id, None)
-                self.archive_delete_requests.pop(item_id, None)
                 self._persist()
             except Exception:
                 item.status = previous_status
                 if previous_archive_entry is not None:
                     self.archive_index[item_id] = previous_archive_entry
-                if previous_request is not None:
-                    self.archive_delete_requests[item_id] = previous_request
                 self._restore_quarantined_media(moved_paths)
                 raise
 
@@ -376,7 +321,6 @@ class DeliveryStateStore:
         self.last_channel_by_user = {}
         self.acknowledgements = {}
         self.archive_index = {}
-        self.archive_delete_requests = {}
         if not self.state_path.exists():
             return
 
@@ -390,7 +334,6 @@ class DeliveryStateStore:
         self.last_channel_by_user = dict(data.get("last_channel_by_user", {}))
         self.acknowledgements = dict(data.get("acknowledgements", {}))
         self.archive_index = dict(data.get("archive_index", {}))
-        self.archive_delete_requests = dict(data.get("archive_delete_requests", {}))
 
     def _persist(self) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -399,7 +342,6 @@ class DeliveryStateStore:
             "last_channel_by_user": self.last_channel_by_user,
             "acknowledgements": self.acknowledgements,
             "archive_index": self.archive_index,
-            "archive_delete_requests": self.archive_delete_requests,
         }
 
         fd, tmp_name = tempfile.mkstemp(

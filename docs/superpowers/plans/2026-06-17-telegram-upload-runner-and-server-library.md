@@ -99,7 +99,7 @@ channels:
 
 - [x] Preserve both original upload and converted Pi-ready MP4 after successful conversion.
 - [x] Treat converted MP4 as the active delivery/restoration artifact.
-- [x] Change archived delete semantics to soft-delete from the active library while leaving physical files on disk.
+- [x] Keep acknowledged media restorable until a concrete channel-video delete removes it from the library.
 - [x] Add restore-all state operation that requeues every active archived library item as pending without duplicating media files.
 - [x] Keep restore scope single-Pi; do not add device IDs or per-device ack state.
 
@@ -165,7 +165,7 @@ channels:
 
 - [x] Add `rick-tv-bot` service sharing image/build and `media/config/state` volumes with `rick-tv-server`.
 - [x] Set bot-specific env vars in Compose.
-- [x] Document bot token, allowed Telegram users, channel registry YAML path, upload flow, soft delete, and restore-all behavior.
+- [x] Document bot token, allowed Telegram users, channel registry YAML path, upload flow, channel video deletion, and restore-all behavior.
 - [x] Test Compose includes both services and shared volumes.
 
 ### Task 12: End-To-End Contract Coverage
@@ -182,7 +182,7 @@ channels:
 - Unauthorized Telegram users cannot upload, manage channels, or restore media.
 - Allowlisted users can create channels, upload video/document media, and see the media become pending for Pi delivery.
 - Server keeps original uploads and converted ready MP4 files after ack/archive.
-- Archive delete is a soft delete from the active library and does not remove files from disk.
+- Deleting a channel video removes its server files and queues deletion for the Pi.
 - Restore all requeues active archived media and allows a replacement Pi to redownload the library.
 - API and bot processes can share state safely through mounted state files.
 - Pi can learn registry channels from the server while still showing only local playable `.mp4` channels.
@@ -216,6 +216,5 @@ docker compose down
 - Bot CRUD channel registry is the source of truth for upload choices and Pi polling IDs.
 - Empty channel directories remain hidden from Pi navigation until `.mp4` exists.
 - Server stores both original uploads and converted Pi-ready MP4 until a concrete channel-video delete removes that video from the server library.
-- App-level archive delete is soft delete from active library, not physical file deletion.
 - Restore is single-Pi for now; no multi-device identities or per-device ack state.
 - Full runner implementation includes state-store multi-process safety in the same plan because separate Compose services require it.

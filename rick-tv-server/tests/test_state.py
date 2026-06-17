@@ -227,117 +227,7 @@ def test_sequential_store_instances_preserve_both_updates(tmp_path: Path):
     assert sorted(reloaded.items) == ["item-1", "item-2"]
 
 
-def test_confirm_archive_delete_soft_deletes_without_removing_files(tmp_path: Path):
-    settings = make_settings(tmp_path)
-    store = DeliveryStateStore(settings)
-    original_path = tmp_path / "media" / "uploads" / "item-1.mov"
-    original_path.parent.mkdir(parents=True)
-    original_path.write_bytes(b"original media bytes")
-    converted_path = tmp_path / "media" / "converted" / "item-1.mp4"
-    converted_path.parent.mkdir(parents=True)
-    converted_path.write_bytes(b"converted media bytes")
-    store.create_uploaded_item(
-        item_id="item-1",
-        user_id="user-1",
-        original_path=original_path,
-    )
-    store.mark_converting("item-1")
-    store.mark_pending(
-        "item-1",
-        converted_path=converted_path,
-        channel_id="01_Citadel",
-    )
-    store.ack_item("item-1")
-
-    requested = store.request_archive_delete("item-1")
-
-    assert requested.status == "archived"
-    assert [item.item_id for item in store.list_archived_items()] == ["item-1"]
-    assert converted_path.exists()
-
-    deleted = store.confirm_archive_delete("item-1")
-    reloaded = DeliveryStateStore(settings)
-
-    assert deleted.status == "deleted_from_library"
-    assert original_path.exists()
-    assert converted_path.exists()
-    assert store.archive_index == {}
-    assert store.acknowledgements == {"item-1": {"status": "delivered"}}
-    assert reloaded.items["item-1"].status == "deleted_from_library"
-    assert reloaded.archive_index == {}
-
-
-def test_archive_delete_confirmation_must_be_requested(tmp_path: Path):
-    settings = make_settings(tmp_path)
-    store = DeliveryStateStore(settings)
-    converted_path = tmp_path / "media" / "converted" / "item-1.mp4"
-    converted_path.parent.mkdir(parents=True)
-    converted_path.write_bytes(b"converted media bytes")
-    store.create_uploaded_item(
-        item_id="item-1",
-        user_id="user-1",
-        original_path=tmp_path / "media" / "uploads" / "item-1.mov",
-    )
-    store.mark_converting("item-1")
-    store.mark_pending(
-        "item-1",
-        converted_path=converted_path,
-        channel_id="01_Citadel",
-    )
-    store.ack_item("item-1")
-
-    with pytest.raises(ValueError, match="requested"):
-        store.confirm_archive_delete("item-1")
-
-    assert store.items["item-1"].status == "archived"
-    assert converted_path.exists()
-    assert "item-1" in store.archive_index
-
-
-def test_archive_delete_persist_failure_preserves_files_and_state(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    settings = make_settings(tmp_path)
-    store = DeliveryStateStore(settings)
-    original_path = tmp_path / "media" / "uploads" / "item-1.mov"
-    original_path.parent.mkdir(parents=True)
-    original_path.write_bytes(b"original media bytes")
-    converted_path = tmp_path / "media" / "converted" / "item-1.mp4"
-    converted_path.parent.mkdir(parents=True)
-    converted_path.write_bytes(b"converted media bytes")
-    store.create_uploaded_item(
-        item_id="item-1",
-        user_id="user-1",
-        original_path=original_path,
-    )
-    store.mark_converting("item-1")
-    store.mark_pending(
-        "item-1",
-        converted_path=converted_path,
-        channel_id="01_Citadel",
-    )
-    store.ack_item("item-1")
-    store.request_archive_delete("item-1")
-
-    def fail_persist() -> None:
-        raise RuntimeError("persist failed")
-
-    monkeypatch.setattr(store, "_persist", fail_persist)
-
-    with pytest.raises(RuntimeError, match="persist failed"):
-        store.confirm_archive_delete("item-1")
-
-    reloaded = DeliveryStateStore(settings)
-    assert store.items["item-1"].status == "archived"
-    assert reloaded.items["item-1"].status == "archived"
-    assert "item-1" in store.archive_index
-    assert "item-1" in reloaded.archive_index
-    assert original_path.exists()
-    assert converted_path.exists()
-
-
-def test_restore_all_archived_items_requeues_active_library_without_duplicate_files(
+def test_restore_all_archived_items_requeues_archived_items_without_duplicate_files(
     tmp_path: Path,
 ):
     settings = make_settings(tmp_path)
@@ -363,8 +253,8 @@ def test_restore_all_archived_items_requeues_active_library_without_duplicate_fi
             channel_id="01_Citadel",
         )
         store.ack_item(item_id)
-    store.request_archive_delete("item-3")
-    store.confirm_archive_delete("item-3")
+    store.delete_item_from_channel("item-3")
+    store.ack_device_delete("item-3")
 
     restored = store.restore_all_archived()
     reloaded = DeliveryStateStore(settings)
@@ -374,7 +264,11 @@ def test_restore_all_archived_items_requeues_active_library_without_duplicate_fi
     assert reloaded.items["item-2"].status == "pending"
     assert reloaded.items["item-3"].status == "deleted_from_library"
     assert sorted(reloaded.archive_index) == []
-    assert [path.exists() for path in converted_paths.values()] == [True, True, True]
+    assert [converted_paths[item_id].exists() for item_id in ("item-1", "item-2")] == [
+        True,
+        True,
+    ]
+    assert not converted_paths["item-3"].exists()
 
 
 def test_list_active_items_for_channel_returns_pending_and_archived_media(

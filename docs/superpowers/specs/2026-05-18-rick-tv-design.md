@@ -85,9 +85,8 @@ Upload behavior:
 Bot file management:
 
 - The bot can list and delete pending files.
-- The bot can list and request deletion for delivered/archive files with confirmation.
+- The bot can list active channel videos and open per-video actions.
 - Deleting pending media marks it canceled so it will not be delivered to the Pi.
-- Archive-list deletion is a soft library removal and keeps server files.
 - Channel video deletion is a hard delete: it removes server-side original and converted files, queues a device deletion, and the Pi removes the local channel file on the next successful poll.
 
 ## Conversion Profile

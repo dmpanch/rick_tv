@@ -63,7 +63,7 @@ Audited against the current repository state on 2026-06-17. These checkboxes mar
 - [x] Task 19: Upload-to-pending processing exists.
 - [x] Task 20: Telegram explicit channel choice helpers exist.
 - [x] Task 21: Telegram pending list/cancel helpers exist.
-- [x] Task 22: Telegram archive list/delete confirmation helpers exist.
+- [x] Task 22: Telegram channel video list/download/delete helpers exist.
 - [x] Follow-Up Task: Full Telegram upload runner exists in `rick_tv_server.bot_runner`.
 - [x] Task 23: Server main, logging setup, Dockerfile, Compose file, and deployment docs exist.
 - [x] Task 24: Runtime Docker smoke is confirmed with `docker compose build`, `docker compose up -d`, `/health`, logs, and `docker compose down`.
@@ -726,7 +726,7 @@ Expected: PASS.
 
 Run: `git add rick-tv-server/src/rick_tv_server/bot.py rick-tv-server/src/rick_tv_server/state.py rick-tv-server/tests && git commit -m "feat: cancel pending telegram media"`
 
-### Task 22: Telegram Delivered/Archive List And Confirmed Delete
+### Task 22: Telegram Channel Video List And Delete
 
 **Files:**
 - Modify: `rick-tv-server/src/rick_tv_server/bot.py`
@@ -734,33 +734,33 @@ Run: `git add rick-tv-server/src/rick_tv_server/bot.py rick-tv-server/src/rick_t
 - Modify: `rick-tv-server/tests/test_bot.py`
 - Modify: `rick-tv-server/tests/test_state.py`
 
-- [ ] **Step 1: Write failing archive delete test**
+- [x] **Step 1: Write failing channel video management tests**
 
-Create archived item with converted file. Assert bot archive-list formatter shows it. Simulate delete request and then confirmation. Assert status becomes `deleted_from_library`, archive index removes it, server files remain on disk, and no Pi deletion request is emitted for this legacy archive-list soft delete flow.
+Create active channel media with original and converted files. Assert the bot can list videos for a channel, open a video detail view, download the converted MP4, and delete the video from the library.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run tests to verify they fail**
 
-Run: `cd rick-tv-server && pytest tests/test_bot.py::test_archive_delete_requires_confirmation_and_is_server_side_only -v`
+Run: `cd rick-tv-server && pytest tests/test_bot.py::test_channel_video_delete_removes_server_files_and_returns_to_video_list tests/test_state.py::test_delete_item_from_channel_removes_server_files_and_waits_for_device_ack -v`
 
-Expected: FAIL because archive deletion is missing.
+Expected: FAIL before the channel video callbacks and state operation exist.
 
-- [ ] **Step 3: Implement confirmed archive deletion**
+- [x] **Step 3: Implement channel video deletion**
 
-Add `request_archive_delete(item_id)`, `confirm_archive_delete(item_id)`, and bot callbacks for list/delete/confirm. Scope deletion to soft removal from the active library while retaining original and converted server-side files.
+Add per-channel video list/detail callbacks. On video delete, remove server-side original and converted files, mark the item `deleted_server_side`, and expose the device deletion until Pi confirms it.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `cd rick-tv-server && pytest tests/test_bot.py tests/test_state.py -v`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
-Run: `git add rick-tv-server/src/rick_tv_server/bot.py rick-tv-server/src/rick_tv_server/state.py rick-tv-server/tests && git commit -m "feat: delete archived media server-side"`
+Run: `git add rick-tv-server/src/rick_tv_server/bot.py rick-tv-server/src/rick_tv_server/state.py rick-tv-server/tests && git commit -m "feat: manage channel videos in telegram"`
 
 ### Follow-Up Task: Full Telegram Upload Runner
 
-**Status:** Not implemented in the current codebase. The existing bot module provides channel-choice keyboards, pending/archive list helpers, and callback handlers; it does not yet run a complete Telegram media ingestion flow.
+**Status:** Implemented in `rick_tv_server.bot_runner`; the bot module provides channel-choice keyboards, pending list helpers, channel video management callbacks, and Telegram media ingestion flow.
 
 **Files:**
 - Modify: `rick-tv-server/src/rick_tv_server/bot.py`
@@ -943,7 +943,7 @@ If tests or log scan fail, add focused failing tests first, fix, rerun `cd rick-
 
 Run: `cd rick-tv-server && pytest -v`
 
-Expected: PASS for Docker file checks, API auth, ready/download/ack, Telegram upload explicit choices, last selected channel, pending list/cancel, archive list/confirmed soft library removal, conversion profile, and queue lifecycle.
+Expected: PASS for Docker file checks, API auth, ready/download/ack, Telegram upload explicit choices, last selected channel, pending list/cancel, channel video download/delete, conversion profile, and queue lifecycle.
 
 - [ ] **Step 2: Run Docker smoke**
 
