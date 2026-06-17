@@ -87,7 +87,8 @@ Bot file management:
 - The bot can list and delete pending files.
 - The bot can list and request deletion for delivered/archive files with confirmation.
 - Deleting pending media marks it canceled so it will not be delivered to the Pi.
-- In Phase 1, delivered/archive deletion is server-side only. It does not remove files already stored on the Pi.
+- Archive-list deletion is a soft library removal and keeps server files.
+- Channel video deletion is a hard delete: it removes server-side original and converted files, queues a device deletion, and the Pi removes the local channel file on the next successful poll.
 
 ## Conversion Profile
 
@@ -210,6 +211,8 @@ stateDiagram-v2
     Delivered --> Archived
     Archived --> DeletedFromLibrary: confirmed bot library removal
     Delivered --> DeletedFromLibrary: confirmed bot library removal
+    Archived --> DeletedServerSide: channel video delete
+    DeletedServerSide --> DeletedFromLibrary: Pi delete ack
 ```
 
 The Pi channel scanner is authoritative only for local playback availability. It discovers eligible local media directories and newly delivered files, but it does not own cross-device delivery truth.
@@ -232,6 +235,7 @@ Server behavior:
 - Retry silently when the Pi does not acknowledge.
 - Treat pending deletion as cancellation.
 - Treat archive deletion as soft removal from the active library while retaining original and converted files on disk.
+- Treat channel video deletion as server file removal plus a retryable Pi deletion command.
 - Use Docker stdout/stderr for logs.
 
 ## Testing And Verification

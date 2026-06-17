@@ -27,6 +27,13 @@ class ReadyItem:
     sha256: str | None = None
 
 
+@dataclass(frozen=True)
+class DeleteItem:
+    id: str
+    channel_id: str
+    filename: str
+
+
 class Poller:
     def __init__(self, settings: PiSettings, http_client: httpx.Client) -> None:
         self._settings = settings
@@ -42,6 +49,7 @@ class Poller:
             headers=self._auth_headers(),
         )
         response.raise_for_status()
+        payload = response.json()
         items = [
             ReadyItem(
                 id=item["id"],
@@ -50,7 +58,15 @@ class Poller:
                 download_url=item["download_url"],
                 sha256=item.get("sha256"),
             )
-            for item in response.json()["items"]
+            for item in payload.get("items", [])
+        ]
+        deletions = [
+            DeleteItem(
+                id=item["id"],
+                channel_id=item["channel_id"],
+                filename=item["filename"],
+            )
+            for item in payload.get("deletions", [])
         ]
         known_channel_ids = set(poll_channel_ids)
 
@@ -58,6 +74,11 @@ class Poller:
             if item.channel_id not in known_channel_ids:
                 continue
             self._deliver(item, base_url)
+
+        for item in deletions:
+            if item.channel_id not in known_channel_ids:
+                continue
+            self._delete_from_device(item, base_url)
 
         return items
 
@@ -115,6 +136,30 @@ class Poller:
                 exc_info=True,
             )
             self._remove_temp(temp_path)
+            return
+
+    def _delete_from_device(self, item: DeleteItem, base_url: str) -> None:
+        destination = (
+            self._settings.media_root / item.channel_id / Path(item.filename).name
+        )
+        try:
+            try:
+                destination.unlink()
+            except FileNotFoundError:
+                pass
+
+            ack_response = self._http_client.post(
+                f"{base_url}/api/v1/delete-ack/{item.id}",
+                headers=self._auth_headers(),
+            )
+            ack_response.raise_for_status()
+        except Exception:
+            logger.warning(
+                "Failed to delete ready item %s for channel %s",
+                item.id,
+                item.channel_id,
+                exc_info=True,
+            )
             return
 
     def _auth_headers(self) -> dict[str, str]:

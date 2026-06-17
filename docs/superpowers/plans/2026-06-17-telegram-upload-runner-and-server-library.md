@@ -215,7 +215,7 @@ docker compose down
 - Channel IDs are manually entered and stable; renaming does not change IDs.
 - Bot CRUD channel registry is the source of truth for upload choices and Pi polling IDs.
 - Empty channel directories remain hidden from Pi navigation until `.mp4` exists.
-- Server stores both original uploads and converted Pi-ready MP4 indefinitely unless manually cleaned outside the app.
+- Server stores both original uploads and converted Pi-ready MP4 until a concrete channel-video delete removes that video from the server library.
 - App-level archive delete is soft delete from active library, not physical file deletion.
 - Restore is single-Pi for now; no multi-device identities or per-device ack state.
 - Full runner implementation includes state-store multi-process safety in the same plan because separate Compose services require it.

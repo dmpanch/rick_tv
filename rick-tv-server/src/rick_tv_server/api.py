@@ -42,7 +42,11 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
             "items": [
                 _ready_item_response(settings, item)
                 for item in state_store.ready_items_for_channels(channel_ids)
-            ]
+            ],
+            "deletions": [
+                _delete_item_response(item)
+                for item in state_store.device_delete_items_for_channels(channel_ids)
+            ],
         }
 
     @app.get("/api/v1/channels.yml", dependencies=[Depends(require_bearer_token)])
@@ -83,6 +87,23 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+    @app.post(
+        "/api/v1/delete-ack/{item_id}",
+        dependencies=[Depends(require_bearer_token)],
+    )
+    def delete_ack(item_id: str) -> Response:
+        item = state_store.get_item(item_id)
+        if item is None or item.status not in {
+            "deleted_server_side",
+            "deleted_from_library",
+        }:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+        if item.status == "deleted_server_side":
+            state_store.ack_device_delete(item_id)
+
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     return app
 
 
@@ -99,6 +120,29 @@ def _ready_item_response(settings: ServerSettings, item: DeliveryItem) -> dict[s
         "filename": item.converted_path.name,
         "download_url": f"{settings.public_base_url.rstrip('/')}/api/v1/download/{item.item_id}",
         "sha256": _sha256_file(item.converted_path),
+    }
+
+
+def _delete_item_response(item: DeliveryItem) -> dict[str, str]:
+    if item.channel_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Delete item is missing channel metadata",
+        )
+
+    filename = item.filename
+    if filename is None and item.converted_path is not None:
+        filename = item.converted_path.name
+    if filename is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Delete item is missing filename metadata",
+        )
+
+    return {
+        "id": item.item_id,
+        "channel_id": item.channel_id,
+        "filename": filename,
     }
 
 

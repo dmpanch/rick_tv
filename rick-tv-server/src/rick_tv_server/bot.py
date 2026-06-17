@@ -149,9 +149,45 @@ def build_channel_list_keyboard(channel_store: ChannelRegistryStore) -> Keyboard
 
 def build_selected_channel_keyboard(channel_id: str) -> Keyboard:
     return [
+        [{"text": "List all videos", "callback_data": f"channel_videos:{channel_id}"}],
         [{"text": "Rename channel", "callback_data": f"channel_rename:{channel_id}"}],
         [{"text": "Delete channel", "callback_data": f"channel_delete:{channel_id}"}],
         [{"text": "Back to list", "callback_data": "channel_list"}],
+    ]
+
+
+def build_channel_video_list_keyboard(channel_id: str, state_store: Any) -> Keyboard:
+    keyboard: Keyboard = []
+    for item in _channel_video_items(state_store, channel_id):
+        keyboard.append(
+            [
+                {
+                    "text": _media_filename(item),
+                    "callback_data": f"channel_video:{item.item_id}",
+                }
+            ]
+        )
+    keyboard.append(
+        [{"text": "Back to channel", "callback_data": f"channel_view:{channel_id}"}]
+    )
+    return keyboard
+
+
+def build_selected_video_keyboard(item: Any) -> Keyboard:
+    return [
+        [
+            {
+                "text": "Download",
+                "callback_data": f"channel_video_download:{item.item_id}",
+            }
+        ],
+        [
+            {
+                "text": "Delete",
+                "callback_data": f"channel_video_delete:{item.item_id}",
+            }
+        ],
+        [{"text": "Back", "callback_data": f"channel_videos:{item.channel_id}"}],
     ]
 
 
@@ -194,6 +230,30 @@ def format_selected_channel(channel_store: ChannelRegistryStore, channel_id: str
     if metadata is None:
         return "Channel is not available."
     return f"Channel: {channel_label(channel_id, metadata['display_name'])}"
+
+
+def format_channel_video_list(
+    channel_store: ChannelRegistryStore,
+    state_store: Any,
+    channel_id: str,
+) -> str:
+    channel_text = format_selected_channel(channel_store, channel_id)
+    if channel_text == "Channel is not available.":
+        return channel_text
+
+    label = channel_text.removeprefix("Channel: ")
+    items = _channel_video_items(state_store, channel_id)
+    if not items:
+        return f"No videos in {label}."
+
+    lines = [f"Videos in {label}:"]
+    for item in items:
+        lines.append(f"- {_media_filename(item)}")
+    return "\n".join(lines)
+
+
+def format_selected_video(item: Any) -> str:
+    return f"Video: {_media_filename(item)}"
 
 
 def next_channel_id(channel_store: ChannelRegistryStore, display_name: str) -> str:
@@ -406,6 +466,71 @@ async def handle_channel_callback(
         await query.edit_message_text(
             format_selected_channel(channel_store, channel_id),
             reply_markup=_build_reply_markup(build_selected_channel_keyboard(channel_id)),
+        )
+        return
+
+    if data.startswith("channel_videos:"):
+        channel_id = data.removeprefix("channel_videos:")
+        await query.edit_message_text(
+            format_channel_video_list(channel_store, state_store, channel_id),
+            reply_markup=_build_reply_markup(
+                build_channel_video_list_keyboard(channel_id, state_store)
+            ),
+        )
+        return
+
+    if data.startswith("channel_video_download:"):
+        item_id = data.removeprefix("channel_video_download:")
+        item = _active_channel_video_item(state_store, item_id)
+        if item is None:
+            await query.edit_message_text("Video is not available.")
+            return
+
+        converted_path = getattr(item, "converted_path", None)
+        if converted_path is None or not converted_path.exists():
+            await query.edit_message_text("Video file is not available.")
+            return
+
+        message = getattr(query, "message", None)
+        if message is None:
+            await query.edit_message_text("Video message is not available.")
+            return
+
+        with converted_path.open("rb") as media_file:
+            await message.reply_video(
+                video=media_file,
+                filename=_media_filename(item),
+            )
+        return
+
+    if data.startswith("channel_video_delete:"):
+        item_id = data.removeprefix("channel_video_delete:")
+        try:
+            item = state_store.delete_item_from_channel(item_id)
+        except (KeyError, ValueError):
+            await query.edit_message_text("Video is not available.")
+            return
+
+        channel_id = str(item.channel_id)
+        await query.edit_message_text(
+            f"Deleted {_media_filename(item)}.\n\n"
+            f"{format_channel_video_list(channel_store, state_store, channel_id)}",
+            reply_markup=_build_reply_markup(
+                build_channel_video_list_keyboard(channel_id, state_store)
+            ),
+        )
+        return
+
+    if data.startswith("channel_video:"):
+        item_id = data.removeprefix("channel_video:")
+        item = _active_channel_video_item(state_store, item_id)
+        if item is None:
+            await query.edit_message_text("Video is not available.")
+            return
+
+        await query.edit_message_text(
+            format_selected_video(item),
+            reply_markup=_build_reply_markup(build_selected_video_keyboard(item)),
         )
         return
 
@@ -654,6 +779,22 @@ def _media_filename(item: Any) -> str:
     if item.converted_path is not None:
         return item.converted_path.name
     return item.item_id
+
+
+def _channel_video_items(state_store: Any, channel_id: str) -> list[Any]:
+    items = state_store.list_active_items_for_channel(channel_id)
+    return sorted(items, key=_media_filename)
+
+
+def _active_channel_video_item(state_store: Any, item_id: str) -> Any | None:
+    item = state_store.get_item(item_id)
+    if item is None:
+        return None
+    if getattr(item, "status", None) not in {"pending", "delivered", "archived"}:
+        return None
+    if getattr(item, "channel_id", None) is None:
+        return None
+    return item
 
 
 def remember_user_channel(

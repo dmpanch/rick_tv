@@ -73,9 +73,13 @@ Allowlisted Telegram users can use the Telegram command menu to manage the
 registry. `/add_channel` asks only for the display name; the bot generates the
 next stable filesystem/API channel ID, for example `04_Birdperson_TV`.
 `/list_channels` shows channels as `01 - Citadel`; selecting one channel opens
-its own `Rename channel` and `Delete channel` actions. `/restore_all_videos`
-starts the restore-all confirmation flow. Renaming changes only `display_name`.
-Deleting a channel is rejected while active media still references it.
+its own `List all videos`, `Rename channel`, and `Delete channel` actions.
+`List all videos` shows each active channel video as a separate button. A video
+detail view can send the converted Pi-ready MP4 back to Telegram, delete the
+video, or go back to the channel video list. `/restore_all_videos` starts the
+restore-all confirmation flow. Renaming changes only `display_name`. Deleting a
+channel is rejected while active media or pending device deletion still
+references it.
 
 Upload flow:
 
@@ -90,6 +94,13 @@ Upload flow:
 Archive delete is a soft delete from the active library: original and converted
 files remain on disk. The Telegram restore-all action requeues active archived
 library items so a replacement Pi can download the media again.
+
+Deleting a concrete video from the channel video detail view is a hard library
+delete. The server removes both original and converted media files immediately,
+marks the item `deleted_server_side`, and returns it in `/api/v1/ready` under
+`deletions` until the Pi confirms `/api/v1/delete-ack/{item_id}`. The Pi delete
+command contains `id`, `channel_id`, and `filename`; missing local files are
+treated as already deleted and still acknowledged.
 
 ## Smoke Test
 
@@ -110,6 +121,15 @@ Use the configured bearer token when calling the API:
 ```bash
 curl -H "Authorization: Bearer ${RICK_TV_API_TOKEN}" \
   'http://localhost:8080/api/v1/ready?channels=01_Citadel'
+```
+
+The response shape is:
+
+```json
+{
+  "items": [],
+  "deletions": []
+}
 ```
 
 After the public `/health` endpoint is available, extend the smoke run with a

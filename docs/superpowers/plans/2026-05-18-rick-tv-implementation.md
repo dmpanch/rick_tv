@@ -736,7 +736,7 @@ Run: `git add rick-tv-server/src/rick_tv_server/bot.py rick-tv-server/src/rick_t
 
 - [ ] **Step 1: Write failing archive delete test**
 
-Create archived item with converted file. Assert bot archive-list formatter shows it. Simulate delete request and then confirmation. Assert status becomes `deleted_server_side`, archive index removes it, server file is deleted when present, and no Pi deletion request is emitted.
+Create archived item with converted file. Assert bot archive-list formatter shows it. Simulate delete request and then confirmation. Assert status becomes `deleted_from_library`, archive index removes it, server files remain on disk, and no Pi deletion request is emitted for this legacy archive-list soft delete flow.
 
 - [ ] **Step 2: Run test to verify it fails**
 

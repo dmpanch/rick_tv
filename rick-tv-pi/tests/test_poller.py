@@ -617,3 +617,80 @@ def test_failed_item_does_not_block_next_delivery(tmp_path, monkeypatch):
         "/downloads/ready.mp4",
         f"/api/v1/ack/{delivered_item_id}",
     ]
+
+
+def test_poll_deletes_local_files_and_acks_device_deletions(tmp_path):
+    channel_id = "01_Citadel"
+    existing_filename = "old-episode.mp4"
+    missing_filename = "already-gone.mp4"
+    existing_destination = tmp_path / channel_id / existing_filename
+    existing_destination.parent.mkdir(parents=True)
+    existing_destination.write_bytes(b"old local media")
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.headers["Authorization"] == "Bearer test-token"
+
+        if request.method == "GET" and request.url.path == "/api/v1/ready":
+            return httpx.Response(
+                200,
+                json={
+                    "items": [],
+                    "deletions": [
+                        {
+                            "id": "delete-existing",
+                            "channel_id": channel_id,
+                            "filename": existing_filename,
+                        },
+                        {
+                            "id": "delete-missing",
+                            "channel_id": channel_id,
+                            "filename": missing_filename,
+                        },
+                    ],
+                },
+            )
+
+        if (
+            request.method == "POST"
+            and request.url.path == "/api/v1/delete-ack/delete-existing"
+        ):
+            assert not existing_destination.exists()
+            return httpx.Response(204)
+
+        if (
+            request.method == "POST"
+            and request.url.path == "/api/v1/delete-ack/delete-missing"
+        ):
+            assert not (tmp_path / channel_id / missing_filename).exists()
+            return httpx.Response(204)
+
+        return httpx.Response(404)
+
+    http_client = httpx.Client(
+        base_url="https://server.example",
+        transport=httpx.MockTransport(handler),
+    )
+    settings = PiSettings(
+        server_base_url="https://server.example",
+        api_token="test-token",
+        media_root=tmp_path,
+    )
+    channels = [
+        Channel(
+            id=channel_id,
+            number=1,
+            display_name=None,
+            path=tmp_path / channel_id,
+        )
+    ]
+
+    Poller(settings, http_client).poll_once(channels)
+
+    assert not existing_destination.exists()
+    assert [request.url.path for request in requests] == [
+        "/api/v1/ready",
+        "/api/v1/delete-ack/delete-existing",
+        "/api/v1/delete-ack/delete-missing",
+    ]

@@ -180,7 +180,7 @@ def test_canceled_pending_is_not_ready(tmp_path: Path):
         headers={"Authorization": "Bearer test-token"},
     )
     assert ready_response.status_code == 200
-    assert ready_response.json() == {"items": []}
+    assert ready_response.json() == {"items": [], "deletions": []}
     assert download_response.status_code == 404
 
 
@@ -375,3 +375,129 @@ def test_restore_all_archived_items_requeues_active_library_without_duplicate_fi
     assert reloaded.items["item-3"].status == "deleted_from_library"
     assert sorted(reloaded.archive_index) == []
     assert [path.exists() for path in converted_paths.values()] == [True, True, True]
+
+
+def test_list_active_items_for_channel_returns_pending_and_archived_media(
+    tmp_path: Path,
+):
+    settings = make_settings(tmp_path)
+    store = DeliveryStateStore(settings)
+    for item_id, channel_id in [
+        ("pending-1", "01_Citadel"),
+        ("archived-1", "01_Citadel"),
+        ("other-channel", "02_Interdimensional_Cable"),
+        ("canceled-1", "01_Citadel"),
+    ]:
+        original_path = settings.media_dir / "uploads" / f"{item_id}.mov"
+        original_path.parent.mkdir(parents=True, exist_ok=True)
+        original_path.write_bytes(f"original {item_id}".encode())
+        converted_path = settings.media_dir / "converted" / f"{item_id}.mp4"
+        converted_path.parent.mkdir(parents=True, exist_ok=True)
+        converted_path.write_bytes(f"converted {item_id}".encode())
+        store.create_uploaded_item(
+            item_id=item_id,
+            user_id="user-1",
+            original_path=original_path,
+        )
+        store.mark_converting(item_id)
+        store.mark_pending(
+            item_id,
+            converted_path=converted_path,
+            channel_id=channel_id,
+            filename=f"{item_id}.mp4",
+        )
+    store.ack_item("archived-1")
+    store.cancel_pending_item("canceled-1")
+
+    active_items = store.list_active_items_for_channel("01_Citadel")
+
+    assert {item.item_id for item in active_items} == {"pending-1", "archived-1"}
+
+
+def test_delete_item_from_channel_removes_server_files_and_waits_for_device_ack(
+    tmp_path: Path,
+):
+    settings = make_settings(tmp_path)
+    store = DeliveryStateStore(settings)
+    original_path = settings.media_dir / "uploads" / "item-1.mov"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original media bytes")
+    converted_path = settings.media_dir / "converted" / "episode.mp4"
+    converted_path.parent.mkdir(parents=True)
+    converted_path.write_bytes(b"converted media bytes")
+    store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=original_path,
+    )
+    store.mark_converting("item-1")
+    store.mark_pending(
+        "item-1",
+        converted_path=converted_path,
+        channel_id="01_Citadel",
+        filename="episode.mp4",
+    )
+    store.ack_item("item-1")
+
+    deleted = store.delete_item_from_channel("item-1")
+    reloaded_after_delete = DeliveryStateStore(settings)
+
+    assert deleted.status == "deleted_server_side"
+    assert reloaded_after_delete.items["item-1"].status == "deleted_server_side"
+    assert not original_path.exists()
+    assert not converted_path.exists()
+    assert store.list_active_items_for_channel("01_Citadel") == []
+    device_deletions = reloaded_after_delete.device_delete_items_for_channels(
+        ["01_Citadel"]
+    )
+    assert [(item.item_id, item.channel_id, item.filename) for item in device_deletions] == [
+        ("item-1", "01_Citadel", "episode.mp4")
+    ]
+
+    acked = reloaded_after_delete.ack_device_delete("item-1")
+    reloaded_after_ack = DeliveryStateStore(settings)
+
+    assert acked.status == "deleted_from_library"
+    assert reloaded_after_ack.items["item-1"].status == "deleted_from_library"
+    assert reloaded_after_ack.device_delete_items_for_channels(["01_Citadel"]) == []
+
+
+def test_delete_item_from_channel_restore_files_when_persist_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    settings = make_settings(tmp_path)
+    store = DeliveryStateStore(settings)
+    original_path = settings.media_dir / "uploads" / "item-1.mov"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original media bytes")
+    converted_path = settings.media_dir / "converted" / "episode.mp4"
+    converted_path.parent.mkdir(parents=True)
+    converted_path.write_bytes(b"converted media bytes")
+    store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=original_path,
+    )
+    store.mark_converting("item-1")
+    store.mark_pending(
+        "item-1",
+        converted_path=converted_path,
+        channel_id="01_Citadel",
+        filename="episode.mp4",
+    )
+    store.ack_item("item-1")
+
+    def fail_persist() -> None:
+        raise RuntimeError("persist failed")
+
+    monkeypatch.setattr(store, "_persist", fail_persist)
+
+    with pytest.raises(RuntimeError, match="persist failed"):
+        store.delete_item_from_channel("item-1")
+
+    reloaded = DeliveryStateStore(settings)
+    assert store.items["item-1"].status == "archived"
+    assert reloaded.items["item-1"].status == "archived"
+    assert original_path.exists()
+    assert converted_path.exists()

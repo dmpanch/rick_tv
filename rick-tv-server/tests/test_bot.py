@@ -34,14 +34,19 @@ class FakeMessage:
         self.video = video
         self.document = document
         self.replies: list[dict[str, object]] = []
+        self.videos: list[dict[str, object]] = []
 
     async def reply_text(self, text: str, **kwargs: object) -> None:
         self.replies.append({"text": text, **kwargs})
 
+    async def reply_video(self, video, **kwargs: object) -> None:
+        self.videos.append({"content": video.read(), **kwargs})
+
 
 class FakeCallbackQuery:
-    def __init__(self, data: str) -> None:
+    def __init__(self, data: str, message: FakeMessage | None = None) -> None:
         self.data = data
+        self.message = message or FakeMessage()
         self.answers: list[str | None] = []
         self.edits: list[dict[str, object]] = []
 
@@ -468,15 +473,182 @@ def test_channels_list_opens_per_channel_actions(tmp_path: Path):
     view_markup = view_query.edits[0]["reply_markup"]
     assert isinstance(view_markup, InlineKeyboardMarkup)
     assert markup_labels(view_markup) == [
+        "List all videos",
         "Rename channel",
         "Delete channel",
         "Back to list",
     ]
     assert markup_callback_data(view_markup) == [
+        "channel_videos:01_Citadel",
         "channel_rename:01_Citadel",
         "channel_delete:01_Citadel",
         "channel_list",
     ]
+
+
+def test_channel_video_list_opens_video_detail_actions(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store.add_channel("01_Citadel", "Citadel")
+    state_store = DeliveryStateStore(settings)
+    for item_id, channel_id, filename in [
+        ("item-1", "01_Citadel", "first.mp4"),
+        ("item-2", "01_Citadel", "second.mp4"),
+        ("item-3", "02_Interdimensional_Cable", "other.mp4"),
+    ]:
+        original_path = settings.media_dir / "uploads" / f"{item_id}.mov"
+        original_path.parent.mkdir(parents=True, exist_ok=True)
+        original_path.write_bytes(f"original {item_id}".encode())
+        converted_path = settings.media_dir / "converted" / filename
+        converted_path.parent.mkdir(parents=True, exist_ok=True)
+        converted_path.write_bytes(f"converted {item_id}".encode())
+        state_store.create_uploaded_item(
+            item_id=item_id,
+            user_id="user-1",
+            original_path=original_path,
+        )
+        state_store.mark_converting(item_id)
+        state_store.mark_pending(
+            item_id,
+            converted_path=converted_path,
+            channel_id=channel_id,
+            filename=filename,
+        )
+    state_store.ack_item("item-2")
+
+    list_query = FakeCallbackQuery("channel_videos:01_Citadel")
+    asyncio.run(
+        bot.handle_channel_callback(
+            FakeUpdate(effective_user=FakeUser(id=42), callback_query=list_query),
+            FakeContext(),
+            channel_store,
+            state_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
+    assert "Videos in 01 - Citadel" in str(list_query.edits[0]["text"])
+    assert "first.mp4" in str(list_query.edits[0]["text"])
+    assert "second.mp4" in str(list_query.edits[0]["text"])
+    list_markup = list_query.edits[0]["reply_markup"]
+    assert isinstance(list_markup, InlineKeyboardMarkup)
+    assert markup_labels(list_markup) == ["first.mp4", "second.mp4", "Back to channel"]
+    assert markup_callback_data(list_markup) == [
+        "channel_video:item-1",
+        "channel_video:item-2",
+        "channel_view:01_Citadel",
+    ]
+
+    detail_query = FakeCallbackQuery("channel_video:item-1")
+    asyncio.run(
+        bot.handle_channel_callback(
+            FakeUpdate(effective_user=FakeUser(id=42), callback_query=detail_query),
+            FakeContext(),
+            channel_store,
+            state_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
+    assert "first.mp4" in str(detail_query.edits[0]["text"])
+    detail_markup = detail_query.edits[0]["reply_markup"]
+    assert isinstance(detail_markup, InlineKeyboardMarkup)
+    assert markup_labels(detail_markup) == ["Download", "Delete", "Back"]
+    assert markup_callback_data(detail_markup) == [
+        "channel_video_download:item-1",
+        "channel_video_delete:item-1",
+        "channel_videos:01_Citadel",
+    ]
+
+
+def test_channel_video_download_sends_converted_mp4(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store.add_channel("01_Citadel", "Citadel")
+    state_store = DeliveryStateStore(settings)
+    original_path = settings.media_dir / "uploads" / "item-1.mov"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original media bytes")
+    converted_path = settings.media_dir / "converted" / "first.mp4"
+    converted_path.parent.mkdir(parents=True)
+    converted_path.write_bytes(b"converted media bytes")
+    state_store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=original_path,
+    )
+    state_store.mark_converting("item-1")
+    state_store.mark_pending(
+        "item-1",
+        converted_path=converted_path,
+        channel_id="01_Citadel",
+        filename="first.mp4",
+    )
+    message = FakeMessage()
+    download_query = FakeCallbackQuery("channel_video_download:item-1", message=message)
+
+    asyncio.run(
+        bot.handle_channel_callback(
+            FakeUpdate(effective_user=FakeUser(id=42), callback_query=download_query),
+            FakeContext(),
+            channel_store,
+            state_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
+    assert message.videos == [
+        {"content": b"converted media bytes", "filename": "first.mp4"}
+    ]
+    assert download_query.edits == []
+
+
+def test_channel_video_delete_removes_server_files_and_returns_to_video_list(
+    tmp_path: Path,
+):
+    settings = make_settings(tmp_path)
+    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store.add_channel("01_Citadel", "Citadel")
+    state_store = DeliveryStateStore(settings)
+    original_path = settings.media_dir / "uploads" / "item-1.mov"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"original media bytes")
+    converted_path = settings.media_dir / "converted" / "first.mp4"
+    converted_path.parent.mkdir(parents=True)
+    converted_path.write_bytes(b"converted media bytes")
+    state_store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=original_path,
+    )
+    state_store.mark_converting("item-1")
+    state_store.mark_pending(
+        "item-1",
+        converted_path=converted_path,
+        channel_id="01_Citadel",
+        filename="first.mp4",
+    )
+    state_store.ack_item("item-1")
+    delete_query = FakeCallbackQuery("channel_video_delete:item-1")
+
+    asyncio.run(
+        bot.handle_channel_callback(
+            FakeUpdate(effective_user=FakeUser(id=42), callback_query=delete_query),
+            FakeContext(),
+            channel_store,
+            state_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
+    assert state_store.items["item-1"].status == "deleted_server_side"
+    assert state_store.device_delete_items_for_channels(["01_Citadel"])[0].item_id == (
+        "item-1"
+    )
+    assert not original_path.exists()
+    assert not converted_path.exists()
+    assert "Deleted first.mp4" in str(delete_query.edits[0]["text"])
+    assert "No videos in 01 - Citadel" in str(delete_query.edits[0]["text"])
 
 
 def test_restore_all_videos_command_requires_confirmation(tmp_path: Path):

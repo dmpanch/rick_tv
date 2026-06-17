@@ -34,6 +34,12 @@ DELIVERY_STATUSES: tuple[DeliveryStatus, ...] = (
     "deleted_from_library",
 )
 
+ACTIVE_CHANNEL_VIDEO_STATUSES: tuple[DeliveryStatus, ...] = (
+    "pending",
+    "delivered",
+    "archived",
+)
+
 
 @dataclass
 class DeliveryItem:
@@ -171,6 +177,15 @@ class DeliveryStateStore:
                 if item.status in ("delivered", "archived")
             ]
 
+    def list_active_items_for_channel(self, channel_id: str) -> list[DeliveryItem]:
+        with self._locked_state():
+            return [
+                replace(item)
+                for item in self.items.values()
+                if item.channel_id == channel_id
+                and item.status in ACTIVE_CHANNEL_VIDEO_STATUSES
+            ]
+
     def cancel_pending_item(self, item_id: str) -> DeliveryItem:
         with self._locked_state():
             item = self.items[item_id]
@@ -254,6 +269,65 @@ class DeliveryStateStore:
             self._persist()
             return restored
 
+    def delete_item_from_channel(self, item_id: str) -> DeliveryItem:
+        with self._locked_state():
+            item = self.items[item_id]
+            if item.status not in ACTIVE_CHANNEL_VIDEO_STATUSES:
+                raise ValueError(
+                    f"delivery item must be active before channel delete: {item_id}"
+                )
+            if item.channel_id is None:
+                raise ValueError(f"delivery item is missing channel_id: {item_id}")
+            if item.filename is None and item.converted_path is None:
+                raise ValueError(f"delivery item is missing filename: {item_id}")
+
+            previous_status = item.status
+            previous_archive_entry = self.archive_index.get(item_id)
+            previous_request = self.archive_delete_requests.get(item_id)
+            moved_paths: list[tuple[Path, Path]] = []
+            try:
+                moved_paths = self._quarantine_server_side_media(item)
+                item.status = "deleted_server_side"
+                self.archive_index.pop(item_id, None)
+                self.archive_delete_requests.pop(item_id, None)
+                self._persist()
+            except Exception:
+                item.status = previous_status
+                if previous_archive_entry is not None:
+                    self.archive_index[item_id] = previous_archive_entry
+                if previous_request is not None:
+                    self.archive_delete_requests[item_id] = previous_request
+                self._restore_quarantined_media(moved_paths)
+                raise
+
+            self._delete_quarantined_media(moved_paths)
+            return replace(item)
+
+    def device_delete_items_for_channels(
+        self,
+        channel_ids: list[str],
+    ) -> list[DeliveryItem]:
+        with self._locked_state():
+            channels = set(channel_ids)
+            return [
+                replace(item)
+                for item in self.items.values()
+                if item.status == "deleted_server_side"
+                and item.channel_id in channels
+            ]
+
+    def ack_device_delete(self, item_id: str) -> DeliveryItem:
+        with self._locked_state():
+            item = self.items[item_id]
+            if item.status != "deleted_server_side":
+                raise ValueError(
+                    f"delivery item must be deleted server-side before device ack: {item_id}"
+                )
+
+            item.status = "deleted_from_library"
+            self._persist()
+            return replace(item)
+
     def get_item(self, item_id: str) -> DeliveryItem | None:
         with self._locked_state():
             item = self.items.get(item_id)
@@ -266,7 +340,6 @@ class DeliveryStateStore:
                     continue
                 if item.status not in {
                     "canceled",
-                    "deleted_server_side",
                     "deleted_from_library",
                 }:
                     return True

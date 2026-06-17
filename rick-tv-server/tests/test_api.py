@@ -68,7 +68,8 @@ def test_ready_endpoint_requires_bearer_token(tmp_path: Path):
                 "download_url": "https://example.test/api/v1/download/item-1",
                 "sha256": hashlib.sha256(media_bytes).hexdigest(),
             }
-        ]
+        ],
+        "deletions": [],
     }
 
 
@@ -313,3 +314,115 @@ def test_channels_yml_missing_registry_returns_empty_channels_document(tmp_path:
 
     assert response.status_code == 200
     assert response.text == "channels: {}\n"
+
+
+def test_ready_endpoint_returns_device_deletions_for_deleted_server_side_items(
+    tmp_path: Path,
+):
+    settings = make_settings(tmp_path)
+    store = DeliveryStateStore(settings)
+    pending_path = settings.media_dir / "converted" / "pending.mp4"
+    pending_path.parent.mkdir(parents=True)
+    pending_bytes = b"pending media bytes"
+    pending_path.write_bytes(pending_bytes)
+    pending_original_path = settings.media_dir / "uploads" / "pending.mov"
+    pending_original_path.parent.mkdir(parents=True)
+    pending_original_path.write_bytes(b"pending original bytes")
+    deleted_path = settings.media_dir / "converted" / "deleted.mp4"
+    deleted_path.write_bytes(b"deleted media bytes")
+    deleted_original_path = settings.media_dir / "uploads" / "deleted.mov"
+    deleted_original_path.write_bytes(b"deleted original bytes")
+
+    store.create_uploaded_item(
+        item_id="pending-item",
+        user_id="user-1",
+        original_path=pending_original_path,
+    )
+    store.mark_converting("pending-item")
+    store.mark_pending(
+        "pending-item",
+        converted_path=pending_path,
+        channel_id="01_Citadel",
+        filename="pending.mp4",
+    )
+    store.create_uploaded_item(
+        item_id="deleted-item",
+        user_id="user-1",
+        original_path=deleted_original_path,
+    )
+    store.mark_converting("deleted-item")
+    store.mark_pending(
+        "deleted-item",
+        converted_path=deleted_path,
+        channel_id="01_Citadel",
+        filename="deleted.mp4",
+    )
+    store.ack_item("deleted-item")
+    store.delete_item_from_channel("deleted-item")
+    client = TestClient(create_app(settings, store))
+
+    response = client.get(
+        "/api/v1/ready?channels=01_Citadel",
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {
+                "id": "pending-item",
+                "channel_id": "01_Citadel",
+                "filename": "pending.mp4",
+                "download_url": "https://example.test/api/v1/download/pending-item",
+                "sha256": hashlib.sha256(pending_bytes).hexdigest(),
+            }
+        ],
+        "deletions": [
+            {
+                "id": "deleted-item",
+                "channel_id": "01_Citadel",
+                "filename": "deleted.mp4",
+            }
+        ],
+    }
+
+
+def test_delete_ack_requires_bearer_token_and_completes_device_deletion(
+    tmp_path: Path,
+):
+    settings = make_settings(tmp_path)
+    store = DeliveryStateStore(settings)
+    original_path = settings.media_dir / "uploads" / "deleted.mov"
+    original_path.parent.mkdir(parents=True)
+    original_path.write_bytes(b"deleted original bytes")
+    converted_path = settings.media_dir / "converted" / "deleted.mp4"
+    converted_path.parent.mkdir(parents=True)
+    converted_path.write_bytes(b"deleted media bytes")
+    store.create_uploaded_item(
+        item_id="deleted-item",
+        user_id="user-1",
+        original_path=original_path,
+    )
+    store.mark_converting("deleted-item")
+    store.mark_pending(
+        "deleted-item",
+        converted_path=converted_path,
+        channel_id="01_Citadel",
+        filename="deleted.mp4",
+    )
+    store.ack_item("deleted-item")
+    store.delete_item_from_channel("deleted-item")
+    client = TestClient(create_app(settings, store))
+
+    unauthenticated_response = client.post("/api/v1/delete-ack/deleted-item")
+    authenticated_response = client.post(
+        "/api/v1/delete-ack/deleted-item",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    reloaded = DeliveryStateStore(settings)
+
+    assert unauthenticated_response.status_code == 401
+    assert authenticated_response.status_code == 204
+    assert authenticated_response.content == b""
+    assert reloaded.items["deleted-item"].status == "deleted_from_library"
+    assert reloaded.device_delete_items_for_channels(["01_Citadel"]) == []

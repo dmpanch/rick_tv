@@ -110,6 +110,6 @@ def _has_active_media(state_store: Any, channel_id: str) -> bool:
     for item in getattr(state_store, "items", {}).values():
         if getattr(item, "channel_id", None) != channel_id:
             continue
-        if getattr(item, "status", None) not in {"canceled", "deleted_server_side"}:
+        if getattr(item, "status", None) not in {"canceled", "deleted_from_library"}:
             return True
     return False
