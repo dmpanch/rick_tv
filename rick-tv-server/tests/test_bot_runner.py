@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from rick_tv_server.config import ServerSettings
@@ -65,3 +66,13 @@ def test_bot_runner_main_builds_application_and_runs_long_polling(
     assert settings.media_dir.is_dir()
     assert settings.config_dir.is_dir()
     assert settings.state_dir.is_dir()
+
+
+def test_bot_runner_logging_mutes_http_client_info_logs() -> None:
+    from rick_tv_server import bot_runner
+
+    logging.getLogger("httpx").setLevel(logging.INFO)
+
+    bot_runner.configure_logging()
+
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
