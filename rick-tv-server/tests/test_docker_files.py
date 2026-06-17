@@ -54,6 +54,17 @@ def test_docker_compose_runs_bot_service_with_shared_runtime_volumes() -> None:
     assert "RICK_TV_CHANNELS_PATH: /etc/rick-tv/channels.yml" in content
 
 
+def test_dockerignore_excludes_runtime_volume_directories() -> None:
+    dockerignore = PROJECT_ROOT / ".dockerignore"
+
+    assert dockerignore.exists()
+    content = dockerignore.read_text(encoding="utf-8")
+
+    assert "media/" in content
+    assert "config/" in content
+    assert "state/" in content
+
+
 def test_server_docs_document_docker_build_and_import_smoke_check() -> None:
     docs_file = PROJECT_ROOT.parent / "docs" / "rick-tv-server.md"
 

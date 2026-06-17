@@ -46,7 +46,7 @@ channels:
 ```
 
 - [x] Provide list/add/rename/delete operations.
-- [x] Validate manual `channel_id` values as stable filesystem/API IDs.
+- [x] Validate stable filesystem/API channel IDs in the registry.
 - [x] Write YAML atomically using a temporary file plus replace.
 - [x] Reject delete when `DeliveryStateStore` has active media references for that channel.
 
@@ -121,8 +121,8 @@ channels:
 - Modify: `rick-tv-server/src/rick_tv_server/bot.py`
 - Modify: `rick-tv-server/tests/test_bot.py`
 
-- [x] Add `/channels` menu with inline list/add/rename/delete actions.
-- [x] Add channel by manual `channel_id` and `display_name`.
+- [x] Add `/channels` menu with top-level add/list actions and per-channel rename/delete actions.
+- [x] Add channel from display name and generate the next stable channel ID automatically.
 - [x] Rename only `display_name`, never `channel_id`.
 - [x] Reject delete for channels with active media references.
 - [x] Confirm destructive delete action before applying soft channel removal.
@@ -133,8 +133,8 @@ channels:
 - Modify: `rick-tv-server/src/rick_tv_server/bot.py`
 - Modify: `rick-tv-server/tests/test_bot.py`
 
-- [x] Implement channel-first upload flow.
-- [x] Show explicit channel choices from the YAML registry and keep remembered-channel convenience.
+- [x] Implement video-first upload flow.
+- [x] Accept media first, then show explicit channel choices from the YAML registry with remembered-channel ordering.
 - [x] Accept Telegram `video` and `document` attachments.
 - [x] Download the selected attachment to a server-side temporary upload path.
 - [x] Call `UploadProcessor.process_upload(...)` through `asyncio.to_thread(...)`.

@@ -69,19 +69,23 @@ channels:
     display_name: Citadel TV
 ```
 
-Allowlisted Telegram users can use `/channels` to add, rename, and delete
-registry channels. Channel IDs are stable filesystem/API IDs; renaming changes
-only `display_name`. Deleting a channel is rejected while active media still
-references it.
+Allowlisted Telegram users can use `/channels` to manage registry channels.
+The top-level menu has `Add channel` and `List channels`. Adding asks only for
+the display name; the bot generates the next stable filesystem/API channel ID,
+for example `04_Birdperson_TV`. The list view shows channels as `01 - Citadel`;
+selecting one channel opens its own `Rename channel` and `Delete channel`
+actions. Renaming changes only `display_name`. Deleting a channel is rejected
+while active media still references it.
 
 Upload flow:
 
 1. User runs `/upload`.
-2. Bot shows explicit channel choices from the YAML registry.
-3. User chooses a channel and sends Telegram `video` or `document` media.
-4. Bot downloads the Telegram file to a temporary server path.
-5. Bot calls `UploadProcessor.process_upload(...)`.
-6. Server stores both original media and converted Pi-ready `.mp4`, then marks
+2. Bot asks the user to send Telegram `video` or `document` media.
+3. Bot downloads the Telegram file to a temporary server path.
+4. Bot shows explicit channel choices from the YAML registry.
+5. User chooses a channel.
+6. Bot calls `UploadProcessor.process_upload(...)`.
+7. Server stores both original media and converted Pi-ready `.mp4`, then marks
    the converted file `pending` for Pi delivery.
 
 Archive delete is a soft delete from the active library: original and converted

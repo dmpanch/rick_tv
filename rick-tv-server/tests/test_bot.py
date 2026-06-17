@@ -8,7 +8,7 @@ from telegram import InlineKeyboardMarkup
 
 from rick_tv_server import bot
 from rick_tv_server.channels import ChannelRegistryStore
-from rick_tv_server.bot import ChannelChoice, handle_upload_media, remember_user_channel
+from rick_tv_server.bot import remember_user_channel
 from rick_tv_server.config import ServerSettings
 from rick_tv_server.state import DeliveryStateStore
 
@@ -99,6 +99,22 @@ class FakeStateStore:
         self.last_channel_by_user = {"42": "garage"}
 
 
+def markup_labels(markup: InlineKeyboardMarkup) -> list[str]:
+    return [
+        button.text
+        for row in markup.inline_keyboard
+        for button in row
+    ]
+
+
+def markup_callback_data(markup: InlineKeyboardMarkup) -> list[str | None]:
+    return [
+        button.callback_data
+        for row in markup.inline_keyboard
+        for button in row
+    ]
+
+
 class PublicOnlyStateStore:
     def __init__(self) -> None:
         self.remembered: list[tuple[str, str]] = []
@@ -107,42 +123,16 @@ class PublicOnlyStateStore:
         self.remembered.append((user_id, channel_id))
 
 
-def test_upload_always_shows_explicit_channel_choices():
+def test_upload_command_asks_for_media_before_channel_choice():
     message = FakeMessage()
     update = FakeUpdate(effective_user=FakeUser(id=42), message=message)
-    channels = [
-        ChannelChoice(id="kitchen", display_name="Kitchen"),
-        ChannelChoice(id="garage", display_name="Garage"),
-        ChannelChoice(id="patio", display_name="Patio"),
-    ]
 
-    asyncio.run(handle_upload_media(update, FakeContext(), channels, FakeStateStore()))
+    asyncio.run(bot.handle_upload_media(update, FakeContext(), FakeStateStore()))
 
     assert len(message.replies) == 1
     reply = message.replies[0]
-    assert "Garage" in str(reply["text"])
-    assert "choose" in str(reply["text"]).lower()
-
-    reply_markup = reply["reply_markup"]
-    assert isinstance(reply_markup, InlineKeyboardMarkup)
-
-    labels = [
-        button.text
-        for row in reply_markup.inline_keyboard
-        for button in row
-    ]
-    callback_data = [
-        button.callback_data
-        for row in reply_markup.inline_keyboard
-        for button in row
-    ]
-
-    assert labels == ["Garage (last used)", "Kitchen", "Patio"]
-    assert callback_data == [
-        "upload_channel:garage",
-        "upload_channel:kitchen",
-        "upload_channel:patio",
-    ]
+    assert "send a video" in str(reply["text"]).lower()
+    assert "reply_markup" not in reply
 
 
 def test_remember_user_channel_uses_public_state_store_interface():
@@ -363,9 +353,99 @@ def test_unauthorized_user_is_rejected_before_channel_menu(tmp_path: Path):
     assert channel_store.load().channels == {}
 
 
-def test_channels_menu_add_rename_and_delete_flow(tmp_path: Path):
+def test_channels_menu_shows_top_level_actions_only(tmp_path: Path):
     settings = make_settings(tmp_path)
     channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store.add_channel("01_Citadel", "Citadel")
+    channel_store.add_channel("02_Interdimensional_Cable", "Interdimensional Cable")
+    state_store = DeliveryStateStore(settings)
+    message = FakeMessage()
+
+    asyncio.run(
+        bot.handle_channels_menu(
+            FakeUpdate(effective_user=FakeUser(id=42), message=message),
+            FakeContext(),
+            channel_store,
+            state_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
+    assert len(message.replies) == 1
+    assert "Channel management" in str(message.replies[0]["text"])
+    reply_markup = message.replies[0]["reply_markup"]
+    assert isinstance(reply_markup, InlineKeyboardMarkup)
+    assert markup_labels(reply_markup) == ["Add channel", "List channels", "Restore all"]
+    assert "Rename" not in str(reply_markup)
+    assert "Delete" not in str(reply_markup)
+
+
+def test_channels_list_opens_per_channel_actions(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store.add_channel("01_Citadel", "Citadel")
+    channel_store.add_channel("02_Interdimensional_Cable", "Interdimensional Cable")
+    state_store = DeliveryStateStore(settings)
+    context = FakeContext()
+
+    list_query = FakeCallbackQuery("channel_list")
+    asyncio.run(
+        bot.handle_channel_callback(
+            FakeUpdate(effective_user=FakeUser(id=42), callback_query=list_query),
+            context,
+            channel_store,
+            state_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
+    assert "01 - Citadel" in str(list_query.edits[0]["text"])
+    assert "02 - Interdimensional Cable" in str(list_query.edits[0]["text"])
+    list_markup = list_query.edits[0]["reply_markup"]
+    assert isinstance(list_markup, InlineKeyboardMarkup)
+    assert markup_labels(list_markup) == [
+        "01 - Citadel",
+        "02 - Interdimensional Cable",
+        "Back",
+    ]
+    assert markup_callback_data(list_markup) == [
+        "channel_view:01_Citadel",
+        "channel_view:02_Interdimensional_Cable",
+        "channel_menu",
+    ]
+
+    view_query = FakeCallbackQuery("channel_view:01_Citadel")
+    asyncio.run(
+        bot.handle_channel_callback(
+            FakeUpdate(effective_user=FakeUser(id=42), callback_query=view_query),
+            context,
+            channel_store,
+            state_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
+    assert "01 - Citadel" in str(view_query.edits[0]["text"])
+    view_markup = view_query.edits[0]["reply_markup"]
+    assert isinstance(view_markup, InlineKeyboardMarkup)
+    assert markup_labels(view_markup) == [
+        "Rename channel",
+        "Delete channel",
+        "Back to list",
+    ]
+    assert markup_callback_data(view_markup) == [
+        "channel_rename:01_Citadel",
+        "channel_delete:01_Citadel",
+        "channel_list",
+    ]
+
+
+def test_channel_add_generates_incremental_channel_id(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store.add_channel("01_Citadel", "Citadel")
+    channel_store.add_channel("02_Interdimensional_Cable", "Interdimensional Cable")
+    channel_store.add_channel("03_Test_Channel", "Test Channel")
     state_store = DeliveryStateStore(settings)
     context = FakeContext()
 
@@ -379,22 +459,32 @@ def test_channels_menu_add_rename_and_delete_flow(tmp_path: Path):
             allowed_user_ids=(42,),
         )
     )
-    assert "channel_id" in str(add_query.edits[0]["text"])
+    assert "display name" in str(add_query.edits[0]["text"]).lower()
 
+    message = FakeMessage(text="Birdperson TV")
     asyncio.run(
         bot.handle_channel_text(
             FakeUpdate(
                 effective_user=FakeUser(id=42),
-                message=FakeMessage(text="01_Citadel Citadel TV"),
+                message=message,
             ),
             context,
             channel_store,
             allowed_user_ids=(42,),
         )
     )
-    assert channel_store.load().channels == {
-        "01_Citadel": {"display_name": "Citadel TV"}
-    }
+
+    registry = channel_store.load()
+    assert registry.channels["04_Birdperson_TV"] == {"display_name": "Birdperson TV"}
+    assert "04 - Birdperson TV" in str(message.replies[0]["text"])
+
+
+def test_channel_rename_and_delete_flow_stays_on_selected_channel(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store.add_channel("01_Citadel", "Citadel")
+    state_store = DeliveryStateStore(settings)
+    context = FakeContext()
 
     rename_query = FakeCallbackQuery("channel_rename:01_Citadel")
     asyncio.run(
@@ -406,11 +496,14 @@ def test_channels_menu_add_rename_and_delete_flow(tmp_path: Path):
             allowed_user_ids=(42,),
         )
     )
+    assert "01 - Citadel" in str(rename_query.edits[0]["text"])
+
+    rename_message = FakeMessage(text="Citadel Archive")
     asyncio.run(
         bot.handle_channel_text(
             FakeUpdate(
                 effective_user=FakeUser(id=42),
-                message=FakeMessage(text="Citadel Archive"),
+                message=rename_message,
             ),
             context,
             channel_store,
@@ -420,6 +513,7 @@ def test_channels_menu_add_rename_and_delete_flow(tmp_path: Path):
     assert channel_store.load().channels["01_Citadel"] == {
         "display_name": "Citadel Archive"
     }
+    assert "01 - Citadel Archive" in str(rename_message.replies[0]["text"])
 
     delete_query = FakeCallbackQuery("channel_delete:01_Citadel")
     asyncio.run(
@@ -431,7 +525,8 @@ def test_channels_menu_add_rename_and_delete_flow(tmp_path: Path):
             allowed_user_ids=(42,),
         )
     )
-    assert "Confirm" in str(delete_query.edits[0]["text"])
+    assert "01 - Citadel Archive" in str(delete_query.edits[0]["text"])
+    assert "Confirm" in markup_labels(delete_query.edits[0]["reply_markup"])
 
     confirm_query = FakeCallbackQuery("channel_delete_confirm:01_Citadel")
     asyncio.run(
@@ -446,21 +541,14 @@ def test_channels_menu_add_rename_and_delete_flow(tmp_path: Path):
     assert channel_store.load().channels == {}
 
 
-def test_channel_upload_flow_downloads_video_and_processes_upload(tmp_path: Path):
+def test_channel_upload_flow_accepts_video_before_channel_choice(tmp_path: Path):
     settings = make_settings(tmp_path)
     state_store = DeliveryStateStore(settings)
+    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store.add_channel("01_Citadel", "Citadel")
+    channel_store.add_channel("02_Interdimensional_Cable", "Interdimensional Cable")
     upload_processor = RecordingUploadProcessor()
     context = FakeContext()
-    select_query = FakeCallbackQuery("upload_channel:01_Citadel")
-
-    asyncio.run(
-        bot.handle_upload_channel_callback(
-            FakeUpdate(effective_user=FakeUser(id=42), callback_query=select_query),
-            context,
-            state_store,
-            allowed_user_ids=(42,),
-        )
-    )
     message = FakeMessage(
         video=FakeAttachment(file_name="episode.mov", content=b"video bytes")
     )
@@ -471,11 +559,32 @@ def test_channel_upload_flow_downloads_video_and_processes_upload(tmp_path: Path
             context,
             settings,
             upload_processor,
+            channel_store,
+            state_store,
             allowed_user_ids=(42,),
         )
     )
 
-    assert context.user_data["upload_channel_id"] == "01_Citadel"
+    assert upload_processor.calls == []
+    assert "pending_upload" in context.user_data
+    assert "choose a channel" in str(message.replies[0]["text"]).lower()
+    reply_markup = message.replies[0]["reply_markup"]
+    assert isinstance(reply_markup, InlineKeyboardMarkup)
+    assert markup_labels(reply_markup) == ["01 - Citadel", "02 - Interdimensional Cable"]
+
+    select_query = FakeCallbackQuery("upload_channel:01_Citadel")
+    asyncio.run(
+        bot.handle_upload_channel_callback(
+            FakeUpdate(effective_user=FakeUser(id=42), callback_query=select_query),
+            context,
+            settings,
+            state_store,
+            upload_processor,
+            channel_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
     assert upload_processor.calls == [
         {
             "user_id": "42",
@@ -485,14 +594,17 @@ def test_channel_upload_flow_downloads_video_and_processes_upload(tmp_path: Path
             "content": b"video bytes",
         }
     ]
-    assert "accepted" in str(message.replies[0]["text"]).lower()
+    assert "pending_upload" not in context.user_data
+    assert "accepted" in str(select_query.edits[0]["text"]).lower()
 
 
 def test_channel_upload_flow_reports_failure_without_deliverable(tmp_path: Path):
     settings = make_settings(tmp_path)
+    state_store = DeliveryStateStore(settings)
+    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store.add_channel("01_Citadel", "Citadel")
     upload_processor = RecordingUploadProcessor(fail=True)
     context = FakeContext()
-    context.user_data["upload_channel_id"] = "01_Citadel"
     message = FakeMessage(
         document=FakeAttachment(file_name="episode.mp4", content=b"video bytes")
     )
@@ -503,12 +615,28 @@ def test_channel_upload_flow_reports_failure_without_deliverable(tmp_path: Path)
             context,
             settings,
             upload_processor,
+            channel_store,
+            state_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
+    select_query = FakeCallbackQuery("upload_channel:01_Citadel")
+    asyncio.run(
+        bot.handle_upload_channel_callback(
+            FakeUpdate(effective_user=FakeUser(id=42), callback_query=select_query),
+            context,
+            settings,
+            state_store,
+            upload_processor,
+            channel_store,
             allowed_user_ids=(42,),
         )
     )
 
     assert len(upload_processor.calls) == 1
-    assert "failed" in str(message.replies[0]["text"]).lower()
+    assert "pending_upload" not in context.user_data
+    assert "failed" in str(select_query.edits[0]["text"]).lower()
 
 
 def test_restore_all_callback_requires_confirmation_and_requeues_archived(tmp_path: Path):
