@@ -41,6 +41,8 @@ def test_metadata_only_names_existing_directories(tmp_path):
 
     (media_root / "01_Citadel").mkdir()
     (media_root / "Garage").mkdir()
+    (media_root / "01_Citadel" / "episode.mp4").touch()
+    (media_root / "Garage" / "episode.mp4").touch()
     metadata_path = tmp_path / "channels.yml"
     metadata_path.write_text(
         """

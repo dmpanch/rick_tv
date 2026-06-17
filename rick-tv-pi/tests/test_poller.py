@@ -52,6 +52,126 @@ def test_poll_sends_authenticated_known_channels(tmp_path):
     assert request.headers["Authorization"] == "Bearer test-token"
 
 
+def test_sync_channel_registry_downloads_channels_yml_atomically(tmp_path):
+    metadata_path = tmp_path / "config" / "channels.yml"
+    registry_text = """
+channels:
+  01_Citadel:
+    display_name: Citadel TV
+""".lstrip()
+    seen_requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(request)
+        assert request.headers["Authorization"] == "Bearer test-token"
+        if request.method == "GET" and request.url.path == "/api/v1/channels.yml":
+            return httpx.Response(200, text=registry_text)
+        return httpx.Response(404)
+
+    http_client = httpx.Client(
+        base_url="https://server.example",
+        transport=httpx.MockTransport(handler),
+    )
+    settings = PiSettings(
+        server_base_url="https://server.example",
+        api_token="test-token",
+        media_root=tmp_path / "media",
+        metadata_path=metadata_path,
+    )
+
+    Poller(settings, http_client).sync_channel_registry()
+
+    assert metadata_path.read_text(encoding="utf-8") == registry_text
+    assert not list(metadata_path.parent.glob("*.tmp"))
+    assert [request.url.path for request in seen_requests] == ["/api/v1/channels.yml"]
+
+
+def test_poll_uses_registry_channel_ids_for_first_delivery(
+    tmp_path,
+    monkeypatch,
+):
+    media_bytes = b"ready mp4 bytes"
+    item_id = "delivery-123"
+    channel_id = "01_Citadel"
+    filename = "episode.mp4"
+    metadata_path = tmp_path / "config" / "channels.yml"
+    destination = tmp_path / "media" / channel_id / filename
+    requests = []
+
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(
+        """
+channels:
+  01_Citadel:
+    display_name: Citadel TV
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    def validate_ready_profile(path):
+        assert path.read_bytes() == media_bytes
+        return True
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+
+        if request.method == "GET" and request.url.path == "/api/v1/channels.yml":
+            return httpx.Response(200, text=metadata_path.read_text(encoding="utf-8"))
+
+        if request.method == "GET" and request.url.path == "/api/v1/ready":
+            assert request.url.query == b"channels=01_Citadel"
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "id": item_id,
+                            "channel_id": channel_id,
+                            "filename": filename,
+                            "download_url": "https://server.example/downloads/episode.mp4",
+                            "sha256": hashlib.sha256(media_bytes).hexdigest(),
+                        }
+                    ]
+                },
+            )
+
+        if request.method == "GET" and request.url.path == "/downloads/episode.mp4":
+            return httpx.Response(200, content=media_bytes)
+
+        if request.method == "POST" and request.url.path == f"/api/v1/ack/{item_id}":
+            assert destination.read_bytes() == media_bytes
+            return httpx.Response(204)
+
+        return httpx.Response(404)
+
+    monkeypatch.setattr(
+        poller_module,
+        "validate_ready_profile",
+        validate_ready_profile,
+        raising=False,
+    )
+    http_client = httpx.Client(
+        base_url="https://server.example",
+        transport=httpx.MockTransport(handler),
+    )
+    settings = PiSettings(
+        server_base_url="https://server.example",
+        api_token="test-token",
+        media_root=tmp_path / "media",
+        metadata_path=metadata_path,
+    )
+
+    Poller(settings, http_client).poll_once([])
+
+    assert destination.read_bytes() == media_bytes
+    assert [request.url.path for request in requests] == [
+        "/api/v1/channels.yml",
+        "/api/v1/ready",
+        "/downloads/episode.mp4",
+        f"/api/v1/ack/{item_id}",
+    ]
+
+
 def test_download_validate_atomic_move_then_ack(tmp_path, monkeypatch):
     media_bytes = b"ready mp4 bytes"
     item_id = "delivery-123"

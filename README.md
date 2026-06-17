@@ -3,14 +3,16 @@
 Rick TV — это связка серверного и клиентского сервисов для доставки видео на Raspberry Pi:
 
 - `rick-tv-server` — FastAPI-сервис с очередью доставки и API.
+- `rick-tv-bot` — Telegram long-polling runner в Docker Compose, который управляет каналами и загрузками.
 - `rick-tv-pi` — клиент на Raspberry Pi, который опрашивает сервер, скачивает ролики, проверяет формат и обновляет плейлисты.
 
 ## Что делает проект
 
 1. Видео загружаются на сервер и конвертируются в формат для проигрывания.
 2. Сервер держит статусы очереди доставки.
-3. Raspberry Pi периодически запрашивает `/api/v1/ready`, скачивает новые ролики по каналам и подтверждает получение через `/api/v1/ack/{id}`.
-4. `videolooper` проигрывает обновлённые плейлисты каналов и является выбранным стабильным runtime playback решением для Pi.
+3. Сервер хранит YAML registry каналов и отдаёт его Pi через `/api/v1/channels.yml`.
+4. Raspberry Pi периодически синхронизирует registry, запрашивает `/api/v1/ready`, скачивает новые ролики по каналам и подтверждает получение через `/api/v1/ack/{id}`.
+5. `videolooper` проигрывает обновлённые плейлисты каналов и является выбранным стабильным runtime playback решением для Pi.
 
 ## Аппаратные требования
 
@@ -28,6 +30,7 @@ Rick TV — это связка серверного и клиентского �
 - Docker и Docker Compose.
 - Свободный порт `8080`.
 - Базовый токен доступа (`RICK_TV_API_TOKEN`).
+- Telegram bot token и allowlist user IDs, если запускается `rick-tv-bot`.
 
 ### Для Raspberry Pi (`rick-tv-pi`)
 
@@ -56,6 +59,12 @@ docker compose up -d --build
 ```
 
 Файл `docker-compose.yml` берёт значения `RICK_TV_*` из окружения (или `.env`).
+
+API запускается обычным `docker compose up`. Telegram runner находится в том же Compose-файле как сервис `rick-tv-bot`; он использует тот же image и общие `media/config/state` volumes. Для запуска бота задайте `RICK_TV_TELEGRAM_BOT_TOKEN` и `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`, затем включите профиль:
+
+```bash
+docker compose --profile bot up -d --build
+```
 
 ## Установка и запуск на Raspberry Pi
 
@@ -125,23 +134,20 @@ sudo systemctl status rick-tv-pi.service
 
 Канал участвует только если внутри есть хотя бы один `.mp4`. Пустые папки не попадают в навигацию, плейлисты и список каналов для polling API до появления playable `.mp4`.
 
-Для красивых названий каналов можно использовать `channels.yml` с секцией `channels`.
+Серверный `channels.yml` является registry для выбора каналов в Telegram и для первого опроса Pi. Pi может знать ID канала из registry и получить первый ролик даже до появления локальной папки с `.mp4`; после доставки канал появится в навигации.
 
 ## Как заливать видео через бота
 
-В коде уже есть building blocks для Telegram-бота:
-
-- `rick_tv_server.bot` — клавиатуры выбора канала и обработка действий с pending/archive.
-- `rick_tv_server.uploads.UploadProcessor` — создание `pending` элемента и конвертация видео под нужный профиль.
-
-Полноценный Telegram runner ещё не реализован. Он должен принимать media от пользователя, скачивать файл локально и вызывать `UploadProcessor.process_upload(...)`.
+Telegram runner реализован в `rick_tv_server.bot_runner` и запускается сервисом `rick-tv-bot`.
 
 Типовой поток:
 
-1. Бот предлагает выбор канала.
-2. Пользователь выбирает канал.
-3. Пользователь отправляет видео.
-4. Бот скачивает файл локально и вызывает `UploadProcessor.process_upload(...)`.
+1. Allowlisted пользователь открывает `/channels`, создаёт или переименовывает канал.
+2. Пользователь запускает `/upload`, выбирает канал и отправляет Telegram `video` или `document`.
+3. Бот скачивает файл локально и вызывает `UploadProcessor.process_upload(...)`.
+4. Сервер сохраняет original upload и converted Pi-ready `.mp4`.
 5. Ролик становится `pending`, затем Pi забирает его с сервера.
 
 Сервер приводит файл к целевому профилю (`640x480`, `h264`, `aac`), а Pi проверяет готовый файл через `ffprobe` перед финальным размещением.
+
+Archive delete в приложении — мягкое удаление из активной библиотеки: физические original/converted файлы остаются на сервере. Действие `restore all` в Telegram requeue-ит активные archived элементы, чтобы заменить или восстановить Pi и заново доставить библиотеку.

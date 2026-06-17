@@ -184,7 +184,50 @@ def test_canceled_pending_is_not_ready(tmp_path: Path):
     assert download_response.status_code == 404
 
 
-def test_confirm_archive_delete_is_server_side_only(tmp_path: Path):
+def test_store_instance_sees_pending_items_created_by_separate_instance(
+    tmp_path: Path,
+):
+    settings = make_settings(tmp_path)
+    api_store = DeliveryStateStore(settings)
+    bot_store = DeliveryStateStore(settings)
+    converted_path = tmp_path / "media" / "converted" / "item-1.mp4"
+
+    bot_store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=tmp_path / "media" / "uploads" / "item-1.mov",
+    )
+    bot_store.mark_converting("item-1")
+    bot_store.mark_pending(
+        "item-1",
+        converted_path=converted_path,
+        channel_id="01_Citadel",
+    )
+
+    assert [item.item_id for item in api_store.list_pending_items()] == ["item-1"]
+
+
+def test_sequential_store_instances_preserve_both_updates(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    first_store = DeliveryStateStore(settings)
+    second_store = DeliveryStateStore(settings)
+
+    first_store.create_uploaded_item(
+        item_id="item-1",
+        user_id="user-1",
+        original_path=tmp_path / "media" / "uploads" / "item-1.mov",
+    )
+    second_store.create_uploaded_item(
+        item_id="item-2",
+        user_id="user-2",
+        original_path=tmp_path / "media" / "uploads" / "item-2.mov",
+    )
+
+    reloaded = DeliveryStateStore(settings)
+    assert sorted(reloaded.items) == ["item-1", "item-2"]
+
+
+def test_confirm_archive_delete_soft_deletes_without_removing_files(tmp_path: Path):
     settings = make_settings(tmp_path)
     store = DeliveryStateStore(settings)
     original_path = tmp_path / "media" / "uploads" / "item-1.mov"
@@ -215,12 +258,12 @@ def test_confirm_archive_delete_is_server_side_only(tmp_path: Path):
     deleted = store.confirm_archive_delete("item-1")
     reloaded = DeliveryStateStore(settings)
 
-    assert deleted.status == "deleted_server_side"
-    assert not original_path.exists()
-    assert not converted_path.exists()
+    assert deleted.status == "deleted_from_library"
+    assert original_path.exists()
+    assert converted_path.exists()
     assert store.archive_index == {}
     assert store.acknowledgements == {"item-1": {"status": "delivered"}}
-    assert reloaded.items["item-1"].status == "deleted_server_side"
+    assert reloaded.items["item-1"].status == "deleted_from_library"
     assert reloaded.archive_index == {}
 
 
@@ -294,47 +337,41 @@ def test_archive_delete_persist_failure_preserves_files_and_state(
     assert converted_path.exists()
 
 
-def test_archive_delete_unlink_failure_removes_active_media_paths(
+def test_restore_all_archived_items_requeues_active_library_without_duplicate_files(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ):
     settings = make_settings(tmp_path)
     store = DeliveryStateStore(settings)
-    original_path = tmp_path / "media" / "uploads" / "item-1.mov"
-    original_path.parent.mkdir(parents=True)
-    original_path.write_bytes(b"original media bytes")
-    converted_path = tmp_path / "media" / "converted" / "item-1.mp4"
-    converted_path.parent.mkdir(parents=True)
-    converted_path.write_bytes(b"converted media bytes")
-    store.create_uploaded_item(
-        item_id="item-1",
-        user_id="user-1",
-        original_path=original_path,
-    )
-    store.mark_converting("item-1")
-    store.mark_pending(
-        "item-1",
-        converted_path=converted_path,
-        channel_id="01_Citadel",
-    )
-    store.ack_item("item-1")
-    store.request_archive_delete("item-1")
+    converted_paths = {}
+    for item_id in ("item-1", "item-2", "item-3"):
+        original_path = tmp_path / "media" / "uploads" / f"{item_id}.mov"
+        original_path.parent.mkdir(parents=True, exist_ok=True)
+        original_path.write_bytes(f"original {item_id}".encode())
+        converted_path = tmp_path / "media" / "converted" / f"{item_id}.mp4"
+        converted_path.parent.mkdir(parents=True, exist_ok=True)
+        converted_path.write_bytes(f"converted {item_id}".encode())
+        converted_paths[item_id] = converted_path
+        store.create_uploaded_item(
+            item_id=item_id,
+            user_id="user-1",
+            original_path=original_path,
+        )
+        store.mark_converting(item_id)
+        store.mark_pending(
+            item_id,
+            converted_path=converted_path,
+            channel_id="01_Citadel",
+        )
+        store.ack_item(item_id)
+    store.request_archive_delete("item-3")
+    store.confirm_archive_delete("item-3")
 
-    real_unlink = Path.unlink
-
-    def fail_deleted_media_unlink(path: Path, *args: object, **kwargs: object) -> None:
-        if ".deleted_server_side" in path.parts:
-            raise OSError("unlink failed")
-        real_unlink(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "unlink", fail_deleted_media_unlink)
-
-    deleted = store.confirm_archive_delete("item-1")
+    restored = store.restore_all_archived()
     reloaded = DeliveryStateStore(settings)
 
-    assert deleted.status == "deleted_server_side"
-    assert reloaded.items["item-1"].status == "deleted_server_side"
-    assert store.archive_index == {}
-    assert not original_path.exists()
-    assert not converted_path.exists()
-    assert list((settings.media_dir / ".deleted_server_side").rglob("*.*"))
+    assert [item.item_id for item in restored] == ["item-1", "item-2"]
+    assert reloaded.items["item-1"].status == "pending"
+    assert reloaded.items["item-2"].status == "pending"
+    assert reloaded.items["item-3"].status == "deleted_from_library"
+    assert sorted(reloaded.archive_index) == []
+    assert [path.exists() for path in converted_paths.values()] == [True, True, True]

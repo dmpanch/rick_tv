@@ -39,6 +39,21 @@ def test_docker_compose_supports_local_smoke_without_external_env() -> None:
     assert "RICK_TV_API_TOKEN: ${RICK_TV_API_TOKEN:?" not in content
 
 
+def test_docker_compose_runs_bot_service_with_shared_runtime_volumes() -> None:
+    compose_file = PROJECT_ROOT / "docker-compose.yml"
+
+    content = compose_file.read_text(encoding="utf-8")
+
+    assert "rick-tv-bot:" in content
+    assert "python -m rick_tv_server.bot_runner" in content
+    assert content.count("./media:/var/lib/rick-tv/media") == 2
+    assert content.count("./config:/etc/rick-tv") == 2
+    assert content.count("./state:/var/lib/rick-tv/state") == 2
+    assert "RICK_TV_TELEGRAM_BOT_TOKEN" in content
+    assert "RICK_TV_TELEGRAM_ALLOWED_USER_IDS" in content
+    assert "RICK_TV_CHANNELS_PATH: /etc/rick-tv/channels.yml" in content
+
+
 def test_server_docs_document_docker_build_and_import_smoke_check() -> None:
     docs_file = PROJECT_ROOT.parent / "docs" / "rick-tv-server.md"
 

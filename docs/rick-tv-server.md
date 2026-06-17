@@ -1,8 +1,9 @@
 # Rick TV Server Deployment
 
-The Rick TV server exposes the FastAPI delivery API and persists queue state on
-disk. The container image includes `ffmpeg` for media conversion support and
-runs Uvicorn on port `8080`.
+The Rick TV server exposes the FastAPI delivery API, persists queue state on
+disk, and can run a Telegram long-polling upload runner from the same container
+image. The image includes `ffmpeg` for media conversion support and runs
+Uvicorn on port `8080` for the API service.
 
 ## Configuration
 
@@ -18,6 +19,13 @@ Set these environment variables before starting the service:
 - `RICK_TV_CONFIG_DIR`: configuration path. Defaults to `/etc/rick-tv`.
 - `RICK_TV_STATE_DIR`: persisted state path. Defaults to
   `/var/lib/rick-tv/state`.
+- `RICK_TV_CHANNELS_PATH`: YAML channel registry path shared by the API, bot,
+  and Pi sync. Defaults to `<RICK_TV_CONFIG_DIR>/channels.yml`.
+- `RICK_TV_TELEGRAM_BOT_TOKEN`: Telegram bot token. Required only for the
+  `rick-tv-bot` service.
+- `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`: comma-separated allowlist of Telegram
+  user IDs allowed to manage channels, upload media, and restore archived
+  media.
 
 ## Docker Compose
 
@@ -38,6 +46,47 @@ The Compose file mounts:
 
 It publishes `8080:8080` and uses `restart: unless-stopped` so the server
 comes back after host restarts unless it was explicitly stopped.
+
+The same Compose file also defines `rick-tv-bot`, a separate service using the
+same image and the same mounted runtime directories. The bot is behind the
+`bot` profile so local API smoke checks do not require Telegram credentials:
+
+```bash
+export RICK_TV_TELEGRAM_BOT_TOKEN='123456:telegram-token'
+export RICK_TV_TELEGRAM_ALLOWED_USER_IDS='123456789'
+docker compose --profile bot up -d --build
+```
+
+The bot runner uses long polling, not webhooks.
+
+## Channel Registry And Telegram Uploads
+
+The channel registry lives at `RICK_TV_CHANNELS_PATH` and uses this shape:
+
+```yaml
+channels:
+  01_Citadel:
+    display_name: Citadel TV
+```
+
+Allowlisted Telegram users can use `/channels` to add, rename, and delete
+registry channels. Channel IDs are stable filesystem/API IDs; renaming changes
+only `display_name`. Deleting a channel is rejected while active media still
+references it.
+
+Upload flow:
+
+1. User runs `/upload`.
+2. Bot shows explicit channel choices from the YAML registry.
+3. User chooses a channel and sends Telegram `video` or `document` media.
+4. Bot downloads the Telegram file to a temporary server path.
+5. Bot calls `UploadProcessor.process_upload(...)`.
+6. Server stores both original media and converted Pi-ready `.mp4`, then marks
+   the converted file `pending` for Pi delivery.
+
+Archive delete is a soft delete from the active library: original and converted
+files remain on disk. The Telegram restore-all action requeues active archived
+library items so a replacement Pi can download the media again.
 
 ## Smoke Test
 

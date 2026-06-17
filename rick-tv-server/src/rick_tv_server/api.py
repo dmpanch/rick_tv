@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from rick_tv_server.channels import ChannelRegistryStore
 from rick_tv_server.config import ServerSettings
 from rick_tv_server.state import DeliveryItem, DeliveryStateStore
 
@@ -44,9 +45,17 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
             ]
         }
 
+    @app.get("/api/v1/channels.yml", dependencies=[Depends(require_bearer_token)])
+    def channels_yml() -> Response:
+        channels_path = settings.channels_path or settings.config_dir / "channels.yml"
+        registry = ChannelRegistryStore(channels_path)
+        if not channels_path.exists():
+            return Response(content="channels: {}\n", media_type="application/yaml")
+        return Response(content=registry.dump_text(), media_type="application/yaml")
+
     @app.get("/api/v1/download/{item_id}", dependencies=[Depends(require_bearer_token)])
     def download(item_id: str) -> FileResponse:
-        item = state_store.items.get(item_id)
+        item = state_store.get_item(item_id)
         if (
             item is None
             or item.status != "pending"
@@ -59,12 +68,13 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
 
     @app.post("/api/v1/ack/{item_id}", dependencies=[Depends(require_bearer_token)])
     def ack(item_id: str) -> Response:
-        item = state_store.items.get(item_id)
+        item = state_store.get_item(item_id)
         if item is None or item.status in {
             "uploaded",
             "converting",
             "canceled",
             "deleted_server_side",
+            "deleted_from_library",
         }:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 

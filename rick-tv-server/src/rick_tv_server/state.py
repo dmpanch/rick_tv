@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import tempfile
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from typing import Iterator
 from typing import Literal
 
 from rick_tv_server.config import ServerSettings
@@ -17,6 +20,7 @@ DeliveryStatus = Literal[
     "delivered",
     "archived",
     "deleted_server_side",
+    "deleted_from_library",
 ]
 
 DELIVERY_STATUSES: tuple[DeliveryStatus, ...] = (
@@ -27,6 +31,7 @@ DELIVERY_STATUSES: tuple[DeliveryStatus, ...] = (
     "delivered",
     "archived",
     "deleted_server_side",
+    "deleted_from_library",
 )
 
 
@@ -68,6 +73,7 @@ class DeliveryStateStore:
     def __init__(self, settings: ServerSettings):
         self.settings = settings
         self.state_path = settings.state_dir / "queue.json"
+        self.lock_path = settings.state_dir / ".queue.lock"
         self.items: dict[str, DeliveryItem] = {}
         self.last_channel_by_user: dict[str, str] = {}
         self.acknowledgements: dict[str, object] = {}
@@ -83,30 +89,32 @@ class DeliveryStateStore:
         original_path: Path,
         source_message_id: int | None = None,
     ) -> DeliveryItem:
-        if item_id in self.items:
-            raise ValueError(f"delivery item already exists: {item_id}")
+        with self._locked_state():
+            if item_id in self.items:
+                raise ValueError(f"delivery item already exists: {item_id}")
 
-        item = DeliveryItem(
-            item_id=item_id,
-            user_id=user_id,
-            status="uploaded",
-            original_path=original_path,
-            source_message_id=source_message_id,
-        )
-        self.items[item_id] = item
-        self._persist()
-        return item
+            item = DeliveryItem(
+                item_id=item_id,
+                user_id=user_id,
+                status="uploaded",
+                original_path=original_path,
+                source_message_id=source_message_id,
+            )
+            self.items[item_id] = item
+            self._persist()
+            return replace(item)
 
     def mark_converting(self, item_id: str) -> DeliveryItem:
-        item = self.items[item_id]
-        if item.status != "uploaded":
-            raise ValueError(
-                f"delivery item must be uploaded before converting: {item_id}"
-            )
+        with self._locked_state():
+            item = self.items[item_id]
+            if item.status != "uploaded":
+                raise ValueError(
+                    f"delivery item must be uploaded before converting: {item_id}"
+                )
 
-        item.status = "converting"
-        self._persist()
-        return item
+            item.status = "converting"
+            self._persist()
+            return replace(item)
 
     def mark_pending(
         self,
@@ -117,111 +125,159 @@ class DeliveryStateStore:
         filename: str | None = None,
         sha256: str | None = None,
     ) -> DeliveryItem:
-        item = self.items[item_id]
-        if item.status != "converting":
-            raise ValueError(
-                f"delivery item must be converting before pending: {item_id}"
-            )
+        with self._locked_state():
+            item = self.items[item_id]
+            if item.status != "converting":
+                raise ValueError(
+                    f"delivery item must be converting before pending: {item_id}"
+                )
 
-        item.status = "pending"
-        item.converted_path = converted_path
-        item.channel_id = channel_id
-        item.filename = filename
-        item.sha256 = sha256
-        self.remember_user_channel(item.user_id, channel_id)
-        return item
+            item.status = "pending"
+            item.converted_path = converted_path
+            item.channel_id = channel_id
+            item.filename = filename
+            item.sha256 = sha256
+            self.last_channel_by_user[item.user_id] = channel_id
+            self._persist()
+            return replace(item)
 
     def remember_user_channel(self, user_id: str, channel_id: str) -> None:
-        self.last_channel_by_user[user_id] = channel_id
-        self._persist()
+        with self._locked_state():
+            self.last_channel_by_user[user_id] = channel_id
+            self._persist()
 
     def ready_items_for_channels(self, channel_ids: list[str]) -> list[DeliveryItem]:
-        channels = set(channel_ids)
-        return [
-            item
-            for item in self.items.values()
-            if item.status == "pending" and item.channel_id in channels
-        ]
+        with self._locked_state():
+            channels = set(channel_ids)
+            return [
+                replace(item)
+                for item in self.items.values()
+                if item.status == "pending" and item.channel_id in channels
+            ]
 
     def list_pending_items(self) -> list[DeliveryItem]:
-        return [item for item in self.items.values() if item.status == "pending"]
+        with self._locked_state():
+            return [
+                replace(item)
+                for item in self.items.values()
+                if item.status == "pending"
+            ]
 
     def list_archived_items(self) -> list[DeliveryItem]:
-        return [
-            item
-            for item in self.items.values()
-            if item.status in ("delivered", "archived")
-        ]
+        with self._locked_state():
+            return [
+                replace(item)
+                for item in self.items.values()
+                if item.status in ("delivered", "archived")
+            ]
 
     def cancel_pending_item(self, item_id: str) -> DeliveryItem:
-        item = self.items[item_id]
-        if item.status != "pending":
-            raise ValueError(f"delivery item must be pending before cancel: {item_id}")
+        with self._locked_state():
+            item = self.items[item_id]
+            if item.status != "pending":
+                raise ValueError(f"delivery item must be pending before cancel: {item_id}")
 
-        item.status = "canceled"
-        self._persist()
-        return item
+            item.status = "canceled"
+            self._persist()
+            return replace(item)
 
     def request_archive_delete(self, item_id: str) -> DeliveryItem:
-        item = self.items[item_id]
-        if item.status not in ("delivered", "archived"):
-            raise ValueError(
-                f"delivery item must be archived before archive delete: {item_id}"
-            )
+        with self._locked_state():
+            item = self.items[item_id]
+            if item.status not in ("delivered", "archived"):
+                raise ValueError(
+                    f"delivery item must be archived before archive delete: {item_id}"
+                )
 
-        self.archive_delete_requests[item_id] = {"status": "requested"}
-        self._persist()
-        return item
+            self.archive_delete_requests[item_id] = {"status": "requested"}
+            self._persist()
+            return replace(item)
 
     def confirm_archive_delete(self, item_id: str) -> DeliveryItem:
-        item = self.items[item_id]
-        if item.status not in ("delivered", "archived"):
-            raise ValueError(
-                f"delivery item must be archived before archive delete: {item_id}"
-            )
-        if item_id not in self.archive_delete_requests:
-            raise ValueError(f"archive delete must be requested before confirm: {item_id}")
+        with self._locked_state():
+            item = self.items[item_id]
+            if item.status not in ("delivered", "archived"):
+                raise ValueError(
+                    f"delivery item must be archived before archive delete: {item_id}"
+                )
+            if item_id not in self.archive_delete_requests:
+                raise ValueError(
+                    f"archive delete must be requested before confirm: {item_id}"
+                )
 
-        moved_media_paths = self._quarantine_server_side_media(item)
-        previous_status = item.status
-        previous_archive_entry = self.archive_index.get(item_id)
-        previous_request = self.archive_delete_requests.get(item_id)
-        item.status = "deleted_server_side"
-        self.archive_index.pop(item_id, None)
-        self.archive_delete_requests.pop(item_id, None)
-        try:
-            self._persist()
-        except Exception:
-            item.status = previous_status
-            if previous_archive_entry is not None:
-                self.archive_index[item_id] = previous_archive_entry
-            if previous_request is not None:
-                self.archive_delete_requests[item_id] = previous_request
-            self._restore_quarantined_media(moved_media_paths)
-            raise
+            previous_status = item.status
+            previous_archive_entry = self.archive_index.get(item_id)
+            previous_request = self.archive_delete_requests.get(item_id)
+            item.status = "deleted_from_library"
+            self.archive_index.pop(item_id, None)
+            self.archive_delete_requests.pop(item_id, None)
+            try:
+                self._persist()
+            except Exception:
+                item.status = previous_status
+                if previous_archive_entry is not None:
+                    self.archive_index[item_id] = previous_archive_entry
+                if previous_request is not None:
+                    self.archive_delete_requests[item_id] = previous_request
+                raise
 
-        self._delete_quarantined_media(moved_media_paths)
-        return item
+            return replace(item)
 
     def ack_item(self, item_id: str) -> DeliveryItem:
-        item = self.items[item_id]
-        if item.status != "pending":
-            raise ValueError(f"delivery item must be pending before ack: {item_id}")
+        with self._locked_state():
+            item = self.items[item_id]
+            if item.status != "pending":
+                raise ValueError(f"delivery item must be pending before ack: {item_id}")
 
-        item.status = "delivered"
-        delivered = replace(item)
-        self.acknowledgements[item_id] = {"status": "delivered"}
+            item.status = "delivered"
+            delivered = replace(item)
+            self.acknowledgements[item_id] = {"status": "delivered"}
 
-        item.status = "archived"
-        self.archive_index[item_id] = {
-            "status": "archived",
-            "channel_id": item.channel_id,
-            "user_id": item.user_id,
-        }
-        self._persist()
-        return delivered
+            item.status = "archived"
+            self.archive_index[item_id] = {
+                "status": "archived",
+                "channel_id": item.channel_id,
+                "user_id": item.user_id,
+            }
+            self._persist()
+            return delivered
+
+    def restore_all_archived(self) -> list[DeliveryItem]:
+        with self._locked_state():
+            restored: list[DeliveryItem] = []
+            for item_id, item in self.items.items():
+                if item.status != "archived":
+                    continue
+                item.status = "pending"
+                self.archive_index.pop(item_id, None)
+                restored.append(replace(item))
+            self._persist()
+            return restored
+
+    def get_item(self, item_id: str) -> DeliveryItem | None:
+        with self._locked_state():
+            item = self.items.get(item_id)
+            return replace(item) if item is not None else None
+
+    def has_active_media_for_channel(self, channel_id: str) -> bool:
+        with self._locked_state():
+            for item in self.items.values():
+                if item.channel_id != channel_id:
+                    continue
+                if item.status not in {
+                    "canceled",
+                    "deleted_server_side",
+                    "deleted_from_library",
+                }:
+                    return True
+            return False
 
     def _load(self) -> None:
+        self.items = {}
+        self.last_channel_by_user = {}
+        self.acknowledgements = {}
+        self.archive_index = {}
+        self.archive_delete_requests = {}
         if not self.state_path.exists():
             return
 
@@ -260,6 +316,17 @@ class DeliveryStateStore:
         except Exception:
             Path(tmp_name).unlink(missing_ok=True)
             raise
+
+    @contextmanager
+    def _locked_state(self) -> Iterator[None]:
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.lock_path.open("a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                self._load()
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _server_side_media_paths(self, item: DeliveryItem) -> list[Path]:
         paths: list[Path] = []

@@ -43,7 +43,12 @@ RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo
 RICK_TV_CHANNEL_SHUFFLE_SECONDS=3600
 ```
 
-`RICK_TV_METADATA_PATH` is optional. `RICK_TV_POLL_INTERVAL_SECONDS` is optional and defaults to `60`. `RICK_TV_CHANNEL_SHUFFLE_SECONDS` controls how often files inside each channel playlist are reshuffled; the default is `3600` seconds.
+`RICK_TV_METADATA_PATH` is optional, but it should be set when the Pi is expected
+to receive the first file for a registry channel that does not yet exist locally.
+The Pi downloads `/api/v1/channels.yml` to this path and uses registry channel
+IDs for delivery polling. `RICK_TV_POLL_INTERVAL_SECONDS` is optional and
+defaults to `60`. `RICK_TV_CHANNEL_SHUFFLE_SECONDS` controls how often files
+inside each channel playlist are reshuffled; the default is `3600` seconds.
 
 Touch gestures also can be tuned for DPI orientation:
 
@@ -70,9 +75,11 @@ polls the server for ready media, downloads and validates files, atomically
 places them into channel directories, and acknowledges only after placement
 succeeds.
 
-A directory is a channel only when it contains at least one playable `.mp4`.
-Empty directories are ignored by navigation, generated playlists, and the
-channel list sent to the polling API until a playable `.mp4` appears.
+A directory is a navigation/playback channel only when it contains at least one
+playable `.mp4`. Empty directories are ignored by navigation and generated
+playlists until a playable `.mp4` appears. When `RICK_TV_METADATA_PATH` is set,
+the Pi polls delivery with registry channel IDs from server-synced
+`channels.yml`, so the first media item can create a local channel directory.
 
 Runtime playback is built around the prepared Adafruit `pi_video_looper`
 installation. Rick TV writes per-channel playlists plus a master playlist,

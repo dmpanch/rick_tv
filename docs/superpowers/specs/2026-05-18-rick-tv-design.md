@@ -51,12 +51,12 @@ Example Pi storage:
 Eligibility and ordering rules:
 
 1. An immediate directory under `media_root` becomes a channel only when it contains at least one playable `.mp4`.
-2. Empty directories are ignored by navigation, playlist generation, and the Pi polling channel list until a playable `.mp4` appears.
+2. Empty directories are ignored by navigation and playlist generation until a playable `.mp4` appears.
 3. Eligible directories with a leading numeric prefix sort first by that number.
 4. Eligible directories without a leading numeric prefix sort after numbered directories, alphabetically by directory name.
 5. Nested directories are not channels.
 
-Optional central YAML metadata may add only `display_name` for existing directories. YAML never creates channels. If metadata is missing for a channel, the UI shows only the channel number; it does not show a placeholder and does not derive a display name from the folder name.
+Server-synced YAML metadata is the registry for delivery polling and Telegram channel choices. It can introduce channel IDs for first delivery, but it does not create a local navigation/playback channel until the Pi has at least one playable `.mp4` in that channel directory. If metadata is missing for a local playable channel, the UI shows only the channel number; it does not show a placeholder and does not derive a display name from the folder name.
 
 ```yaml
 channels:
@@ -208,8 +208,8 @@ stateDiagram-v2
     Pending --> Pending: Pi failure or no ack
     Pending --> Delivered: Pi ack after atomic move
     Delivered --> Archived
-    Archived --> DeletedServerSide: confirmed bot deletion
-    Delivered --> DeletedServerSide: confirmed bot deletion
+    Archived --> DeletedFromLibrary: confirmed bot library removal
+    Delivered --> DeletedFromLibrary: confirmed bot library removal
 ```
 
 The Pi channel scanner is authoritative only for local playback availability. It discovers eligible local media directories and newly delivered files, but it does not own cross-device delivery truth.
@@ -221,7 +221,8 @@ Pi behavior:
 - Ignore empty channel directories until they contain a playable `.mp4`.
 - Include a directory as a channel on a later scan once a playable `.mp4` exists.
 - Use generated videolooper playlists and FIFO commands for Pi playback and channel switching.
-- Ignore malformed metadata entries that reference missing directories.
+- Use server-synced registry IDs for delivery polling when metadata is configured.
+- Keep malformed or missing metadata out of local navigation unless a playable `.mp4` directory exists.
 - Ignore taps and reject additional swipes during cooldown.
 - Do not expose inbound network services for Rick TV.
 
@@ -230,7 +231,7 @@ Server behavior:
 - Keep pending files pending until acknowledged.
 - Retry silently when the Pi does not acknowledge.
 - Treat pending deletion as cancellation.
-- Keep delivered/archive deletion scoped to server-side files and indexes in Phase 1.
+- Treat archive deletion as soft removal from the active library while retaining original and converted files on disk.
 - Use Docker stdout/stderr for logs.
 
 ## Testing And Verification
@@ -255,7 +256,7 @@ Server-focused verification:
 - Conversion test verifies ready profile output: MP4, H.264, `yuv420p`, AAC, display-native scale, modest bitrate.
 - Queue test verifies pending remains pending until Pi ack.
 - Cancellation test verifies pending delete marks an item canceled.
-- Delivered/archive deletion test verifies Phase 1 deletes only server-side files/index entries after confirmation.
+- Delivered/archive deletion test verifies confirmed archive removal hides items from the active library while retaining server-side files.
 
 End-to-end verification:
 

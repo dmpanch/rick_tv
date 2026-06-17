@@ -4,7 +4,7 @@
 
 **Goal:** Build the first working Rick TV system: a non-Dockerized Raspberry Pi appliance client and a Dockerized Telegram/upload/conversion/delivery server.
 
-**Architecture:** Use two Python projects in one repo: `rick-tv-pi` for playable channel discovery, videolooper playback control, touch swipes, polling, download, validation, and atomic placement; `rick-tv-server` for Telegram flow building blocks, conversion, authenticated HTTP delivery, and server-authoritative state. Server state lives in mounted files/volumes and Docker logs go to stdout/stderr; the Pi keeps no durable delivery logs.
+**Architecture:** Use two Python projects in one repo: `rick-tv-pi` for playable channel discovery, server registry sync, videolooper playback control, touch swipes, polling, download, validation, and atomic placement; `rick-tv-server` for the Telegram upload runner, channel registry management, conversion, authenticated HTTP delivery, and server-authoritative state/library. Server state lives in mounted files/volumes and Docker logs go to stdout/stderr; the Pi keeps no durable delivery logs.
 
 **Tech Stack:** Pi Python `>=3.7` for the legacy Raspberry Pi OS image; server Python 3.12; pytest, FastAPI, Uvicorn, python-telegram-bot, PyYAML, httpx, ffmpeg/ffprobe, Docker Compose, systemd service docs for Pi runtime.
 
@@ -18,7 +18,7 @@
 - `rick-tv-pi/src/rick_tv_pi/videolooper.py`: videolooper playlist generation, playback-facing state, and FIFO channel switching.
 - `rick-tv-pi/src/rick_tv_pi/touch.py`: swipe/tap interpretation with cooldown.
 - `rick-tv-pi/src/rick_tv_pi/validator.py`: light ffprobe profile validation.
-- `rick-tv-pi/src/rick_tv_pi/poller.py`: authenticated polling, download, validation, atomic move, ack timing.
+- `rick-tv-pi/src/rick_tv_pi/poller.py`: authenticated channel registry sync, polling, download, validation, atomic move, ack timing.
 - `rick-tv-pi/src/rick_tv_pi/main.py`: Pi CLI entrypoint that wires scanner, videolooper, touch, and poller.
 - `rick-tv-pi/tests/`: Pi unit and fake-server tests.
 - `rick-tv-pi/systemd/rick-tv-pi.service`: Pi service template with stdout/stderr journaling only.
@@ -27,7 +27,8 @@
 - `rick-tv-server/src/rick_tv_server/state.py`: JSON-backed queue, archive, user selection state.
 - `rick-tv-server/src/rick_tv_server/converter.py`: ffmpeg conversion to Pi-ready MP4 profile.
 - `rick-tv-server/src/rick_tv_server/api.py`: authenticated FastAPI polling, download, ack endpoints.
-- `rick-tv-server/src/rick_tv_server/bot.py`: Telegram upload/list/delete/confirmation flows.
+- `rick-tv-server/src/rick_tv_server/bot.py`: Telegram upload/list/delete/confirmation/restore flows.
+- `rick-tv-server/src/rick_tv_server/bot_runner.py`: Telegram long-polling runner entrypoint.
 - `rick-tv-server/src/rick_tv_server/main.py`: server process entrypoint.
 - `rick-tv-server/tests/`: server unit, API, bot, conversion, Docker smoke tests.
 - `rick-tv-server/Dockerfile`: production server image.
@@ -39,7 +40,7 @@
 
 ## Completion Audit
 
-Audited against the current repository state on 2026-06-17. These checkboxes mark implementation artifacts present in code, tests, docs, and git history. Historical red/green test-run steps remain below as originally planned; current pytest execution is not available in this shell because `python -m pytest` fails with `No module named pytest`.
+Audited against the current repository state on 2026-06-17. These checkboxes mark implementation artifacts present in code, tests, docs, and git history. Historical red/green test-run steps remain below as originally planned; current verification uses the project-local `.venv`.
 
 - [x] Task 1: Pi package scaffold exists.
 - [x] Task 2: Server package scaffold exists.
@@ -63,14 +64,14 @@ Audited against the current repository state on 2026-06-17. These checkboxes mar
 - [x] Task 20: Telegram explicit channel choice helpers exist.
 - [x] Task 21: Telegram pending list/cancel helpers exist.
 - [x] Task 22: Telegram archive list/delete confirmation helpers exist.
-- [ ] Follow-Up Task: Full Telegram upload runner is not implemented.
+- [x] Follow-Up Task: Full Telegram upload runner exists in `rick_tv_server.bot_runner`.
 - [x] Task 23: Server main, logging setup, Dockerfile, Compose file, and deployment docs exist.
-- [ ] Task 24: Runtime Docker smoke is not confirmed in this audit. Documentation and Compose support exist, but `docker compose build/up` was not run here.
+- [x] Task 24: Runtime Docker smoke is confirmed with `docker compose build`, `docker compose up -d`, `/health`, logs, and `docker compose down`.
 - [x] Task 25: Public server health endpoint exists.
 - [x] Task 26: Repo-level Pi/server contract test exists.
-- [ ] Task 27: Full Pi verification is not complete in this audit. Durable delivery log scan passed, but the Pi pytest suite was not run.
-- [ ] Task 28: Full server verification is not complete in this audit. Server pytest and Docker smoke were not run.
-- [ ] Task 29: Final end-to-end verification is not complete in this audit. Manual E2E was not run.
+- [x] Task 27: Full Pi verification passes with `.venv/bin/python -m pytest rick-tv-pi/tests -v`.
+- [x] Task 28: Full server verification passes with `.venv/bin/python -m pytest rick-tv-server/tests -v` plus Docker smoke.
+- [x] Task 29: Automated end-to-end verification passes with `.venv/bin/python -m pytest tests/test_end_to_end_contract.py -v` and root `.venv/bin/python -m pytest -v`.
 
 ### Task 1: Scaffold Pi Package
 
@@ -403,7 +404,7 @@ Fake server returns one item `{id, channel_id, filename, download_url, sha256}`.
 
 Run: `cd rick-tv-pi && pytest tests/test_poller.py::test_download_validate_atomic_move_then_ack -v`
 
-Expected: FAIL because download flow is not implemented.
+Expected in the original red step: FAIL before the download flow implementation exists.
 
 - [ ] **Step 3: Implement delivery flow**
 
@@ -745,7 +746,7 @@ Expected: FAIL because archive deletion is missing.
 
 - [ ] **Step 3: Implement confirmed archive deletion**
 
-Add `request_archive_delete(item_id)`, `confirm_archive_delete(item_id)`, and bot callbacks for list/delete/confirm. Scope deletion to server-side files and indexes only.
+Add `request_archive_delete(item_id)`, `confirm_archive_delete(item_id)`, and bot callbacks for list/delete/confirm. Scope deletion to soft removal from the active library while retaining original and converted server-side files.
 
 - [ ] **Step 4: Run tests**
 
@@ -942,7 +943,7 @@ If tests or log scan fail, add focused failing tests first, fix, rerun `cd rick-
 
 Run: `cd rick-tv-server && pytest -v`
 
-Expected: PASS for Docker file checks, API auth, ready/download/ack, Telegram upload explicit choices, last selected channel, pending list/cancel, archive list/confirmed server-side delete, conversion profile, and queue lifecycle.
+Expected: PASS for Docker file checks, API auth, ready/download/ack, Telegram upload explicit choices, last selected channel, pending list/cancel, archive list/confirmed soft library removal, conversion profile, and queue lifecycle.
 
 - [ ] **Step 2: Run Docker smoke**
 
@@ -983,6 +984,6 @@ Run: `git add docs rick-tv-pi rick-tv-server tests pyproject.toml && git commit 
 
 ## Self-Review
 
-- Spec coverage: The plan covers both projects, Pi channel discovery/metadata, playable-channel filtering, videolooper playback, touch swipes and cooldown, polling/download/validation/atomic move/ack, retry/redelivery, no Pi durable delivery state, Telegram upload-list/delete/archive building blocks, the required full Telegram upload runner follow-up, server conversion profile, Docker deployment, mounted volumes, stdout/stderr logs, and final end-to-end verification.
-- Marker scan: No unfinished markers or unspecified "add tests" steps are intentionally present, except the explicitly scoped full Telegram upload runner follow-up.
+- Spec coverage: The plan covers both projects, Pi channel discovery/metadata, playable-channel filtering, server registry sync, videolooper playback, touch swipes and cooldown, polling/download/validation/atomic move/ack, retry/redelivery, no Pi durable delivery state, Telegram upload-list/delete/archive/restore flows, full Telegram upload runner, server conversion profile, Docker deployment, mounted volumes, stdout/stderr logs, and final end-to-end verification.
+- Marker scan: No unfinished markers or unspecified "add tests" steps are intentionally present.
 - Type consistency: Shared protocol names are stable across tasks: `Channel`, `ReadyItem`, `PiSettings`, `ServerSettings`, `DeliveryStateStore`, `ConversionProfile`, `UploadProcessor`, and `/api/v1/ready`, `/api/v1/download/{item_id}`, `/api/v1/ack/{item_id}`.
