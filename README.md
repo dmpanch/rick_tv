@@ -149,7 +149,7 @@ Telegram runner реализован в `rick_tv_server.bot_runner` и запу�
 
 Типовой поток:
 
-1. Allowlisted пользователь открывает `/channels`.
+1. Allowlisted пользователь открывает `/menu` из Telegram command menu.
 2. `Add channel` просит только название; stable channel ID создаётся автоматически инкрементом, например `04_Birdperson_TV`.
 3. `List channels` показывает каналы в виде `01 - Citadel`; выбор канала открывает `Rename channel` и `Delete channel`.
 4. Пользователь отправляет Telegram `video` или `document`; бот после этого предлагает выбрать канал.

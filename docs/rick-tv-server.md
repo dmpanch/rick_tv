@@ -69,13 +69,14 @@ channels:
     display_name: Citadel TV
 ```
 
-Allowlisted Telegram users can use `/channels` to manage registry channels.
-The top-level menu has `Add channel` and `List channels`. Adding asks only for
-the display name; the bot generates the next stable filesystem/API channel ID,
-for example `04_Birdperson_TV`. The list view shows channels as `01 - Citadel`;
-selecting one channel opens its own `Rename channel` and `Delete channel`
-actions. Renaming changes only `display_name`. Deleting a channel is rejected
-while active media still references it.
+Allowlisted Telegram users can use `/menu` from the Telegram command menu to
+manage registry channels. The top-level menu has `Add channel` and
+`List channels`. Adding asks only for the display name; the bot generates the
+next stable filesystem/API channel ID, for example `04_Birdperson_TV`. The list
+view shows channels as `01 - Citadel`; selecting one channel opens its own
+`Rename channel` and `Delete channel` actions. Renaming changes only
+`display_name`. Deleting a channel is rejected while active media still
+references it.
 
 Upload flow:
 

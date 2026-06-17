@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from telegram import InlineKeyboardMarkup
@@ -121,6 +121,53 @@ class PublicOnlyStateStore:
 
     def remember_user_channel(self, user_id: str, channel_id: str) -> None:
         self.remembered.append((user_id, channel_id))
+
+
+def command_handlers(application) -> set[str]:
+    commands: set[str] = set()
+    for handlers in application.handlers.values():
+        for handler in handlers:
+            handler_commands = getattr(handler, "commands", None)
+            if handler_commands is not None:
+                commands.update(handler_commands)
+    return commands
+
+
+def test_application_registers_menu_command_without_channels_alias(tmp_path: Path):
+    settings = replace(
+        make_settings(tmp_path),
+        telegram_bot_token="123456:ABC",
+        telegram_allowed_user_ids=(42,),
+    )
+    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    state_store = DeliveryStateStore(settings)
+
+    application = bot.build_application(
+        settings,
+        channel_store,
+        state_store,
+        RecordingUploadProcessor(),
+    )
+
+    assert "menu" in command_handlers(application)
+    assert "channels" not in command_handlers(application)
+
+
+def test_telegram_command_menu_contains_menu_only() -> None:
+    recorded_commands = []
+
+    class FakeBot:
+        async def set_my_commands(self, commands):
+            recorded_commands.extend(commands)
+
+    class FakeApplication:
+        bot = FakeBot()
+
+    asyncio.run(bot.configure_bot_command_menu(FakeApplication()))
+
+    assert [(command.command, command.description) for command in recorded_commands] == [
+        ("menu", "Open Rick TV menu")
+    ]
 
 
 def test_upload_command_asks_for_media_before_channel_choice():

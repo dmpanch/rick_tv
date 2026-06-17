@@ -9,7 +9,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -587,7 +587,7 @@ async def handle_upload_attachment(
     channels = channel_choices_from_registry(channel_store)
     if not channels:
         _cleanup_pending_upload(context)
-        await update.message.reply_text("No channels. Add one with /channels first.")
+        await update.message.reply_text("No channels. Add one with /menu first.")
         return
 
     user_id = str(update.effective_user.id)
@@ -681,10 +681,15 @@ def build_application(
         raise RuntimeError("RICK_TV_TELEGRAM_BOT_TOKEN must be set for bot runner")
 
     allowed_user_ids = settings.telegram_allowed_user_ids
-    application = ApplicationBuilder().token(settings.telegram_bot_token).build()
+    application = (
+        ApplicationBuilder()
+        .token(settings.telegram_bot_token)
+        .post_init(configure_bot_command_menu)
+        .build()
+    )
     application.add_handler(
         CommandHandler(
-            "channels",
+            "menu",
             partial(
                 handle_channels_menu,
                 channel_store=channel_store,
@@ -772,6 +777,12 @@ def build_application(
         )
     )
     return application
+
+
+async def configure_bot_command_menu(application: Application) -> None:
+    await application.bot.set_my_commands(
+        [BotCommand("menu", "Open Rick TV menu")]
+    )
 
 
 async def _handle_upload_command(
