@@ -7,11 +7,21 @@ from pathlib import Path
 from typing import Callable
 
 from rick_tv_server.config import ServerSettings
-from rick_tv_server.converter import ConversionProfile, convert_to_ready_mp4
+from rick_tv_server.converter import (
+    ConversionProfile,
+    convert_to_ready_mp4,
+    strict_conversion_profile,
+)
 from rick_tv_server.state import DeliveryItem, DeliveryStateStore
+from rick_tv_server.validator import validate_ready_profile
 
 UploadConverter = Callable[[Path, Path], object]
+UploadValidator = Callable[[Path], bool]
 ItemIdFactory = Callable[[], str]
+
+
+class UploadProcessingError(RuntimeError):
+    pass
 
 
 class UploadProcessor:
@@ -21,11 +31,15 @@ class UploadProcessor:
         settings: ServerSettings,
         state_store: DeliveryStateStore,
         converter: UploadConverter | None = None,
+        retry_converter: UploadConverter | None = None,
+        validator: UploadValidator | None = None,
         item_id_factory: ItemIdFactory | None = None,
     ):
         self.settings = settings
         self.state_store = state_store
         self.converter = converter or self._convert_to_ready_mp4
+        self.retry_converter = retry_converter or self._convert_to_strict_ready_mp4
+        self.validator = validator or validate_ready_profile
         self.item_id_factory = item_id_factory or (lambda: uuid.uuid4().hex)
 
     def process_upload(
@@ -54,7 +68,30 @@ class UploadProcessor:
         )
         self.state_store.mark_converting(item_id)
 
-        self.converter(original_path, converted_path)
+        try:
+            self.converter(original_path, converted_path)
+            if not self.validator(converted_path):
+                self.retry_converter(original_path, converted_path)
+                if not self.validator(converted_path):
+                    raise UploadProcessingError(
+                        "Video could not be prepared for Rick TV playback."
+                    )
+        except UploadProcessingError as exc:
+            self.state_store.mark_failed(
+                item_id,
+                message=str(exc),
+                channel_id=channel_id,
+            )
+            raise
+        except Exception as exc:
+            message = "Video could not be prepared for Rick TV playback."
+            self.state_store.mark_failed(
+                item_id,
+                message=message,
+                channel_id=channel_id,
+            )
+            raise UploadProcessingError(message) from exc
+
         sha256 = _sha256_file(converted_path)
 
         return self.state_store.mark_pending(
@@ -77,6 +114,14 @@ class UploadProcessor:
     @staticmethod
     def _convert_to_ready_mp4(input_path: Path, output_path: Path) -> object:
         return convert_to_ready_mp4(input_path, output_path, ConversionProfile())
+
+    @staticmethod
+    def _convert_to_strict_ready_mp4(input_path: Path, output_path: Path) -> object:
+        return convert_to_ready_mp4(
+            input_path,
+            output_path,
+            strict_conversion_profile(),
+        )
 
 
 def _sha256_file(path: Path) -> str:

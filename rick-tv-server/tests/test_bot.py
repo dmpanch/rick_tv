@@ -11,6 +11,7 @@ from rick_tv_server.channels import ChannelRegistryStore
 from rick_tv_server.bot import remember_user_channel
 from rick_tv_server.config import ServerSettings
 from rick_tv_server.state import DeliveryStateStore
+from rick_tv_server.uploads import UploadProcessingError
 
 
 def make_settings(tmp_path: Path) -> ServerSettings:
@@ -95,7 +96,9 @@ class RecordingUploadProcessor:
         source_path = Path(kwargs["source_path"])
         self.calls.append({**kwargs, "content": source_path.read_bytes()})
         if self.fail:
-            raise RuntimeError("conversion failed")
+            raise UploadProcessingError(
+                "Video could not be prepared for Rick TV playback."
+            )
         return type("Item", (), {"item_id": "item-1"})()
 
 
@@ -868,7 +871,7 @@ def test_channel_upload_flow_reports_failure_without_deliverable(tmp_path: Path)
 
     assert len(upload_processor.calls) == 1
     assert "pending_upload" not in context.user_data
-    assert "failed" in str(select_query.edits[0]["text"]).lower()
+    assert "prepared for rick tv playback" in str(select_query.edits[0]["text"]).lower()
 
 
 def test_restore_all_callback_requires_confirmation_and_requeues_archived(tmp_path: Path):

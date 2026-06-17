@@ -21,6 +21,7 @@ from telegram.ext import (
 
 from rick_tv_server.channels import ChannelRegistryStore
 from rick_tv_server.config import ServerSettings
+from rick_tv_server.uploads import UploadProcessingError
 
 
 @dataclass(frozen=True)
@@ -971,6 +972,9 @@ async def _process_pending_upload(
             source_path=temp_path,
             original_filename=original_filename,
         )
+    except UploadProcessingError as exc:
+        await _send_upload_result(update, str(exc))
+        return
     except Exception:
         await _send_upload_result(update, "Upload failed.")
         return
