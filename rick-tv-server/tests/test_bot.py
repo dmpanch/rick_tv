@@ -133,7 +133,7 @@ def command_handlers(application) -> set[str]:
     return commands
 
 
-def test_application_registers_menu_command_without_channels_alias(tmp_path: Path):
+def test_application_registers_direct_command_handlers(tmp_path: Path):
     settings = replace(
         make_settings(tmp_path),
         telegram_bot_token="123456:ABC",
@@ -149,11 +149,17 @@ def test_application_registers_menu_command_without_channels_alias(tmp_path: Pat
         RecordingUploadProcessor(),
     )
 
-    assert "menu" in command_handlers(application)
+    assert {
+        "add_channel",
+        "list_channels",
+        "restore_all_videos",
+    }.issubset(command_handlers(application))
+    assert "menu" not in command_handlers(application)
     assert "channels" not in command_handlers(application)
+    assert "upload" not in command_handlers(application)
 
 
-def test_telegram_command_menu_contains_menu_only() -> None:
+def test_telegram_command_menu_contains_direct_actions_only() -> None:
     recorded_commands = []
 
     class FakeBot:
@@ -166,20 +172,10 @@ def test_telegram_command_menu_contains_menu_only() -> None:
     asyncio.run(bot.configure_bot_command_menu(FakeApplication()))
 
     assert [(command.command, command.description) for command in recorded_commands] == [
-        ("menu", "Open Rick TV menu")
+        ("add_channel", "Add channel"),
+        ("list_channels", "List channels"),
+        ("restore_all_videos", "Restore all videos"),
     ]
-
-
-def test_upload_command_asks_for_media_before_channel_choice():
-    message = FakeMessage()
-    update = FakeUpdate(effective_user=FakeUser(id=42), message=message)
-
-    asyncio.run(bot.handle_upload_media(update, FakeContext(), FakeStateStore()))
-
-    assert len(message.replies) == 1
-    reply = message.replies[0]
-    assert "send a video" in str(reply["text"]).lower()
-    assert "reply_markup" not in reply
 
 
 def test_remember_user_channel_uses_public_state_store_interface():
@@ -379,19 +375,17 @@ def test_archive_list_handler_shows_archived_media(tmp_path: Path):
     assert isinstance(message.replies[0]["reply_markup"], InlineKeyboardMarkup)
 
 
-def test_unauthorized_user_is_rejected_before_channel_menu(tmp_path: Path):
+def test_unauthorized_user_is_rejected_before_add_channel_command(tmp_path: Path):
     settings = make_settings(tmp_path)
     channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
-    state_store = DeliveryStateStore(settings)
     message = FakeMessage()
     update = FakeUpdate(effective_user=FakeUser(id=99), message=message)
 
     asyncio.run(
-        bot.handle_channels_menu(
+        bot.handle_add_channel_command(
             update,
             FakeContext(),
             channel_store,
-            state_store,
             allowed_user_ids=(42,),
         )
     )
@@ -400,31 +394,55 @@ def test_unauthorized_user_is_rejected_before_channel_menu(tmp_path: Path):
     assert channel_store.load().channels == {}
 
 
-def test_channels_menu_shows_top_level_actions_only(tmp_path: Path):
+def test_add_channel_command_starts_add_flow(tmp_path: Path):
     settings = make_settings(tmp_path)
     channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
-    channel_store.add_channel("01_Citadel", "Citadel")
-    channel_store.add_channel("02_Interdimensional_Cable", "Interdimensional Cable")
-    state_store = DeliveryStateStore(settings)
+    context = FakeContext()
     message = FakeMessage()
 
     asyncio.run(
-        bot.handle_channels_menu(
+        bot.handle_add_channel_command(
             FakeUpdate(effective_user=FakeUser(id=42), message=message),
-            FakeContext(),
+            context,
             channel_store,
-            state_store,
             allowed_user_ids=(42,),
         )
     )
 
+    assert context.user_data["channel_action"] == {"type": "add"}
     assert len(message.replies) == 1
-    assert "Channel management" in str(message.replies[0]["text"])
-    reply_markup = message.replies[0]["reply_markup"]
-    assert isinstance(reply_markup, InlineKeyboardMarkup)
-    assert markup_labels(reply_markup) == ["Add channel", "List channels", "Restore all"]
-    assert "Rename" not in str(reply_markup)
-    assert "Delete" not in str(reply_markup)
+    assert "display name" in str(message.replies[0]["text"]).lower()
+    assert "reply_markup" not in message.replies[0]
+
+
+def test_list_channels_command_opens_channel_list(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    channel_store = ChannelRegistryStore(settings.config_dir / "channels.yml")
+    channel_store.add_channel("01_Citadel", "Citadel")
+    channel_store.add_channel("02_Interdimensional_Cable", "Interdimensional Cable")
+    message = FakeMessage()
+
+    asyncio.run(
+        bot.handle_list_channels_command(
+            FakeUpdate(effective_user=FakeUser(id=42), message=message),
+            FakeContext(),
+            channel_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
+    assert "01 - Citadel" in str(message.replies[0]["text"])
+    assert "02 - Interdimensional Cable" in str(message.replies[0]["text"])
+    list_markup = message.replies[0]["reply_markup"]
+    assert isinstance(list_markup, InlineKeyboardMarkup)
+    assert markup_labels(list_markup) == [
+        "01 - Citadel",
+        "02 - Interdimensional Cable",
+    ]
+    assert markup_callback_data(list_markup) == [
+        "channel_view:01_Citadel",
+        "channel_view:02_Interdimensional_Cable",
+    ]
 
 
 def test_channels_list_opens_per_channel_actions(tmp_path: Path):
@@ -434,32 +452,6 @@ def test_channels_list_opens_per_channel_actions(tmp_path: Path):
     channel_store.add_channel("02_Interdimensional_Cable", "Interdimensional Cable")
     state_store = DeliveryStateStore(settings)
     context = FakeContext()
-
-    list_query = FakeCallbackQuery("channel_list")
-    asyncio.run(
-        bot.handle_channel_callback(
-            FakeUpdate(effective_user=FakeUser(id=42), callback_query=list_query),
-            context,
-            channel_store,
-            state_store,
-            allowed_user_ids=(42,),
-        )
-    )
-
-    assert "01 - Citadel" in str(list_query.edits[0]["text"])
-    assert "02 - Interdimensional Cable" in str(list_query.edits[0]["text"])
-    list_markup = list_query.edits[0]["reply_markup"]
-    assert isinstance(list_markup, InlineKeyboardMarkup)
-    assert markup_labels(list_markup) == [
-        "01 - Citadel",
-        "02 - Interdimensional Cable",
-        "Back",
-    ]
-    assert markup_callback_data(list_markup) == [
-        "channel_view:01_Citadel",
-        "channel_view:02_Interdimensional_Cable",
-        "channel_menu",
-    ]
 
     view_query = FakeCallbackQuery("channel_view:01_Citadel")
     asyncio.run(
@@ -485,6 +477,27 @@ def test_channels_list_opens_per_channel_actions(tmp_path: Path):
         "channel_delete:01_Citadel",
         "channel_list",
     ]
+
+
+def test_restore_all_videos_command_requires_confirmation(tmp_path: Path):
+    settings = make_settings(tmp_path)
+    state_store = DeliveryStateStore(settings)
+    message = FakeMessage()
+
+    asyncio.run(
+        bot.handle_restore_all_videos_command(
+            FakeUpdate(effective_user=FakeUser(id=42), message=message),
+            FakeContext(),
+            state_store,
+            allowed_user_ids=(42,),
+        )
+    )
+
+    assert "Confirm" in str(message.replies[0]["text"])
+    reply_markup = message.replies[0]["reply_markup"]
+    assert isinstance(reply_markup, InlineKeyboardMarkup)
+    assert markup_labels(reply_markup) == ["Confirm restore all"]
+    assert markup_callback_data(reply_markup) == ["restore_all_confirm"]
 
 
 def test_channel_add_generates_incremental_channel_id(tmp_path: Path):

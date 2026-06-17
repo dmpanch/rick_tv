@@ -149,13 +149,14 @@ Telegram runner реализован в `rick_tv_server.bot_runner` и запу�
 
 Типовой поток:
 
-1. Allowlisted пользователь открывает `/menu` из Telegram command menu.
-2. `Add channel` просит только название; stable channel ID создаётся автоматически инкрементом, например `04_Birdperson_TV`.
-3. `List channels` показывает каналы в виде `01 - Citadel`; выбор канала открывает `Rename channel` и `Delete channel`.
-4. Пользователь отправляет Telegram `video` или `document`; бот после этого предлагает выбрать канал.
-5. После выбора канала бот скачивает файл локально и вызывает `UploadProcessor.process_upload(...)`.
-6. Сервер сохраняет original upload и converted Pi-ready `.mp4`.
-7. Ролик становится `pending`, затем Pi забирает его с сервера.
+1. Allowlisted пользователь открывает Telegram command menu.
+2. `/add_channel` просит только название; stable channel ID создаётся автоматически инкрементом, например `04_Birdperson_TV`.
+3. `/list_channels` показывает каналы в виде `01 - Citadel`; выбор канала открывает `Rename channel` и `Delete channel`.
+4. `/restore_all_videos` запрашивает подтверждение на повторную доставку всей активной библиотеки.
+5. Пользователь отправляет Telegram `video` или `document`; бот после этого предлагает выбрать канал.
+6. После выбора канала бот скачивает файл локально и вызывает `UploadProcessor.process_upload(...)`.
+7. Сервер сохраняет original upload и converted Pi-ready `.mp4`.
+8. Ролик становится `pending`, затем Pi забирает его с сервера.
 
 Сервер приводит файл к целевому профилю (`640x480`, `h264`, `aac`), а Pi проверяет готовый файл через `ffprobe` перед финальным размещением.
 

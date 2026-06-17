@@ -12,7 +12,7 @@
 
 ## Summary
 
-Add a complete Telegram runner as a separate Docker Compose service in the existing server image. The runner is restricted to allowlisted Telegram users, registers `/menu` in the Telegram command menu, manages channel registry through that menu, accepts video/document-first upload flow, downloads Telegram media, and passes it to `UploadProcessor.process_upload(...)`.
+Add a complete Telegram runner as a separate Docker Compose service in the existing server image. The runner is restricted to allowlisted Telegram users, registers direct commands in the Telegram command menu, manages channel registry through those commands, accepts video/document-first upload flow, downloads Telegram media, and passes it to `UploadProcessor.process_upload(...)`.
 
 The server becomes the canonical media library: it keeps original uploads and converted Pi-ready MP4 files so a new or repaired Pi can be restored. Restore is admin-triggered from Telegram via "restore all", which requeues the active server library for delivery to the single current Pi installation.
 
@@ -121,8 +121,8 @@ channels:
 - Modify: `rick-tv-server/src/rick_tv_server/bot.py`
 - Modify: `rick-tv-server/tests/test_bot.py`
 
-- [x] Add `/menu` command with top-level add/list actions and per-channel rename/delete actions.
-- [x] Register `/menu` in the Telegram command menu as the only public menu command.
+- [x] Register `/add_channel`, `/list_channels`, and `/restore_all_videos` in the Telegram command menu.
+- [x] Add direct command handlers for add/list/restore and per-channel rename/delete actions.
 - [x] Add channel from display name and generate the next stable channel ID automatically.
 - [x] Rename only `display_name`, never `channel_id`.
 - [x] Reject delete for channels with active media references.

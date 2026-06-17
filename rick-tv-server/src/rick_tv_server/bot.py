@@ -132,15 +132,6 @@ def build_archive_media_reply_markup(keyboard: Keyboard) -> InlineKeyboardMarkup
     return _build_reply_markup(keyboard)
 
 
-def build_channels_keyboard(channel_store: ChannelRegistryStore) -> Keyboard:
-    del channel_store
-    return [
-        [{"text": "Add channel", "callback_data": "channel_add"}],
-        [{"text": "List channels", "callback_data": "channel_list"}],
-        [{"text": "Restore all", "callback_data": "restore_all"}],
-    ]
-
-
 def build_channel_list_keyboard(channel_store: ChannelRegistryStore) -> Keyboard:
     registry = channel_store.load()
     keyboard: Keyboard = []
@@ -153,7 +144,6 @@ def build_channel_list_keyboard(channel_store: ChannelRegistryStore) -> Keyboard
                 }
             ]
         )
-    keyboard.append([{"text": "Back", "callback_data": "channel_menu"}])
     return keyboard
 
 
@@ -337,10 +327,43 @@ async def handle_archive_callback(
     await query.edit_message_text("Archived media action is not available.")
 
 
-async def handle_channels_menu(
+async def handle_add_channel_command(
     update: Any,
     context: Any,
     channel_store: ChannelRegistryStore,
+    *,
+    allowed_user_ids: tuple[int, ...],
+) -> None:
+    if not await _ensure_authorized(update, allowed_user_ids):
+        return
+
+    context.user_data["channel_action"] = {"type": "add"}
+    await update.message.reply_text(
+        "Send channel display name.",
+    )
+
+
+async def handle_list_channels_command(
+    update: Any,
+    context: Any,
+    channel_store: ChannelRegistryStore,
+    *,
+    allowed_user_ids: tuple[int, ...],
+) -> None:
+    del context
+
+    if not await _ensure_authorized(update, allowed_user_ids):
+        return
+
+    await update.message.reply_text(
+        format_channel_list(channel_store),
+        reply_markup=_build_reply_markup(build_channel_list_keyboard(channel_store)),
+    )
+
+
+async def handle_restore_all_videos_command(
+    update: Any,
+    context: Any,
     state_store: Any,
     *,
     allowed_user_ids: tuple[int, ...],
@@ -351,8 +374,8 @@ async def handle_channels_menu(
         return
 
     await update.message.reply_text(
-        "Channel management",
-        reply_markup=_build_reply_markup(build_channels_keyboard(channel_store)),
+        "Confirm restore all archived media.",
+        reply_markup=_build_reply_markup(build_restore_confirmation_keyboard()),
     )
 
 
@@ -370,13 +393,6 @@ async def handle_channel_callback(
     query = update.callback_query
     await query.answer()
     data = str(query.data or "")
-
-    if data == "channel_menu":
-        await query.edit_message_text(
-            "Channel management",
-            reply_markup=_build_reply_markup(build_channels_keyboard(channel_store)),
-        )
-        return
 
     if data == "channel_list":
         await query.edit_message_text(
@@ -587,7 +603,7 @@ async def handle_upload_attachment(
     channels = channel_choices_from_registry(channel_store)
     if not channels:
         _cleanup_pending_upload(context)
-        await update.message.reply_text("No channels. Add one with /menu first.")
+        await update.message.reply_text("No channels. Add one with /add_channel first.")
         return
 
     user_id = str(update.effective_user.id)
@@ -648,19 +664,6 @@ def remember_user_channel(
     state_store.remember_user_channel(str(user_id), channel_id)
 
 
-async def handle_upload_media(
-    update: Any,
-    context: Any,
-    state_store: Any,
-) -> None:
-    del state_store
-    context.user_data.pop("upload_channel_id", None)
-
-    await update.message.reply_text(
-        "Send a video or document. I will ask for the channel next.",
-    )
-
-
 def channel_choices_from_registry(
     channel_store: ChannelRegistryStore,
 ) -> list[ChannelChoice]:
@@ -689,21 +692,29 @@ def build_application(
     )
     application.add_handler(
         CommandHandler(
-            "menu",
+            "add_channel",
             partial(
-                handle_channels_menu,
+                handle_add_channel_command,
                 channel_store=channel_store,
-                state_store=state_store,
                 allowed_user_ids=allowed_user_ids,
             ),
         )
     )
     application.add_handler(
         CommandHandler(
-            "upload",
+            "list_channels",
             partial(
-                _handle_upload_command,
+                handle_list_channels_command,
                 channel_store=channel_store,
+                allowed_user_ids=allowed_user_ids,
+            ),
+        )
+    )
+    application.add_handler(
+        CommandHandler(
+            "restore_all_videos",
+            partial(
+                handle_restore_all_videos_command,
                 state_store=state_store,
                 allowed_user_ids=allowed_user_ids,
             ),
@@ -781,24 +792,11 @@ def build_application(
 
 async def configure_bot_command_menu(application: Application) -> None:
     await application.bot.set_my_commands(
-        [BotCommand("menu", "Open Rick TV menu")]
-    )
-
-
-async def _handle_upload_command(
-    update: Any,
-    context: Any,
-    channel_store: ChannelRegistryStore,
-    state_store: Any,
-    *,
-    allowed_user_ids: tuple[int, ...],
-) -> None:
-    if not await _ensure_authorized(update, allowed_user_ids):
-        return
-    await handle_upload_media(
-        update,
-        context,
-        state_store,
+        [
+            BotCommand("add_channel", "Add channel"),
+            BotCommand("list_channels", "List channels"),
+            BotCommand("restore_all_videos", "Restore all videos"),
+        ]
     )
 
 
