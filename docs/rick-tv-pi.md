@@ -71,12 +71,15 @@ RICK_TV_RUNTIME_TICK_SECONDS=0.1
 ## Runtime
 
 The Pi discovers playable channel directories under `RICK_TV_MEDIA_ROOT`,
-polls the server for ready media, downloads and validates files, atomically
-places them into channel directories, and acknowledges only after placement
-succeeds. The same poll response can also include deletion commands. For each
-deletion, the Pi removes `RICK_TV_MEDIA_ROOT/<channel_id>/<filename>` if it
-exists and then acknowledges `/api/v1/delete-ack/{item_id}`; a missing local
-file is treated as already deleted.
+polls the server for ready media, downloads server-validated files, verifies
+`sha256` when the server provides it, atomically places files into channel
+directories, and acknowledges only after placement succeeds. The Pi runtime does
+not require `ffmpeg` or `ffprobe`; media-profile conversion and validation are
+server responsibilities. The same poll response can also include deletion
+commands. For each deletion, the Pi removes
+`RICK_TV_MEDIA_ROOT/<channel_id>/<filename>` if it exists and then acknowledges
+`/api/v1/delete-ack/{item_id}`; a missing local file is treated as already
+deleted.
 
 A directory is a navigation/playback channel only when it contains at least one
 playable `.mp4`. Empty directories are ignored by navigation and generated

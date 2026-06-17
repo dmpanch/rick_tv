@@ -70,7 +70,7 @@ The Pi stores ready-to-play media on its SD card under `media_root`, for example
 
 Empty directories are not selectable channels. When a playable `.mp4` appears in an immediate directory, the next channel scan can include that directory as a channel and the videolooper playlist generation path can make it playable.
 
-The Pi performs only local validation, download, atomic placement, scanning, and playback. It does not transcode uploaded media.
+The Pi performs only authenticated polling, download, `sha256` integrity checks, atomic placement, scanning, and playback. It does not transcode uploaded media or run media-profile validation tools such as `ffprobe`.
 
 ## Server And Upload Flow
 
@@ -101,7 +101,7 @@ Server output targets a Pi-ready MP4 profile:
 - Scale: display-native target for the Waveshare 2.8inch DPI LCD.
 - Bitrate: modest, tuned for SD card storage and Pi Zero W playback reliability.
 
-The Pi validates that downloaded files match the expected ready profile well enough for playback before atomically moving them into the channel directory.
+The server validates that converted files match the expected ready profile before exposing them through `/api/v1/ready`. The Pi verifies delivery integrity with `sha256` when provided before atomically moving the already server-validated file into the channel directory.
 
 ## Server Deployment
 
@@ -124,16 +124,16 @@ The Pi polls authenticated HTTPS every 60 seconds:
 
 - Ask for ready items for known channels.
 - Download one or more ready files.
-- Lightly validate profile and destination channel.
+- Verify payload integrity with `sha256` when provided and confirm the destination channel from the server response.
 - Write to a temporary path on the SD card.
 - Atomically move into the target channel directory.
-- Acknowledge only after successful download, light validation, and atomic move.
+- Acknowledge only after successful download, checksum verification, and atomic move.
 
 The server keeps an item pending until the Pi acknowledgement arrives.
 
 Failure handling:
 
-- Failed downloads, failed validation, network failures, or missed acknowledgements silently retry.
+- Failed downloads, checksum mismatches, network failures, or missed acknowledgements silently retry.
 - Uploaders are not notified of delivery failures in Phase 1.
 - The Pi avoids durable delivery logs for this flow; transient stdout/stderr or service journal output is acceptable for debugging, but delivery state lives on the server.
 - Redelivery may redownload and atomically overwrite the existing destination file. Phase 1 does not need duplicate-transfer avoidance.
@@ -156,7 +156,7 @@ sequenceDiagram
         P->>S: Authenticated HTTPS poll
         S-->>P: Ready pending item
         P->>S: Download file
-        P->>P: Light validation
+        P->>P: Check sha256
         P->>M: Atomic move into channel directory
         P->>S: Ack delivery
         S->>S: Move item to delivered/archive state
@@ -248,7 +248,7 @@ Pi-focused verification:
 - Verify missing metadata shows only channel number, no placeholder, and no folder-derived display name.
 - Verify videolooper playlist generation includes only playable channels and channel switching uses the videolooper command path.
 - Verify swipe left/right changes channels, taps are ignored, and cooldown prevents repeated channel changes.
-- Fake server tests for polling, authenticated HTTPS request shape, ready item download, failed validation retry, successful validation, atomic move, and acknowledgement timing.
+- Fake server tests for polling, authenticated HTTPS request shape, ready item download, checksum mismatch retry, successful atomic move, and acknowledgement timing.
 - Fake server redelivery test confirming redownload plus atomic overwrite is acceptable.
 
 Server-focused verification:

@@ -4,9 +4,9 @@
 
 **Goal:** Build the first working Rick TV system: a non-Dockerized Raspberry Pi appliance client and a Dockerized Telegram/upload/conversion/delivery server.
 
-**Architecture:** Use two Python projects in one repo: `rick-tv-pi` for playable channel discovery, server registry sync, videolooper playback control, touch swipes, polling, download, validation, and atomic placement; `rick-tv-server` for the Telegram upload runner, channel registry management, conversion, authenticated HTTP delivery, and server-authoritative state/library. Server state lives in mounted files/volumes and Docker logs go to stdout/stderr; the Pi keeps no durable delivery logs.
+**Architecture:** Use two Python projects in one repo: `rick-tv-pi` for playable channel discovery, server registry sync, videolooper playback control, touch swipes, polling, download, checksum verification, and atomic placement; `rick-tv-server` for the Telegram upload runner, channel registry management, conversion, ready-profile validation, authenticated HTTP delivery, and server-authoritative state/library. Server state lives in mounted files/volumes and Docker logs go to stdout/stderr; the Pi keeps no durable delivery logs.
 
-**Tech Stack:** Pi Python `>=3.7` for the legacy Raspberry Pi OS image; server Python 3.12; pytest, FastAPI, Uvicorn, python-telegram-bot, PyYAML, httpx, ffmpeg/ffprobe, Docker Compose, systemd service docs for Pi runtime.
+**Tech Stack:** Pi Python `>=3.7` for the legacy Raspberry Pi OS image; server Python 3.12; pytest, FastAPI, Uvicorn, python-telegram-bot, PyYAML, httpx, server-side ffmpeg/ffprobe, Docker Compose, systemd service docs for Pi runtime.
 
 ---
 
@@ -17,8 +17,7 @@
 - `rick-tv-pi/src/rick_tv_pi/channels.py`: playable channel directory discovery, ordering, metadata merge.
 - `rick-tv-pi/src/rick_tv_pi/videolooper.py`: videolooper playlist generation, playback-facing state, and FIFO channel switching.
 - `rick-tv-pi/src/rick_tv_pi/touch.py`: swipe/tap interpretation with cooldown.
-- `rick-tv-pi/src/rick_tv_pi/validator.py`: light ffprobe profile validation.
-- `rick-tv-pi/src/rick_tv_pi/poller.py`: authenticated channel registry sync, polling, download, validation, atomic move, ack timing.
+- `rick-tv-pi/src/rick_tv_pi/poller.py`: authenticated channel registry sync, polling, download, checksum verification, atomic move, ack timing.
 - `rick-tv-pi/src/rick_tv_pi/main.py`: Pi CLI entrypoint that wires scanner, videolooper, touch, and poller.
 - `rick-tv-pi/tests/`: Pi unit and fake-server tests.
 - `rick-tv-pi/systemd/rick-tv-pi.service`: Pi service template with stdout/stderr journaling only.
@@ -26,6 +25,7 @@
 - `rick-tv-server/src/rick_tv_server/config.py`: server settings and conversion profile.
 - `rick-tv-server/src/rick_tv_server/state.py`: JSON-backed queue, archive, user selection state.
 - `rick-tv-server/src/rick_tv_server/converter.py`: ffmpeg conversion to Pi-ready MP4 profile.
+- `rick-tv-server/src/rick_tv_server/validator.py`: ffprobe validation for server-ready MP4 profile.
 - `rick-tv-server/src/rick_tv_server/api.py`: authenticated FastAPI polling, download, ack endpoints.
 - `rick-tv-server/src/rick_tv_server/bot.py`: Telegram upload/list/delete/confirmation/restore flows.
 - `rick-tv-server/src/rick_tv_server/bot_runner.py`: Telegram long-polling runner entrypoint.
@@ -50,10 +50,10 @@ Audited against the current repository state on 2026-06-17. These checkboxes mar
 - [x] Task 6: Pi videolooper channel switch rescan exists and tests cover playlist rewrite/FIFO command behavior.
 - [x] Task 7: Pi touch swipe interpretation exists and tests cover left/right/tap behavior.
 - [x] Task 8: Pi touch cooldown exists and tests cover repeated swipe suppression.
-- [x] Task 9: Pi ready-profile validator exists and tests cover ffprobe profile acceptance/rejection.
+- [x] Task 9: Server ready-profile validator exists and tests cover ffprobe profile acceptance/rejection.
 - [x] Task 10: Pi poll request shape exists and tests cover authenticated ready polling.
-- [x] Task 11: Pi download, validation, atomic move, and ack timing exist and tests cover ack-after-placement.
-- [x] Task 12: Pi retry/redelivery behavior exists and tests cover failed validation/download and overwrite redelivery.
+- [x] Task 11: Pi download, checksum verification, atomic move, and ack timing exist and tests cover ack-after-placement.
+- [x] Task 12: Pi retry/redelivery behavior exists and tests cover failed checksum/download and overwrite redelivery.
 - [x] Task 13: Pi main wiring, systemd service, touch queue, videolooper settings, and runtime docs exist.
 - [x] Task 14: Server settings and JSON-backed delivery state exist.
 - [x] Task 15: Server pending-until-ack lifecycle exists.
@@ -329,35 +329,35 @@ Expected: PASS.
 
 Run: `git add rick-tv-pi/src/rick_tv_pi/touch.py rick-tv-pi/tests/test_touch.py && git commit -m "feat: debounce pi swipes"`
 
-### Task 9: Pi Profile Validator
+### Task 9: Server Profile Validator
 
 **Files:**
-- Create: `rick-tv-pi/src/rick_tv_pi/validator.py`
-- Create: `rick-tv-pi/tests/test_validator.py`
+- Create: `rick-tv-server/src/rick_tv_server/validator.py`
+- Create: `rick-tv-server/tests/test_validator.py`
 
-- [ ] **Step 1: Write failing validator tests**
+- [x] **Step 1: Write failing validator tests**
 
 Mock an `ffprobe` JSON result for MP4/H.264/yuv420p/AAC at target resolution and assert `validate_ready_profile(path) is True`. Mock wrong pixel format and assert `False`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
-Run: `cd rick-tv-pi && pytest tests/test_validator.py -v`
+Run: `cd rick-tv-server && pytest tests/test_validator.py -v`
 
 Expected: FAIL with missing module.
 
-- [ ] **Step 3: Implement light validation**
+- [x] **Step 3: Implement server-side validation**
 
-Define `ReadyProfile(width: int = 640, height: int = 480, video_codec: str = "h264", pixel_format: str = "yuv420p", audio_codec: str = "aac")`. Implement `probe_media(path, runner=subprocess.run)` and `validate_ready_profile(path, profile=ReadyProfile(), runner=subprocess.run)`. Validate container format includes `mp4`, video codec, pixel format, audio codec, and width/height no larger than profile target.
+Define `ReadyProfile(width: int = 640, height: int = 480, video_codec: str = "h264", pixel_format: str = "yuv420p", audio_codec: str = "aac")`. Implement `probe_media(path, runner=subprocess.run)` and `validate_ready_profile(path, profile=ReadyProfile(), runner=subprocess.run)` in the server package. Validate container format includes `mp4`, video codec, pixel format, audio codec, target width/height, and bitrate ceilings.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
-Run: `cd rick-tv-pi && pytest tests/test_validator.py -v`
+Run: `cd rick-tv-server && pytest tests/test_validator.py -v`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
-Run: `git add rick-tv-pi/src/rick_tv_pi/validator.py rick-tv-pi/tests/test_validator.py && git commit -m "feat: validate pi-ready media profile"`
+Run: `git add rick-tv-server/src/rick_tv_server/validator.py rick-tv-server/tests/test_validator.py && git commit -m "feat: add server media profile validator"`
 
 ### Task 10: Pi Poll Request Shape
 
@@ -398,11 +398,11 @@ Run: `git add rick-tv-pi/src/rick_tv_pi/config.py rick-tv-pi/src/rick_tv_pi/poll
 
 - [ ] **Step 1: Write failing successful delivery test**
 
-Fake server returns one item `{id, channel_id, filename, download_url, sha256}`. Fake download returns bytes. Stub `validate_ready_profile` to `True`. Assert the file is first written under `media_root/.downloads`, atomically moved into `media_root/<channel_id>/<filename>`, and `POST /api/v1/ack/<id>` happens only after the destination exists.
+Fake server returns one server-validated item `{id, channel_id, filename, download_url, sha256}`. Fake download returns bytes matching `sha256`. Assert the file is first written under `media_root/.downloads`, atomically moved into `media_root/<channel_id>/<filename>`, and `POST /api/v1/ack/<id>` happens only after the destination exists.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd rick-tv-pi && pytest tests/test_poller.py::test_download_validate_atomic_move_then_ack -v`
+Run: `cd rick-tv-pi && pytest tests/test_poller.py::test_download_checksum_atomic_move_then_ack -v`
 
 Expected in the original red step: FAIL before the download flow implementation exists.
 
@@ -412,7 +412,7 @@ Add `ReadyItem(id, channel_id, filename, download_url, sha256)`. In `poll_once`,
 
 - [ ] **Step 4: Run test**
 
-Run: `cd rick-tv-pi && pytest tests/test_poller.py::test_download_validate_atomic_move_then_ack -v`
+Run: `cd rick-tv-pi && pytest tests/test_poller.py::test_download_checksum_atomic_move_then_ack -v`
 
 Expected: PASS.
 
@@ -428,17 +428,17 @@ Run: `git add rick-tv-pi/src/rick_tv_pi/poller.py rick-tv-pi/tests/test_poller.p
 
 - [ ] **Step 1: Write failing retry tests**
 
-Add tests for failed validation and failed download. Assert no ack is sent and destination file is absent. Add redelivery test where destination exists; assert second successful delivery overwrites via atomic replace and sends ack.
+Add tests for checksum mismatch and failed download. Assert no ack is sent and destination file is absent. Add redelivery test where destination exists; assert second successful delivery overwrites via atomic replace and sends ack.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd rick-tv-pi && pytest tests/test_poller.py::test_failed_validation_does_not_ack tests/test_poller.py::test_redelivery_overwrites_destination_and_acks -v`
+Run: `cd rick-tv-pi && pytest tests/test_poller.py::test_checksum_mismatch_does_not_ack tests/test_poller.py::test_redelivery_overwrites_destination_and_acks -v`
 
 Expected: FAIL because retry/redelivery cases are incomplete.
 
 - [ ] **Step 3: Implement retry-safe behavior**
 
-Catch network, checksum, validation, and filesystem exceptions per item. Remove temp files on failure when present. Leave server item unacked. Permit `Path.replace()` over existing destination for Phase 1 duplicate-transfer behavior.
+Catch network, checksum, and filesystem exceptions per item. Remove temp files on failure when present. Leave server item unacked. Permit `Path.replace()` over existing destination for Phase 1 duplicate-transfer behavior.
 
 - [ ] **Step 4: Run fake-server tests**
 
@@ -922,7 +922,7 @@ Run: `git add pyproject.toml tests/test_end_to_end_contract.py rick-tv-pi rick-t
 
 Run: `cd rick-tv-pi && pytest -v`
 
-Expected: PASS for channel discovery/metadata, playable-channel filtering, videolooper playlist/channel switching, swipes/taps/cooldown, validation, fake-server polling, failed validation retry, atomic move/ack, and redelivery overwrite.
+Expected: PASS for channel discovery/metadata, playable-channel filtering, videolooper playlist/channel switching, swipes/taps/cooldown, fake-server polling, checksum mismatch retry, atomic move/ack, and redelivery overwrite.
 
 - [ ] **Step 2: Inspect for durable delivery logs**
 
@@ -984,6 +984,6 @@ Run: `git add docs rick-tv-pi rick-tv-server tests pyproject.toml && git commit 
 
 ## Self-Review
 
-- Spec coverage: The plan covers both projects, Pi channel discovery/metadata, playable-channel filtering, server registry sync, videolooper playback, touch swipes and cooldown, polling/download/validation/atomic move/ack, retry/redelivery, no Pi durable delivery state, Telegram upload-list/delete/archive/restore flows, full Telegram upload runner, server conversion profile, Docker deployment, mounted volumes, stdout/stderr logs, and final end-to-end verification.
+- Spec coverage: The plan covers both projects, Pi channel discovery/metadata, playable-channel filtering, server registry sync, videolooper playback, touch swipes and cooldown, polling/download/checksum verification/atomic move/ack, retry/redelivery, no Pi durable delivery state, Telegram upload-list/delete/archive/restore flows, full Telegram upload runner, server conversion and validation profile, Docker deployment, mounted volumes, stdout/stderr logs, and final end-to-end verification.
 - Marker scan: No unfinished markers or unspecified "add tests" steps are intentionally present.
 - Type consistency: Shared protocol names are stable across tasks: `Channel`, `ReadyItem`, `PiSettings`, `ServerSettings`, `DeliveryStateStore`, `ConversionProfile`, `UploadProcessor`, and `/api/v1/ready`, `/api/v1/download/{item_id}`, `/api/v1/ack/{item_id}`.

@@ -3,7 +3,8 @@
 The Rick TV server exposes the FastAPI delivery API, persists queue state on
 disk, and can run a Telegram long-polling upload runner from the same container
 image. The image includes `ffmpeg` for media conversion support and runs
-Uvicorn on port `8080` for the API service.
+`ffprobe` validation through the same package before media is exposed to Pi
+clients. Uvicorn listens on port `8080` for the API service.
 
 ## Configuration
 
@@ -88,8 +89,12 @@ Upload flow:
 3. Bot shows explicit channel choices from the YAML registry.
 4. User chooses a channel.
 5. Bot calls `UploadProcessor.process_upload(...)`.
-6. Server stores both original media and converted Pi-ready `.mp4`, then marks
-   the converted file `pending` for Pi delivery.
+6. Server stores both original media and converted Pi-ready `.mp4`, validates
+   the converted file with `ffprobe`, then marks it `pending` for Pi delivery.
+
+If the first converted output does not match the Rick TV ready profile, the
+server retries conversion once with stricter output flags. If validation still
+fails, the upload is marked failed and is not returned by `/api/v1/ready`.
 
 Archive delete is a soft delete from the active library: original and converted
 files remain on disk. The Telegram restore-all action requeues active archived

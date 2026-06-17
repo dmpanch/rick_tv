@@ -6,7 +6,7 @@
 
 **Architecture:** Run the Telegram bot as a separate Docker Compose service using the same `rick-tv-server` image and shared media/config/state volumes. Store channel registry in server config YAML, expose it to the Pi through an authenticated API endpoint, and keep server-side original plus converted media as the recovery source for a replacement Pi.
 
-**Tech Stack:** Python 3.12, python-telegram-bot, FastAPI, PyYAML, pytest, Docker Compose, ffmpeg/ffprobe, JSON/YAML files on mounted volumes.
+**Tech Stack:** Python 3.12, python-telegram-bot, FastAPI, PyYAML, pytest, Docker Compose, server-side ffmpeg/ffprobe, JSON/YAML files on mounted volumes.
 
 ---
 
