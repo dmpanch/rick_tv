@@ -194,6 +194,7 @@ class Poller:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
                 tmp_file.write(content)
+            os.chmod(tmp_name, 0o644)
             os.replace(tmp_name, metadata_path)
         except Exception:
             try:

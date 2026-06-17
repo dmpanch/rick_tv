@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import stat
 from pathlib import Path
 
 import httpx
@@ -84,6 +85,7 @@ def test_sync_channel_registry_downloads_channels_json_atomically(tmp_path):
     Poller(settings, http_client).sync_channel_registry()
 
     assert json.loads(metadata_path.read_text(encoding="utf-8")) == registry_payload
+    assert stat.S_IMODE(metadata_path.stat().st_mode) == 0o644
     assert not list(metadata_path.parent.glob("*.tmp"))
     assert [request.url.path for request in seen_requests] == ["/api/v1/channels"]
 
