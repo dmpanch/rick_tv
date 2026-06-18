@@ -104,7 +104,7 @@ channels:
                     }
                 },
                 "last_channel_by_user": {
-                    "104065396": "01_Citadel",
+                    "555000111": "01_Citadel",
                     "seed": "01_Citadel",
                 },
                 "acknowledgements": {"legacy-item": {"status": "delivered"}},
@@ -141,7 +141,7 @@ channels:
     assert item.original_path.read_bytes() == b"original bytes"
     assert item.converted_path.read_bytes() == b"converted bytes"
     assert item.sha256 == hashlib.sha256(b"converted bytes").hexdigest()
-    assert state_store.last_channel_by_user == {"104065396": "01_Citadel"}
+    assert state_store.last_channel_by_user == {"555000111": "01_Citadel"}
     assert channel_store.load().channels == {
         "01_Citadel": {"display_name": "Citadel"}
     }

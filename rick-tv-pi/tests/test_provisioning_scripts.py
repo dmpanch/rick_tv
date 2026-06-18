@@ -427,8 +427,6 @@ def test_firstboot_example_uses_placeholders_only() -> None:
     assert "RICK_TV_TOUCH_SCREEN_WIDTH" in content
     assert "RICK_TV_TELEGRAM_BOT_TOKEN" not in content
     assert "RICK_TV_TELEGRAM_ALLOWED_USER_IDS" not in content
-    assert "8905534821" not in content
-    assert "104065396" not in content
 
 
 def test_only_one_public_pi_env_example_remains() -> None:
