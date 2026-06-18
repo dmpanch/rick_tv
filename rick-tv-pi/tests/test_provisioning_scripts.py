@@ -19,6 +19,7 @@ FRAMEBUFFER_DIAGNOSTICS = (
     PROJECT_ROOT / "provisioning" / "scripts" / "collect-framebuffer-diagnostics.sh"
 )
 RECOVERY_SCRIPT = PROJECT_ROOT / "provisioning" / "scripts" / "configure-pi-recovery.sh"
+LOGGING_SCRIPT = PROJECT_ROOT / "provisioning" / "scripts" / "configure-pi-logging.sh"
 PLAYLIST_GENERATOR = (
     PROJECT_ROOT / "provisioning" / "videolooper" / "generate_channel_playlists.py"
 )
@@ -80,6 +81,19 @@ def test_deploy_applies_pi_recovery_config() -> None:
 
     assert "configure-pi-recovery.sh" in content
     assert content.index("configure-pi-recovery.sh") < content.index(
+        "systemctl restart rick-tv-pi.service"
+    )
+
+
+def test_deploy_applies_sd_safe_logging_before_service_restarts() -> None:
+    script = PROJECT_ROOT / "provisioning" / "deploy_videolooper_image.sh"
+    content = script.read_text(encoding="utf-8")
+
+    assert "configure-pi-logging.sh" in content
+    assert content.index("configure-pi-logging.sh") < content.index(
+        "supervisorctl restart video_looper"
+    )
+    assert content.index("configure-pi-logging.sh") < content.index(
         "systemctl restart rick-tv-pi.service"
     )
 
@@ -259,6 +273,106 @@ def test_recovery_script_writes_panic_and_watchdog_config_idempotently(tmp_path)
     )
 
 
+def test_logging_script_writes_volatile_journald_and_masks_rsyslog_idempotently(
+    tmp_path,
+) -> None:
+    rootfs = tmp_path / "rootfs"
+    journal_dir = rootfs / "var" / "log" / "journal" / "machine-id"
+    journal_dir.mkdir(parents=True)
+    (journal_dir / "system.journal").write_bytes(b"persistent journal")
+    wants_dir = rootfs / "etc" / "systemd" / "system" / "multi-user.target.wants"
+    wants_dir.mkdir(parents=True)
+    (wants_dir / "rsyslog.service").symlink_to("/lib/systemd/system/rsyslog.service")
+
+    for _ in range(2):
+        result = subprocess.run(
+            ["bash", str(LOGGING_SCRIPT)],
+            check=False,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "RICK_TV_LOGGING_ROOT": str(rootfs),
+                "RICK_TV_LOGGING_DRY_RUN": "1",
+            },
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    assert (
+        rootfs / "etc" / "systemd" / "journald.conf.d" / "99-rick-tv-volatile.conf"
+    ).read_text(encoding="utf-8") == (
+        "[Journal]\n"
+        "Storage=volatile\n"
+        "RuntimeMaxUse=16M\n"
+        "RuntimeMaxFileSize=4M\n"
+        "ForwardToSyslog=no\n"
+    )
+    assert (
+        rootfs / "etc" / "tmpfiles.d" / "rick-tv-logs.conf"
+    ).read_text(encoding="utf-8") == "d /run/rick-tv-logs 0755 root root -\n"
+    assert not (rootfs / "var" / "log" / "journal").exists()
+    assert (rootfs / "etc" / "systemd" / "system" / "rsyslog.service").is_symlink()
+    assert (
+        rootfs / "etc" / "systemd" / "system" / "rsyslog.service"
+    ).resolve(strict=False) == Path("/dev/null")
+    assert not (wants_dir / "rsyslog.service").exists()
+
+
+def test_logging_script_moves_supervisor_logs_to_run_with_rotation(tmp_path) -> None:
+    rootfs = tmp_path / "rootfs"
+    supervisor_dir = rootfs / "etc" / "supervisor"
+    program_dir = supervisor_dir / "conf.d"
+    program_dir.mkdir(parents=True)
+    (supervisor_dir / "supervisord.conf").write_text(
+        "[unix_http_server]\n"
+        "file=/var/run/supervisor.sock\n"
+        "\n"
+        "[supervisord]\n"
+        "logfile=/var/log/supervisor/supervisord.log\n"
+        "pidfile=/var/run/supervisord.pid\n"
+        "childlogdir=/var/log/supervisor\n"
+        "\n"
+        "[include]\n"
+        "files = /etc/supervisor/conf.d/*.conf\n",
+        encoding="utf-8",
+    )
+    (program_dir / "video_looper.conf").write_text(
+        "[program:video_looper]\n"
+        "command=python3 -u -m Adafruit_Video_Looper.video_looper\n"
+        "autostart=true\n"
+        "autorestart=unexpected\n"
+        "startsecs=5\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["bash", str(LOGGING_SCRIPT)],
+        check=False,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "RICK_TV_LOGGING_ROOT": str(rootfs),
+            "RICK_TV_LOGGING_DRY_RUN": "1",
+        },
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    supervisord = (supervisor_dir / "supervisord.conf").read_text(encoding="utf-8")
+    assert "logfile = /run/rick-tv-logs/supervisord.log" in supervisord
+    assert "logfile_maxbytes = 512KB" in supervisord
+    assert "logfile_backups = 1" in supervisord
+    assert "childlogdir = /run/rick-tv-logs" in supervisord
+
+    video_looper = (program_dir / "video_looper.conf").read_text(encoding="utf-8")
+    assert "stdout_logfile = /run/rick-tv-logs/video_looper.stdout.log" in video_looper
+    assert "stdout_logfile_maxbytes = 1MB" in video_looper
+    assert "stdout_logfile_backups = 1" in video_looper
+    assert "stderr_logfile = /run/rick-tv-logs/video_looper.stderr.log" in video_looper
+    assert "stderr_logfile_maxbytes = 256KB" in video_looper
+    assert "stderr_logfile_backups = 1" in video_looper
+
+
 def test_playlist_generator_accepts_offline_root_overrides(tmp_path) -> None:
     media_root = tmp_path / "rootfs" / "home" / "pi" / "rick-tv" / "media"
     playlist_root = tmp_path / "rootfs" / "home" / "pi" / "rick-tv" / "playlists"
@@ -303,8 +417,15 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
     (rootfs / "opt" / "rick-tv-src" / "rick-tv-pi" / "provisioning" / "scripts").mkdir(
         parents=True
     )
-    (rootfs / "opt" / "rick-tv-src" / "rick-tv-pi" / "provisioning" / "scripts" / "configure-pi-recovery.sh").write_text(
+    scripts_dir = (
+        rootfs / "opt" / "rick-tv-src" / "rick-tv-pi" / "provisioning" / "scripts"
+    )
+    (scripts_dir / "configure-pi-recovery.sh").write_text(
         RECOVERY_SCRIPT.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (scripts_dir / "configure-pi-logging.sh").write_text(
+        LOGGING_SCRIPT.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
     (bootfs / "cmdline.txt").write_text(
@@ -404,6 +525,15 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
     assert "RuntimeWatchdogSec=15s" in (
         rootfs / "etc" / "systemd" / "system.conf.d" / "10-rick-tv-watchdog.conf"
     ).read_text(encoding="utf-8")
+    assert "Storage=volatile" in (
+        rootfs / "etc" / "systemd" / "journald.conf.d" / "99-rick-tv-volatile.conf"
+    ).read_text(encoding="utf-8")
+    assert (
+        rootfs / "etc" / "systemd" / "system" / "rsyslog.service"
+    ).resolve(strict=False) == Path("/dev/null")
+    assert (
+        rootfs / "etc" / "tmpfiles.d" / "rick-tv-logs.conf"
+    ).read_text(encoding="utf-8") == "d /run/rick-tv-logs 0755 root root -\n"
     assert (bootfs / "cmdline.txt").read_text(encoding="utf-8").count("panic=10") == 1
     assert (bootfs / "config.txt").read_text(encoding="utf-8").count(
         "dtparam=watchdog=on"
@@ -619,6 +749,34 @@ def test_packaged_image_payload_installer_stages_full_runtime_payload(
         encoding="utf-8",
     )
     (bootfs / "config.txt").write_text("disable_overscan=1\n", encoding="utf-8")
+    journal_dir = rootfs / "var" / "log" / "journal" / "machine-id"
+    journal_dir.mkdir(parents=True)
+    (journal_dir / "system.journal").write_bytes(b"build-time journal")
+    (rootfs / "var" / "log").mkdir(parents=True, exist_ok=True)
+    (rootfs / "var" / "log" / "syslog").write_text("old syslog\n", encoding="utf-8")
+    (rootfs / "var" / "log" / "daemon.log").write_text(
+        "old daemon log\n",
+        encoding="utf-8",
+    )
+    supervisor_dir = rootfs / "etc" / "supervisor"
+    program_dir = supervisor_dir / "conf.d"
+    program_dir.mkdir(parents=True)
+    (rootfs / "var" / "log" / "supervisor").mkdir(parents=True)
+    (rootfs / "var" / "log" / "supervisor" / "video_looper-stdout.log").write_text(
+        "old supervisor stdout\n",
+        encoding="utf-8",
+    )
+    (supervisor_dir / "supervisord.conf").write_text(
+        "[supervisord]\n"
+        "logfile=/var/log/supervisor/supervisord.log\n"
+        "childlogdir=/var/log/supervisor\n",
+        encoding="utf-8",
+    )
+    (program_dir / "video_looper.conf").write_text(
+        "[program:video_looper]\n"
+        "command=python3 -u -m Adafruit_Video_Looper.video_looper\n",
+        encoding="utf-8",
+    )
     egg_path = (
         rootfs
         / "usr"
@@ -684,6 +842,27 @@ def test_packaged_image_payload_installer_stages_full_runtime_payload(
         "RuntimeWatchdogSec=15s\n"
         "ShutdownWatchdogSec=2min\n"
     )
+    assert (
+        rootfs / "etc" / "systemd" / "journald.conf.d" / "99-rick-tv-volatile.conf"
+    ).read_text(encoding="utf-8") == (
+        "[Journal]\n"
+        "Storage=volatile\n"
+        "RuntimeMaxUse=16M\n"
+        "RuntimeMaxFileSize=4M\n"
+        "ForwardToSyslog=no\n"
+    )
+    assert not (rootfs / "var" / "log" / "journal").exists()
+    assert not (rootfs / "var" / "log" / "syslog").exists()
+    assert not (rootfs / "var" / "log" / "daemon.log").exists()
+    assert not (
+        rootfs / "var" / "log" / "supervisor" / "video_looper-stdout.log"
+    ).exists()
+    assert (
+        rootfs / "etc" / "systemd" / "system" / "rsyslog.service"
+    ).resolve(strict=False) == Path("/dev/null")
+    assert "stdout_logfile = /run/rick-tv-logs/video_looper.stdout.log" in (
+        rootfs / "etc" / "supervisor" / "conf.d" / "video_looper.conf"
+    ).read_text(encoding="utf-8")
     assert "panic=10" in (bootfs / "cmdline.txt").read_text(encoding="utf-8")
     assert "dtparam=watchdog=on" in (bootfs / "config.txt").read_text(encoding="utf-8")
 
@@ -806,6 +985,8 @@ def test_sdm_custom_phase_stages_payload_with_sdmpt_and_installs_runtime() -> No
     ) < content.index(
         "/opt/rick-tv-pi/.venv/bin/pip install 'evdev==1.7.1' 'certifi==2026.4.22'"
     )
+    assert 'RICK_TV_LOGGING_ROOT="/" bash /opt/rick-tv-src/rick-tv-pi/provisioning/scripts/configure-pi-logging.sh' in content
+    assert content.index('post-install)') < content.index('RICK_TV_LOGGING_ROOT="/"')
     assert "apt-get upgrade" not in content
     assert "apt upgrade" not in content
     assert "RICK_TV_TELEGRAM_BOT_TOKEN" not in content
