@@ -1,88 +1,84 @@
 # Rick TV
 
-Rick TV — это связка серверного и клиентского сервисов для доставки видео на Raspberry Pi:
+Rick TV is a small video-delivery system for a Raspberry Pi TV appliance.
 
-- `rick-tv-server` — FastAPI-сервис с очередью доставки и API.
-- `rick-tv-bot` — Telegram long-polling runner в Docker Compose, который управляет каналами и загрузками.
-- `rick-tv-pi` — клиент на Raspberry Pi, который опрашивает сервер, скачивает проверенные сервером ролики, сверяет `sha256` и обновляет плейлисты.
+- `rick-tv-server` is the FastAPI service that owns the media library, channel registry, delivery state, and remote-control API.
+- `rick-tv-bot` is the Telegram long-polling runner, shipped in the same Docker Compose stack, for channel management, uploads, downloads, deletes, and remote channel switching.
+- `rick-tv-pi` is the Raspberry Pi client. It polls the server, downloads server-validated videos, verifies `sha256`, updates local channel playlists, and drives the runtime player.
 
-## Что делает проект
+## What It Does
 
-1. Видео загружаются на сервер и конвертируются в формат для проигрывания.
-2. Сервер держит SQLite-библиотеку каналов, видео и статусов доставки.
-3. Сервер отдаёт JSON registry для Pi через `/api/v1/channels`.
-4. Raspberry Pi периодически синхронизирует registry, запрашивает `/api/v1/ready`, скачивает новые ролики по каналам, применяет команды удаления и подтверждает получение через `/api/v1/ack/{id}` или удаление через `/api/v1/delete-ack/{id}`.
-5. `videolooper` проигрывает обновлённые плейлисты каналов и является выбранным стабильным runtime playback решением для Pi.
-6. Telegram bot может поставить команду переключения канала; Pi забирает её через `/api/v1/commands` и подтверждает `/api/v1/commands/{id}/ack`.
+1. Users upload videos to the server.
+2. The server stores the original file, converts it into the Pi playback profile, validates the converted `.mp4`, and tracks it in SQLite.
+3. The server exposes the canonical channel registry as JSON at `/api/v1/channels`.
+4. The Pi syncs the registry, polls `/api/v1/ready`, downloads new media, applies delete commands, and acknowledges delivery through `/api/v1/ack/{id}` or deletion through `/api/v1/delete-ack/{id}`.
+5. The current Pi runtime integration is built around `videolooper` playlists and FIFO commands.
+6. The Telegram bot can queue a remote channel switch command. The Pi polls `/api/v1/commands`, applies the command when the channel is locally playable, and acknowledges it with `/api/v1/commands/{id}/ack`.
 
-## Аппаратные требования
+## Hardware
 
-Для сценария в репозитории используются:
+The repository is currently aimed at this appliance setup:
 
-- Raspberry Pi Zero W.
-- Waveshare 2.8inch DPI LCD.
+- Raspberry Pi Zero W
+- Waveshare 2.8inch DPI LCD
 
-Также нужен сетевой доступ Pi к серверу.
+The Pi also needs network access to the server.
 
-## Предусловия
+## Requirements
 
-### Для сервера (`rick-tv-server`)
+Server:
 
-- Docker и Docker Compose.
-- Свободный порт `8080`.
-- Базовый токен доступа (`RICK_TV_API_TOKEN`).
-- Telegram bot token и allowlist user IDs, если запускается `rick-tv-bot`.
+- Docker and Docker Compose
+- Free host port `8080`
+- Shared API token in `RICK_TV_API_TOKEN`
+- Telegram bot token and allowlisted user IDs if `rick-tv-bot` is enabled
 
-### Для Raspberry Pi (`rick-tv-pi`)
+Raspberry Pi:
 
-- Python 3.7+.
-- Сервисный запуск через `systemd`.
-- Доступная для записи директория каналов (`RICK_TV_MEDIA_ROOT`).
-- Непрерывное подключение к серверу по сети.
+- Python `>=3.7`
+- `systemd`
+- Writable channel media root in `RICK_TV_MEDIA_ROOT`
+- Continuous network access to the server
 
-## Установка и запуск сервера
+## Server Setup
 
-Запуск выполняется из директории `rick-tv-server`.
+Run the server commands from `rick-tv-server`.
 
-1) Скопируйте пример переменных и заполните его под свой хост.
+1. Copy the environment template and fill it for your host.
 
 ```bash
 cd rick-tv-server
 cp .env.example .env
-# отредактировать .env значениями под окружение
-# RICK_TV_UID=$(id -u), RICK_TV_GID=$(id -g) сохраняют runtime-файлы доступными на хосте
+# edit .env
+# RICK_TV_UID=$(id -u) and RICK_TV_GID=$(id -g) keep runtime files editable on the host
 ```
 
-2) Запустить сервис.
+2. Start the API service.
 
 ```bash
 mkdir -p data/media data/config data/state
 docker compose up -d --build
 ```
 
-Файл `docker-compose.yml` берёт значения `RICK_TV_*` из окружения (или `.env`).
-Контейнеры запускаются под `RICK_TV_UID:RICK_TV_GID`, чтобы bind-mounted
-runtime-файлы оставались читаемыми и редактируемыми с хоста. По умолчанию
-Compose монтирует всё runtime-состояние из `./data`; для постоянной установки
-задайте `RICK_TV_DATA_DIR=/srv/rick-tv` или другой абсолютный путь на диске.
+`docker-compose.yml` reads `RICK_TV_*` values from the environment or `.env`.
+Containers run as `RICK_TV_UID:RICK_TV_GID`, so bind-mounted runtime files remain readable and editable from the host. By default, Compose stores all runtime data under `./data`. For a persistent installation, set `RICK_TV_DATA_DIR=/srv/rick-tv` or another absolute path on the host disk.
 
-API запускается обычным `docker compose up`. Telegram runner находится в том же Compose-файле как сервис `rick-tv-bot`; он использует тот же image и общий `RICK_TV_DATA_DIR`. Для запуска бота задайте `RICK_TV_TELEGRAM_BOT_TOKEN` и `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`, затем включите профиль:
+The API runs with plain `docker compose up`. The Telegram runner is the `rick-tv-bot` service in the same Compose file, using the same image and the same `RICK_TV_DATA_DIR`. To run the bot, set `RICK_TV_TELEGRAM_BOT_TOKEN` and `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`, then enable the `bot` profile:
 
 ```bash
 docker compose --profile bot up -d --build
 ```
 
-## Установка и запуск на Raspberry Pi
+## Raspberry Pi Setup
 
-Для текущего legacy `videolooper` image дефолтный SSH-доступ:
+The current legacy `videolooper` image uses this default SSH login:
 
 - user: `pi`
 - password: `video`
 
-После первого входа замените пароль или добавьте SSH key и отключите парольный доступ, если Pi будет жить в постоянной сети.
+After first login, replace the password or add an SSH key and disable password login if the Pi will stay on a shared network.
 
-Для новой установки предпочтительный путь — подготовить known-good legacy
-`videolooper` image как Rick TV image:
+For a new install, the preferred path is to turn a known-good legacy `videolooper` image into a Rick TV image:
 
 ```bash
 sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
@@ -90,9 +86,7 @@ sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
   --output-image /path/to/rick-tv.img
 ```
 
-Builder копирует base image, монтирует root/boot partitions через loop device,
-кладёт Rick TV payload и пишет `rick-tv.img.sha256`. Если root/boot partitions
-уже смонтированы вручную, можно вызвать низкоуровневый installer:
+The builder copies the base image, mounts the root and boot partitions through a loop device, installs the Rick TV payload, and writes `rick-tv.img.sha256`. If the root and boot partitions are already mounted manually, use the lower-level installer:
 
 ```bash
 rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \
@@ -100,67 +94,53 @@ rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \
   --bootfs /mnt/rick-tv-boot
 ```
 
-На boot partition появится `rick-tv.env.example`; скопируйте его в
-`rick-tv.env`, заполните Wi-Fi, SSH, hostname, API token и runtime-параметры.
-На первом boot `rick-tv-firstboot.service` создаст `/etc/rick-tv-pi.env`,
-настроит Wi-Fi/SSH, установит pinned videolooper overrides/assets, включит
-`rick-tv-pi.service` и больше не будет перетирать ручные правки.
+The boot partition will contain `rick-tv.env.example`. Copy it to `rick-tv.env`, then fill in Wi-Fi, SSH, hostname, API token, and runtime settings. On first boot, `rick-tv-firstboot.service` creates `/etc/rick-tv-pi.env`, configures Wi-Fi and SSH, installs pinned `videolooper` overrides and assets, enables `rick-tv-pi.service`, and then stops overwriting manual edits.
 
-Для текущей lab Pi можно продолжать обновляться по SSH. Перед деплоем
-подготовьте `/etc/rick-tv-pi.env` из примера:
+For the current lab Pi, SSH deployment is still supported. Before deploying, prepare `/etc/rick-tv-pi.env` from the template:
 
 ```bash
 sudo cp rick-tv-pi/provisioning/rick-tv-pi.env.example /etc/rick-tv-pi.env
 sudo nano /etc/rick-tv-pi.env
 ```
 
-Редактировать файл нужно **до** запуска деплоя, чтобы нужные значения попали в систему сразу.
-
-После этого выполнить:
+Edit the file before running deploy so the service starts with the intended values.
 
 ```bash
 rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
 ```
 
-Raw framebuffer placeholders на Pi сейчас остаются частью legacy videolooper
-runtime. Код логирует FIFO commands, playlist reload, показ
-`transition-placeholder.fb`/`interstitial-ad.fb` и границы `player.play(...)`.
-Channel switch показывает только transition placeholder и подавляет следующий
-interstitial; обновление playlist внутри текущего канала не рисует transition и
-использует обычный in-channel interstitial перед следующим playback.
-Диагностический флаг `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true`
-отключает оба регулярных raw `/dev/fb0` placeholder writes для A/B проверки
-железа, один раз очищает stale framebuffer в чёрный при старте и не меняет сам
-videolooper playback path.
+Raw framebuffer placeholders are still part of the legacy `videolooper` runtime. The code logs FIFO commands, playlist reloads, `transition-placeholder.fb` and `interstitial-ad.fb` display events, and `player.play(...)` boundaries. A channel switch draws only the transition placeholder and suppresses the next interstitial; an in-channel playlist refresh does not draw the transition placeholder and uses the regular interstitial before the next playback.
 
-### Что должно быть в `/etc/rick-tv-pi.env`
+`RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` is a diagnostic flag. It disables the regular raw `/dev/fb0` placeholder writes, clears stale framebuffer content to black once at startup, and does not otherwise change the playback path. Recent diagnostics showed player aborts even with regular framebuffer placeholder writes disabled, so `omxplayer`/`videolooper` process lifecycle stability remains an active investigation item.
 
-В репозитории уже есть шаблон с пояснениями:
+## Pi Environment
+
+The environment template is:
 
 - `rick-tv-pi/provisioning/rick-tv-pi.env.example`
 
-Коротко по параметрам:
+Important settings:
 
-- `RICK_TV_SERVER_URL` — адрес сервера API (`http://...:8080`).
-- `RICK_TV_API_TOKEN` — общий токен доступа (тот же, что в `rick-tv-server/.env`).
-- `RICK_TV_MEDIA_ROOT` — корень папок каналов на Pi.
-- `RICK_TV_METADATA_PATH` — путь к `channels.json` (опционально).
-- `RICK_TV_POLL_INTERVAL_SECONDS` — интервал опроса сервера в секундах.
-- `RICK_TV_REMOTE_POLL_INTERVAL_SECONDS` — быстрый интервал опроса Telegram remote-control команд.
-- `RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT` — путь к рабочей папке `videolooper`.
-- `RICK_TV_VIDEOLOOPER_COMMAND_PATH` — FIFO для команд проигрывателю.
-- `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS` — диагностически отключает raw framebuffer заглушки.
-- `RICK_TV_CHANNEL_SHUFFLE_SECONDS` — как часто перемешивать плейлист внутри канала.
-- `RICK_TV_TOUCH_SCREEN_WIDTH` — ширина touch input-экрана.
-- `RICK_TV_TOUCH_SCREEN_HEIGHT` — высота touch input-экрана.
-- `RICK_TV_TOUCH_SWAP_AXES` — своп осям `true/false`.
-- `RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS` — ось для определения жеста `x` или `y`.
-- `RICK_TV_TOUCH_INVERT_X` — инверсия X (`1/0`, `true/false`, `on/off`, `yes/no`).
-- `RICK_TV_TOUCH_INVERT_Y` — инверсия Y (`1/0`, `true/false`, `on/off`, `yes/no`).
-- `RICK_TV_TOUCH_DEVICE` — путь к устройству ввода, если нужно принудительно указать.
-- `RICK_TV_RUNTIME_TICK_SECONDS` — шаг внутреннего цикла runtime.
+- `RICK_TV_SERVER_URL`: server API URL, for example `http://192.168.1.10:8080`
+- `RICK_TV_API_TOKEN`: shared API token, matching `rick-tv-server/.env`
+- `RICK_TV_MEDIA_ROOT`: root directory for channel folders on the Pi
+- `RICK_TV_METADATA_PATH`: path to `channels.json`
+- `RICK_TV_POLL_INTERVAL_SECONDS`: normal server polling interval
+- `RICK_TV_REMOTE_POLL_INTERVAL_SECONDS`: faster polling interval for Telegram remote-control commands
+- `RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT`: working playlist directory used by `videolooper`
+- `RICK_TV_VIDEOLOOPER_COMMAND_PATH`: FIFO used to send player commands
+- `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS`: diagnostic switch for raw framebuffer placeholders
+- `RICK_TV_CHANNEL_SHUFFLE_SECONDS`: interval for reshuffling a channel playlist
+- `RICK_TV_TOUCH_SCREEN_WIDTH`: touch input width
+- `RICK_TV_TOUCH_SCREEN_HEIGHT`: touch input height
+- `RICK_TV_TOUCH_SWAP_AXES`: whether to swap touch axes
+- `RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS`: gesture axis, `x` or `y`
+- `RICK_TV_TOUCH_INVERT_X`: whether to invert touch X
+- `RICK_TV_TOUCH_INVERT_Y`: whether to invert touch Y
+- `RICK_TV_TOUCH_DEVICE`: explicit input device path, if auto-detection is not enough
+- `RICK_TV_RUNTIME_TICK_SECONDS`: runtime loop tick
 
-Минимум для запуска:
+Minimum required settings:
 
 - `RICK_TV_SERVER_URL`
 - `RICK_TV_API_TOKEN`
@@ -168,7 +148,7 @@ videolooper playback path.
 - `RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT`
 - `RICK_TV_VIDEOLOOPER_COMMAND_PATH`
 
-Запустить сервис:
+Start the service:
 
 ```bash
 sudo systemctl daemon-reload
@@ -176,41 +156,66 @@ sudo systemctl enable --now rick-tv-pi.service
 sudo systemctl status rick-tv-pi.service
 ```
 
-## Как устроены каналы
+## Channels
 
-Каналы — это папки внутри `RICK_TV_MEDIA_ROOT`, например:
+Channels are directories under `RICK_TV_MEDIA_ROOT`, for example:
 
 - `01_Citadel/`
 - `02_Interdimensional_Cable/`
 - `03_Empty/`
 
-Канал участвует только если внутри есть хотя бы один `.mp4`. Пустые папки не попадают в навигацию, плейлисты и список каналов для polling API до появления playable `.mp4`.
+A channel participates only when its directory contains at least one `.mp4`. Empty directories do not appear in navigation, generated playlists, or polling until a playable `.mp4` exists.
 
-Серверная SQLite DB является canonical registry для выбора каналов в Telegram и для первого опроса Pi. Endpoint `/api/v1/channels` отдаёт JSON вида `{"channels": {"01_Citadel": {"display_name": "Citadel"}}}`.
+The server SQLite database is the canonical registry for Telegram channel management and for the Pi registry sync. `/api/v1/channels` returns JSON:
 
-Если сервер стартует впервые без каналов, он создаёт пустую SQLite DB. `/api/v1/channels` вернёт `{"channels": {}}`, бот позволит добавить первый канал, а Pi с настроенным `RICK_TV_METADATA_PATH` не будет fallback-иться на локальные каналы до появления registry-каналов на сервере.
+```json
+{
+  "channels": {
+    "01_Citadel": {
+      "display_name": "Citadel"
+    }
+  }
+}
+```
 
-Серверная медиатека хранится в читаемой структуре `media/library/<channel_id>/<item_id>/original/...` и `media/library/<channel_id>/<item_id>/converted/...`. В DB сохраняются относительные пути, статус, delivery filename и `sha256` converted-файла.
+On a first start with no existing channels, the server creates an empty SQLite database. `/api/v1/channels` returns:
 
-## Как заливать видео через бота
+```json
+{
+  "channels": {}
+}
+```
 
-Telegram runner реализован в `rick_tv_server.bot_runner` и запускается сервисом `rick-tv-bot`.
+The bot still allows adding the first channel. A Pi with `RICK_TV_METADATA_PATH` configured does not fall back to local channels after successfully syncing an empty server registry; it waits until channels exist in the server database.
 
-Типовой поток:
+Server media is stored in this readable layout:
 
-1. Allowlisted пользователь открывает Telegram command menu.
-2. `/add_channel` просит только название; stable channel ID создаётся автоматически инкрементом, например `04_Birdperson_TV`.
-3. `/list_channels` показывает каналы в виде `01 - Citadel`; выбор канала открывает `Switch channel on Pi`, `List all videos`, `Rename channel` и `Delete channel`.
-4. `List all videos` показывает каждое активное видео канала отдельной кнопкой. Внутри видео доступны `Download`, `Delete` и `Back`.
-5. `Switch channel on Pi` ставит remote command; Pi забирает её быстрым poll и переключается через videolooper FIFO, если канал уже playable локально.
-6. `Download` отправляет converted Pi-ready `.mp4` обратно в Telegram.
-7. `Delete` удаляет original и converted файлы с сервера, убирает видео из active library и ставит команду удаления для Pi. Pi удалит локальную копию при следующем успешном poll и подтвердит `/api/v1/delete-ack/{id}`.
-8. `/restore_all_videos` запрашивает подтверждение на повторную доставку всей активной библиотеки.
-9. Пользователь отправляет Telegram `video` или `document`; бот после этого предлагает выбрать канал.
-10. После выбора канала бот скачивает файл локально и вызывает `UploadProcessor.process_upload(...)`.
-11. Сервер сохраняет original upload и converted Pi-ready `.mp4` в `media/library/<channel_id>/<item_id>/...`.
-12. Ролик становится `pending_delivery`, затем Pi забирает его с сервера; после ack сервер переводит его в `available`.
+```text
+media/library/<channel_id>/<item_id>/original/...
+media/library/<channel_id>/<item_id>/converted/...
+```
 
-Сервер приводит файл к целевому профилю (`640x480`, `h264`, `aac`) и валидирует converted `.mp4` через `ffprobe` до появления файла в `/api/v1/ready`. `ffmpeg` и `ffprobe` нужны только серверу: Pi скачивает уже проверенный файл, сверяет `sha256`, кладет его в каталог канала и отправляет ack.
+The database stores relative paths, item status, delivery filename, and the converted file `sha256`.
 
-Delete из экрана конкретного видео канала — физическое удаление с сервера плюс асинхронное удаление с Pi. Действие `restore all` в Telegram requeue-ит активные `available` элементы, чтобы заменить или восстановить Pi и заново доставить библиотеку.
+## Telegram Uploads And Remote Control
+
+The Telegram runner is implemented in `rick_tv_server.bot_runner` and runs as the `rick-tv-bot` service.
+
+Typical flow:
+
+1. An allowlisted user opens the Telegram bot command menu.
+2. `/add_channel` asks only for the display name. The stable channel ID is generated automatically, for example `04_Birdperson_TV`.
+3. `/list_channels` shows channels as `01 - Citadel`. Selecting a channel opens `Switch channel on Pi`, `List all videos`, `Rename channel`, and `Delete channel`.
+4. `List all videos` shows each active channel video as a separate button. The selected video screen offers `Download`, `Delete`, and `Back`.
+5. `Switch channel on Pi` queues a remote command. The Pi picks it up through its fast command poll loop and switches through the `videolooper` FIFO if the channel is locally playable.
+6. `Download` sends the converted Pi-ready `.mp4` back to Telegram.
+7. `Delete` removes the original and converted files from the server, removes the video from the active library, and queues a Pi delete. The Pi removes its local copy on the next successful poll and confirms with `/api/v1/delete-ack/{id}`.
+8. `/restore_all_videos` asks for confirmation before re-delivering the full active library.
+9. A user sends a Telegram `video` or `document`; the bot then asks which channel should receive it.
+10. After channel selection, the bot downloads the Telegram file locally and calls `UploadProcessor.process_upload(...)`.
+11. The server stores the original upload and the converted Pi-ready `.mp4` under `media/library/<channel_id>/<item_id>/...`.
+12. The item becomes `pending_delivery`; the Pi downloads it, verifies `sha256`, installs it into the channel directory, and acks delivery. The server then marks it `available`.
+
+The server converts media to the target playback profile (`640x480`, `h264`, `aac`) and validates the converted `.mp4` with `ffprobe` before it appears in `/api/v1/ready`. `ffmpeg` and `ffprobe` are server-only dependencies. The Pi receives an already validated file, verifies `sha256`, stores it in the channel directory, and sends an ack.
+
+Deleting a video from the Telegram channel screen is a physical server delete plus an asynchronous Pi delete. `restore all` requeues active `available` media so a replacement or recovered Pi can download the library again.
