@@ -32,6 +32,10 @@ kernel panic.
   leaves the normal in-channel interstitial path responsible for the next video.
 - Source tests cover the draw-path invariants. Hardware evidence and dmesg
   stress results are still required before replacing raw `/dev/fb0` writes.
+- `rick-tv-pi/provisioning/scripts/collect-framebuffer-diagnostics.sh` collects
+  the planned Pi evidence over SSH into a local tarball: service journal,
+  supervisor status/tails, `dmesg`, `fb0` metadata, playback process command
+  lines, installed override markers, and redacted Pi env.
 
 ## Lab Pi Observation
 - 2026-06-18 03:16 Europe/Kyiv: after deploying the diagnostic override to
@@ -44,7 +48,8 @@ kernel panic.
   replies and ARP stayed `INCOMPLETE`.
 - This does not prove a kernel panic by itself. Next hardware step is physical
   inspection or power-cycle, then collect `uptime`, `journalctl`, supervisor
-  logs, and `dmesg` before running more placeholder stress tests.
+  logs, and `dmesg` before running more placeholder stress tests. Use
+  `collect-framebuffer-diagnostics.sh` for that collection.
 
 ## Test Plan
 - [x] Unit/source tests assert exactly one transition draw path for FIFO channel

@@ -101,3 +101,20 @@ For the Waveshare 2.8inch DPI LCD on the legacy image, use:
 
 Copy the overlay files to the boot partition `overlays/` directory if the image
 does not already contain them.
+
+## Framebuffer Diagnostics
+
+When investigating placeholder flicker, wrong placeholder ordering, or suspected
+GPU/kernel instability, collect a diagnostics bundle from the workstation:
+
+```sh
+rick-tv-pi/provisioning/scripts/collect-framebuffer-diagnostics.sh \
+  --host pi@192.168.1.68 \
+  --identity-file ~/.ssh/rick_tv_pi_ed25519 \
+  --since "2026-06-18 00:00:00"
+```
+
+The bundle includes `rick-tv-pi.service` journal output, `video_looper`
+supervisor status/tails, `dmesg`, `/sys/class/graphics/fb0/*`, playback process
+command lines, installed override markers, and a redacted `/etc/rick-tv-pi.env`.
+Supervisor tails are wrapped with `timeout` so empty logs do not hang collection.

@@ -145,13 +145,15 @@ placeholder and lets the normal in-channel path draw `interstitial-ad.fb` before
 the next playback. For hardware investigation, collect:
 
 ```sh
-journalctl -u rick-tv-pi.service
-sudo supervisorctl tail video_looper stdout
-dmesg
-cat /sys/class/graphics/fb0/virtual_size
-cat /sys/class/graphics/fb0/stride
-cat /sys/class/graphics/fb0/bits_per_pixel
+rick-tv-pi/provisioning/scripts/collect-framebuffer-diagnostics.sh \
+  --host pi@192.168.1.68 \
+  --identity-file ~/.ssh/rick_tv_pi_ed25519 \
+  --since "2026-06-18 00:00:00"
 ```
+
+The diagnostics bundle includes `journalctl`, supervisor status/tails, `dmesg`,
+`/sys/class/graphics/fb0/*`, playback process command lines, installed
+videolooper override markers, and a redacted `/etc/rick-tv-pi.env`.
 
 The Pi exposes no inbound Rick TV ports. Delivery is initiated by authenticated outbound polling to the server.
 

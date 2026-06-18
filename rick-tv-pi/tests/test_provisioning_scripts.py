@@ -10,6 +10,9 @@ IMAGE_INSTALLER = (
     PROJECT_ROOT / "provisioning" / "image" / "install_packaged_image_payload.sh"
 )
 IMAGE_BUILDER = PROJECT_ROOT / "provisioning" / "image" / "build_packaged_image.sh"
+FRAMEBUFFER_DIAGNOSTICS = (
+    PROJECT_ROOT / "provisioning" / "scripts" / "collect-framebuffer-diagnostics.sh"
+)
 
 
 def test_deploy_restarts_videolooper_before_pi_runtime() -> None:
@@ -233,3 +236,49 @@ def test_firstboot_example_uses_placeholders_only() -> None:
     assert "YOUR_RICK_TV_API_TOKEN" in content
     assert "8905534821" not in content
     assert "104065396" not in content
+
+
+def test_framebuffer_diagnostics_dry_run_records_expected_remote_commands(tmp_path) -> None:
+    output_dir = tmp_path / "diagnostics"
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(FRAMEBUFFER_DIAGNOSTICS),
+            "--host",
+            "pi@192.168.1.68",
+            "--output-dir",
+            str(output_dir),
+            "--since",
+            "2026-06-18 00:00:00",
+        ],
+        check=False,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "RICK_TV_DIAGNOSTICS_DRY_RUN": "1",
+        },
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    commands = (output_dir / "commands.txt").read_text(encoding="utf-8")
+    for expected in [
+        "journalctl -u rick-tv-pi.service",
+        "timeout 8 sudo supervisorctl tail -500 video_looper stdout",
+        "timeout 8 sudo supervisorctl tail -500 video_looper stderr",
+        "sudo dmesg",
+        "/sys/class/graphics/fb0/virtual_size",
+        "Adafruit_Video_Looper-1.0.21-py3.7.egg",
+        "sed -E 's/(TOKEN|PASSWORD|PSK|KEY)=.*/\\1=<redacted>/'",
+    ]:
+        assert expected in commands
+
+
+def test_framebuffer_diagnostics_script_packages_results_without_secrets() -> None:
+    content = FRAMEBUFFER_DIAGNOSTICS.read_text(encoding="utf-8")
+
+    assert "tar -czf" in content
+    assert "rick-tv-framebuffer-diagnostics" in content
+    assert "RICK_TV_DIAGNOSTICS_DRY_RUN" in content
+    assert "StrictHostKeyChecking=no" in content
