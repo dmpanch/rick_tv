@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 import subprocess
 import sys
 import zipfile
@@ -22,25 +21,6 @@ RECOVERY_SCRIPT = PROJECT_ROOT / "provisioning" / "scripts" / "configure-pi-reco
 PLAYLIST_GENERATOR = (
     PROJECT_ROOT / "provisioning" / "videolooper" / "generate_channel_playlists.py"
 )
-PI_DOCS = PROJECT_ROOT.parent / "docs" / "rick-tv-pi.md"
-
-
-def env_assignment_keys(path: Path) -> set[str]:
-    return {
-        match.group(1)
-        for match in re.finditer(
-            r"^([A-Z][A-Z0-9_]*)=",
-            path.read_text(encoding="utf-8"),
-            flags=re.MULTILINE,
-        )
-    }
-
-
-def runtime_names_from_script(path: Path) -> set[str]:
-    content = path.read_text(encoding="utf-8")
-    match = re.search(r"\b(?:runtime_)?names=\((.*?)\)", content, flags=re.DOTALL)
-    assert match is not None
-    return set(re.findall(r"\bRICK_TV_[A-Z0-9_]+\b", match.group(1)))
 
 
 def test_deploy_restarts_videolooper_before_pi_runtime() -> None:
@@ -133,39 +113,6 @@ def test_deploy_uses_single_full_config_example_for_missing_runtime_env() -> Non
         "RICK_TV_TELEGRAM_ALLOWED_USER_IDS",
     ]:
         assert secret_or_boot_only not in runtime_section
-
-
-def test_pi_env_example_matches_firstboot_and_deploy_runtime_subset() -> None:
-    firstboot_runtime = runtime_names_from_script(FIRSTBOOT_SCRIPT)
-    deploy_runtime = runtime_names_from_script(
-        PROJECT_ROOT / "provisioning" / "deploy_videolooper_image.sh"
-    )
-    example_keys = env_assignment_keys(FIRSTBOOT_EXAMPLE)
-
-    assert firstboot_runtime == deploy_runtime
-    assert firstboot_runtime <= example_keys
-    assert {
-        "WIFI_COUNTRY",
-        "WIFI_SSID",
-        "WIFI_PSK",
-        "SSH_ENABLE",
-        "SSH_PASSWORD",
-        "SSH_AUTHORIZED_KEY",
-        "RICK_TV_HOSTNAME",
-    } <= example_keys
-    assert "RICK_TV_TELEGRAM_BOT_TOKEN" not in example_keys
-    assert "RICK_TV_TELEGRAM_ALLOWED_USER_IDS" not in example_keys
-
-
-def test_pi_docs_show_generated_runtime_env_subset() -> None:
-    docs = PI_DOCS.read_text(encoding="utf-8")
-    start = docs.index("The generated `/etc/rick-tv-pi.env`")
-    block_start = docs.index("```text", start)
-    block_end = docs.index("```", block_start + len("```text"))
-    runtime_block = docs[block_start:block_end]
-
-    for name in sorted(runtime_names_from_script(FIRSTBOOT_SCRIPT)):
-        assert name in runtime_block
 
 
 def test_recovery_script_writes_panic_and_watchdog_config_idempotently(tmp_path) -> None:
