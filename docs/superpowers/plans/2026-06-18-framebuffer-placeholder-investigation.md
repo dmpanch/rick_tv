@@ -18,9 +18,12 @@ kernel panic.
   channel, playlist refresh for same channel.
 - [x] Зафиксировать правило показа: channel switch suppresses the next interstitial;
   in-channel video change never draws transition placeholder.
-- [ ] Проверить, является ли raw `/dev/fb0` запись источником риска. Если да,
-  подготовить замену: omxplayer/videolooper-native overlay, pygame-only OSD, or
-  pre-roll MP4 placeholder instead of direct framebuffer writes.
+- [x] Проверить raw `/dev/fb0` под более длинной нагрузкой с реальным remote
+  channel switching и отдельным direct framebuffer write stress.
+- [ ] Подготовить замену raw `/dev/fb0`, если дальнейшие тесты подтвердят, что
+  `omxplayer` abort/freeze связан именно с framebuffer writes:
+  omxplayer/videolooper-native overlay, pygame-only OSD, or pre-roll MP4
+  placeholder instead of direct framebuffer writes.
 
 ## Current Implementation
 - FIFO playlist commands now log command details, current playlist state, mtime,
@@ -31,7 +34,8 @@ kernel panic.
   same-channel playlist refresh: it does not draw the transition placeholder and
   leaves the normal in-channel interstitial path responsible for the next video.
 - Source tests cover the draw-path invariants. Hardware evidence and dmesg
-  stress results are still required before replacing raw `/dev/fb0` writes.
+  stress results now show repeated `omxplayer.bin Aborted` events under raw
+  framebuffer pressure, but no reproduced kernel panic yet.
 - `rick-tv-pi/provisioning/scripts/collect-framebuffer-diagnostics.sh` collects
   the planned Pi evidence over SSH into a local tarball: service journal,
   supervisor status/tails, `dmesg`, `fb0` metadata, playback process command
@@ -116,6 +120,29 @@ kernel panic.
   `/dev/fb0` to black changed the hash and kept `rick-tv-pi.service` active and
   `video_looper` running. Root cause for this symptom: stale framebuffer content
   from before A/B mode, not continued placeholder drawing.
+- 2026-06-18 11:03-11:35 Europe/Kyiv: re-enabled raw framebuffer placeholders
+  on `192.168.1.68` with `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=false`,
+  restarted supervisor `video_looper`, and captured logs in
+  `/home/pi/rick-tv/diagnostics/framebuffer-20260618T080305Z`.
+- A 30-minute server/API remote-switch stress queued 430 `select_channel`
+  commands and all 430 were acknowledged by the Pi. `video_looper` stayed on the
+  same supervisor process, `vcgencmd get_throttled` stayed `0x0`, temperature
+  stayed roughly `51-54'C`, and `dmesg` showed no new panic/oops/framebuffer/GPU
+  errors.
+- During that raw-enabled remote-switch run, `omxplayer` stderr logged one
+  user-space abort at `2026-06-18 08:29:46 UTC`. Playback recovered and remote
+  command acknowledgements continued, so this is evidence of an `omxplayer`
+  timing/stop-start problem, not a reproduced kernel panic.
+- 2026-06-18 11:38-11:46 Europe/Kyiv: ran a direct raw framebuffer stress that
+  alternated `transition-placeholder.fb` and `interstitial-ad.fb` into
+  `/dev/fb0` 500 times while playback continued. The test completed, Pi stayed
+  reachable, `get_throttled` stayed `0x0`, final temperature was about
+  `56.2'C`, and `dmesg` still had no new panic/oops/framebuffer/GPU errors.
+- During the direct raw framebuffer stress, `omxplayer` stderr logged another
+  `Aborted` event at `2026-06-18 08:43:33 UTC`. This makes raw framebuffer
+  writes plus active omxplayer playback a credible source of user-space player
+  instability. It still does not prove the earlier appliance-level kernel panic
+  without a preserved panic stack or a reproduced full Pi freeze.
 
 ## Current Hypothesis
 - The current code-level routing now appears correct: different-channel switch
@@ -123,16 +150,23 @@ kernel panic.
   in-channel video changes use only the interstitial.
 - The earlier kernel panic was real at the appliance level, but its root cause is
   still unproven because the reboot did not preserve a panic stack. The strongest
-  remaining suspects are timing around `omxplayer.stop/play` plus raw fb writes,
-  or lower-level display/GPIO configuration instability on the legacy image.
-- The short A/B run did not reproduce the panic with raw placeholder writes
-  disabled. This is useful but not conclusive: a longer soak and visual evidence
-  are still needed before deciding whether repeated raw framebuffer writes are
-  the root cause or merely adjacent to the failure. The one-time black clear is
-  intentionally separate from regular placeholder drawing.
-- If the A/B build survives repeated channel-switch stress longer than the raw
-  framebuffer build, raw framebuffer access becomes the leading suspect and the
-  replacement should be an omxplayer-managed or pre-rendered MP4 transition path.
+  remaining suspect is timing/contention between active `omxplayer` playback,
+  stop/start, and raw fb writes. Lower-level display/GPIO configuration
+  instability on the legacy image remains a secondary suspect.
+- Longer raw-enabled tests did not reproduce kernel panic, but they did reproduce
+  `omxplayer.bin Aborted` under both remote switch pressure and direct
+  framebuffer pressure. Treat the current failure as proven user-space player
+  instability and unproven kernel panic until a full freeze captures crash
+  evidence.
+- The A/B run with raw placeholder writes disabled did not reproduce the panic
+  during its shorter stress window. This is useful but not conclusive: a longer
+  A/B soak is still needed before deciding whether repeated raw framebuffer
+  writes are the root cause or merely adjacent to the failure. The one-time black
+  clear is intentionally separate from regular placeholder drawing.
+- If the disabled-placeholder A/B build survives a longer soak while raw-enabled
+  runs continue to produce `omxplayer` abort/freeze symptoms, raw framebuffer
+  access becomes the leading suspect and the replacement should be an
+  omxplayer-managed or pre-rendered MP4 transition path.
 
 ## Test Plan
 - [x] Unit/source tests assert exactly one transition draw path for FIFO channel
@@ -143,6 +177,11 @@ kernel panic.
   kernel panic errors.
 - [x] Short A/B remote-switch stress runs with raw `/dev/fb0` placeholders
   disabled and confirms playback/ack still work.
+- [x] Raw-enabled remote-switch stress completed 430 server/API
+  `select_channel` commands without kernel panic, while recording one
+  `omxplayer.bin Aborted`.
+- [x] Direct raw `/dev/fb0` stress completed 500 alternating placeholder writes
+  without kernel panic, while recording one `omxplayer.bin Aborted`.
 - [ ] Capture video/photo evidence of actual screen behavior during channel
   switch and in-channel transition, because logs prove code path selection but
   not visual flicker timing.
