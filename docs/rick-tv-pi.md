@@ -15,8 +15,23 @@ The Phase 1 runtime assumes the existing Raspberry Pi TV hardware remains in pla
 ## SD-card and videolooper image setup
 
 Rick TV Pi currently targets the prepared Raspberry Pi OS Legacy/Buster image
-with Adafruit `pi_video_looper` already installed. The supported provisioning
-entrypoint is:
+with Adafruit `pi_video_looper` already installed. For a new installation,
+prepare that known-good base image with the packaged Rick TV payload:
+
+```sh
+rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \
+  --rootfs /mnt/rick-tv-root \
+  --bootfs /mnt/rick-tv-boot
+```
+
+Then copy `rick-tv.env.example` from the boot partition to `rick-tv.env`, fill
+in Wi-Fi, SSH, API token, hostname, and Rick TV runtime values, and boot the Pi.
+The first boot service creates `/etc/rick-tv-pi.env`, configures Wi-Fi/SSH,
+installs the pinned videolooper overrides/assets, enables `rick-tv-pi.service`,
+and writes a completion marker so later boots do not overwrite local edits.
+
+For updating the current lab Pi over SSH, the supported provisioning entrypoint
+remains:
 
 ```sh
 rick-tv-pi/provisioning/deploy_videolooper_image.sh
@@ -107,6 +122,23 @@ Channel titles are shown through the original videolooper/omxplayer subtitle
 path. The legacy `omxplayer` build accepts external UTF-8 SRT subtitles, so Rick
 TV keeps the standard SRT title overlay and lets the image's omxplayer
 configuration control placement.
+
+Rick TV still uses raw framebuffer `.fb` cards for switch/interstitial
+placeholders on the legacy image. The current override logs FIFO commands,
+playlist reloads, raw framebuffer draws, and `player.play(...)` boundaries.
+A real channel switch draws only `transition-placeholder.fb` and suppresses the
+next interstitial. A same-channel playlist refresh suppresses the transition
+placeholder and lets the normal in-channel path draw `interstitial-ad.fb` before
+the next playback. For hardware investigation, collect:
+
+```sh
+journalctl -u rick-tv-pi.service
+sudo supervisorctl tail video_looper stdout
+dmesg
+cat /sys/class/graphics/fb0/virtual_size
+cat /sys/class/graphics/fb0/stride
+cat /sys/class/graphics/fb0/bits_per_pixel
+```
 
 The Pi exposes no inbound Rick TV ports. Delivery is initiated by authenticated outbound polling to the server.
 

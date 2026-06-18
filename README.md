@@ -81,7 +81,24 @@ docker compose --profile bot up -d --build
 
 После первого входа замените пароль или добавьте SSH key и отключите парольный доступ, если Pi будет жить в постоянной сети.
 
-Перед деплоем подготовьте `/etc/rick-tv-pi.env` из примера:
+Для новой установки предпочтительный путь — подготовить known-good legacy
+`videolooper` image как Rick TV image. Смонтируйте root/boot partitions образа и
+запустите:
+
+```bash
+rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \
+  --rootfs /mnt/rick-tv-root \
+  --bootfs /mnt/rick-tv-boot
+```
+
+На boot partition появится `rick-tv.env.example`; скопируйте его в
+`rick-tv.env`, заполните Wi-Fi, SSH, hostname, API token и runtime-параметры.
+На первом boot `rick-tv-firstboot.service` создаст `/etc/rick-tv-pi.env`,
+настроит Wi-Fi/SSH, установит pinned videolooper overrides/assets, включит
+`rick-tv-pi.service` и больше не будет перетирать ручные правки.
+
+Для текущей lab Pi можно продолжать обновляться по SSH. Перед деплоем
+подготовьте `/etc/rick-tv-pi.env` из примера:
 
 ```bash
 sudo cp rick-tv-pi/provisioning/rick-tv-pi.env.example /etc/rick-tv-pi.env
@@ -95,6 +112,13 @@ sudo nano /etc/rick-tv-pi.env
 ```bash
 rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
 ```
+
+Raw framebuffer placeholders на Pi сейчас остаются частью legacy videolooper
+runtime. Код логирует FIFO commands, playlist reload, показ
+`transition-placeholder.fb`/`interstitial-ad.fb` и границы `player.play(...)`.
+Channel switch показывает только transition placeholder и подавляет следующий
+interstitial; обновление playlist внутри текущего канала не рисует transition и
+использует обычный in-channel interstitial перед следующим playback.
 
 ### Что должно быть в `/etc/rick-tv-pi.env`
 

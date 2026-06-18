@@ -93,6 +93,12 @@ package_project() {
     --exclude=".venv" \
     --exclude="**/__pycache__" \
     --exclude="**/.DS_Store" \
+    --exclude="rick-tv-server/.env" \
+    --exclude="rick-tv-server/data" \
+    --exclude="rick-tv-server/media" \
+    --exclude="rick-tv-server/config" \
+    --exclude="rick-tv-server/state" \
+    --exclude="manual-test-videos" \
     -czf "$archive" \
     -C "$ROOT_DIR" \
     .

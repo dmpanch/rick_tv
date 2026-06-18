@@ -10,6 +10,29 @@ Current lab device:
 
 Do not run `apt upgrade` on the target Pi as part of Rick TV deployment.
 
+## Packaged Image Payload
+
+The preferred install path is a Rick TV-prepared image made from the known-good
+legacy videolooper base image. Mount the image root and boot partitions, then
+stage the Rick TV payload from the repository root:
+
+```sh
+rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \
+  --rootfs /mnt/rick-tv-root \
+  --bootfs /mnt/rick-tv-boot
+```
+
+The installer copies the project to `/opt/rick-tv-src`, installs
+`/usr/local/sbin/rick-tv-firstboot`, enables `rick-tv-firstboot.service`, and
+places `rick-tv.env.example` on the boot partition.
+
+Before the first boot, copy `rick-tv.env.example` to `rick-tv.env` on the boot
+partition and fill in Wi-Fi, API, SSH, hostname, and Rick TV runtime values.
+The first-boot service creates `/etc/rick-tv-pi.env`, configures Wi-Fi/SSH,
+installs the pinned videolooper overrides/assets, enables `rick-tv-pi.service`,
+and writes `/var/lib/rick-tv-pi/firstboot.done`. Later boots skip the setup and
+do not overwrite user-edited `/etc/rick-tv-pi.env`.
+
 ## Deploy to a Running Pi
 
 From the repository root:

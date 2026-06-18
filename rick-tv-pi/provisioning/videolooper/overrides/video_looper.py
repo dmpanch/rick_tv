@@ -514,19 +514,37 @@ class VideoLooper:
             command = command.strip()
             if not command:
                 continue
+            self._print(f"Rick TV FIFO command received: {command}")
             if '.m3u' in command:
                 playlist_mtime = self._rick_tv_playlist_mtime(command)
+                same_playlist = command == self._rick_tv_current_playlist_path
+                self._print(
+                    "Rick TV FIFO playlist command details: "
+                    f"same_playlist={same_playlist}, "
+                    f"playlist_mtime={playlist_mtime}, "
+                    f"current_playlist={self._rick_tv_current_playlist_path}, "
+                    f"current_mtime={self._rick_tv_current_playlist_mtime}"
+                )
                 if (
-                    command == self._rick_tv_current_playlist_path
+                    same_playlist
                     and playlist_mtime == self._rick_tv_current_playlist_mtime
                 ):
                     self._print(f"Rick TV playlist command unchanged; ignoring: {command}")
                     continue
-                self._print(f"Rick TV loading playlist: {command}")
+                if same_playlist:
+                    self._print(
+                        "Rick TV same-channel playlist refresh; transition placeholder suppressed: "
+                        f"{command}"
+                    )
+                else:
+                    self._print(f"Rick TV loading playlist: {command}")
                 self._playlist_path = command
+                self._print(f"Rick TV stopping player for playlist command: {command}")
                 self._player.stop(0)
-                self._rick_tv_show_transition_placeholder()
-                self._rick_tv_skip_next_interstitial = True
+                if not same_playlist:
+                    self._rick_tv_show_transition_placeholder()
+                    self._print("Rick TV suppressing next interstitial after channel switch")
+                    self._rick_tv_skip_next_interstitial = True
                 self._playbackStopped = False
                 self._playlist = None
                 self._rick_tv_playlist_reload = True
@@ -598,6 +616,7 @@ class VideoLooper:
         try:
             fd = os.open('/dev/fb0', os.O_WRONLY)
             try:
+                self._print("Rick TV showing transition placeholder")
                 os.write(fd, frame)
             finally:
                 os.close(fd)
@@ -627,6 +646,7 @@ class VideoLooper:
         try:
             fd = os.open('/dev/fb0', os.O_WRONLY)
             try:
+                self._print("Rick TV showing interstitial ad")
                 os.write(fd, frame)
             finally:
                 os.close(fd)
@@ -841,6 +861,7 @@ class VideoLooper:
         while self._running:
             self._rick_tv_handle_fifo_commands()
             if self._rick_tv_playlist_reload:
+                self._print("Rick TV playlist reload requested; rebuilding playlist")
                 self._playlist = self._build_playlist()
                 movie = self._playlist.get_next()
                 self._rick_tv_playlist_reload = False
@@ -875,8 +896,11 @@ class VideoLooper:
                     if movie is None:
                         continue
 
-                    if not self._firstStart and not self._rick_tv_skip_next_interstitial:
-                        self._rick_tv_show_interstitial_ad()
+                    if not self._firstStart:
+                        if self._rick_tv_skip_next_interstitial:
+                            self._print("Rick TV skipping interstitial after channel switch")
+                        else:
+                            self._rick_tv_show_interstitial_ad()
                     self._rick_tv_skip_next_interstitial = False
                     movie.was_played() # type: ignore
 
@@ -906,6 +930,7 @@ class VideoLooper:
                                         
                     # Start playing the first available movie.
                     self._print(f"Playing movie: {movie} {infotext}")
+                    self._print(f"Rick TV player.play starting: {movie}")
                     # todo: maybe clear screen to black so that background (image/color) is not visible for videos with a resolution that is < screen resolution
                     self._player.play(movie, loop=player_loop, vol = self._sound_vol)
 
