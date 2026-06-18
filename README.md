@@ -144,24 +144,31 @@ After first login, replace the password or add an SSH key and disable password l
 
 ### Packaged Image Path
 
-After you have a known-good `videolooper.de` image, you can turn it into a Rick
-TV image:
+The preferred fresh-install path is an sdm-built Rick TV image on top of the
+`videolooper.de` base image. Install `sdm` on the build machine first:
+
+```bash
+curl -L https://raw.githubusercontent.com/gitbls/sdm/master/install-sdm | bash
+```
+
+Then build the image from the Video Looper v2.11 archive:
 
 ```bash
 sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
-  --base-image /path/to/known-good-videolooper.img \
-  --output-image /path/to/rick-tv.img
+  --base-image-url https://videolooper.de/video_looper_v2.11.zip \
+  --output-image dist/rick-tv-pi.img
 ```
 
-The builder copies the base image, mounts the root and boot partitions through a loop device, installs the Rick TV payload, and writes `rick-tv.img.sha256`. If the root and boot partitions are already mounted manually, use the lower-level installer:
-
-```bash
-rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \
-  --rootfs /mnt/rick-tv-root \
-  --bootfs /mnt/rick-tv-boot
-```
-
-The boot partition will contain `rick-tv.env.example`. Copy it to `rick-tv.env`, then fill in Wi-Fi, SSH, hostname, API token, and runtime settings. On first boot, `rick-tv-firstboot.service` creates `/etc/rick-tv-pi.env`, configures Wi-Fi and SSH, installs pinned `videolooper` overrides and assets, enables `rick-tv-pi.service`, and then stops overwriting manual edits.
+The builder copies the Video Looper base image, runs `sdm --customize` with Rick
+TV's custom phase script, stages the Rick TV payload, and writes
+`dist/rick-tv-pi.img.sha256`. The generated image contains only placeholder
+first-boot config. Copy `rick-tv.env.example` from the boot partition to
+`rick-tv.env`, then fill in Wi-Fi, SSH, hostname, server URL, API token, and Pi
+runtime settings. On first boot, `rick-tv-firstboot.service` creates
+`/etc/rick-tv-pi.env`, configures Wi-Fi and SSH, installs pinned `videolooper`
+overrides and assets, enables `rick-tv-pi.service`, and then stops overwriting
+manual edits. Telegram bot credentials stay on the server and do not belong in
+the Pi image or `rick-tv.env`.
 
 For the current lab Pi, SSH deployment is still supported. Before deploying, prepare `/etc/rick-tv-pi.env` from the template:
 

@@ -74,33 +74,33 @@ ssh pi@<pi-ip> 'systemctl is-active rick-tv-pi.service && sudo supervisorctl sta
 
 ### Packaged image path
 
-After a known-good `videolooper.de` base image is available, build a Rick TV
-image from that base:
+The preferred fresh-install path is an sdm-built Rick TV image made from the
+`videolooper.de` v2.11 base archive. Install `sdm` on the build machine:
+
+```sh
+curl -L https://raw.githubusercontent.com/gitbls/sdm/master/install-sdm | bash
+```
 
 ```sh
 sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
-  --base-image /path/to/known-good-videolooper.img \
-  --output-image /path/to/rick-tv.img
+  --base-image-url https://videolooper.de/video_looper_v2.11.zip \
+  --output-image dist/rick-tv-pi.img
 ```
 
-The builder copies the base image, mounts its root/boot partitions through a
-loop device, stages Rick TV, and writes a `.sha256` file beside the output. You
-can pass `--boot-config /path/to/rick-tv.env` to include a filled first-boot
-config in the generated image. Keep filled configs out of git.
+The builder copies the Video Looper base image, runs `sdm --customize` with Rick
+TV's custom phase script, stages Rick TV, and writes a `.sha256` file beside the
+output. You can pass `--boot-config /path/to/rick-tv.env` to include a filled
+first-boot config in the generated image, but filled configs must stay out of
+git and are not required for distribution.
 
-If you already have the image partitions mounted, stage the payload directly:
-
-```sh
-rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \
-  --rootfs /mnt/rick-tv-root \
-  --bootfs /mnt/rick-tv-boot
-```
-
-Then copy `rick-tv.env.example` from the boot partition to `rick-tv.env`, fill
-in Wi-Fi, SSH, API token, hostname, and Rick TV runtime values, and boot the Pi.
-The first boot service creates `/etc/rick-tv-pi.env`, configures Wi-Fi/SSH,
-installs the pinned videolooper overrides/assets, enables `rick-tv-pi.service`,
-and writes a completion marker so later boots do not overwrite local edits.
+Before first boot, copy `rick-tv.env.example` from the boot partition to
+`rick-tv.env`, fill in Wi-Fi, SSH, API token, hostname, server URL, and Rick TV
+runtime values, and boot the Pi. The first boot service creates
+`/etc/rick-tv-pi.env`, configures Wi-Fi/SSH, installs the pinned videolooper
+overrides/assets, enables `rick-tv-pi.service`, and writes a completion marker
+so later boots do not overwrite local edits. Telegram bot token and allowed user
+IDs are server-side settings and must not be placed in the Pi image or
+`rick-tv.env`.
 
 For updating the current lab Pi over SSH, the supported provisioning entrypoint
 remains:

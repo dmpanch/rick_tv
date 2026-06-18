@@ -43,39 +43,37 @@ part of Rick TV setup.
 
 ## Packaged Image Payload
 
-The preferred install path is a Rick TV-prepared image made from the known-good
-`videolooper.de` base image. If you have the base image file locally, build a
-flashable Rick TV image from the repository root:
+The preferred install path is a Rick TV-prepared image made from the
+`videolooper.de` v2.11 base archive with `gitbls/sdm`. Install `sdm` on the
+build machine:
+
+```sh
+curl -L https://raw.githubusercontent.com/gitbls/sdm/master/install-sdm | bash
+```
+
+Then build a flashable Rick TV image from the repository root:
 
 ```sh
 sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
-  --base-image /path/to/known-good-videolooper.img \
-  --output-image /path/to/rick-tv.img
+  --base-image-url https://videolooper.de/video_looper_v2.11.zip \
+  --output-image dist/rick-tv-pi.img
 ```
 
-The builder copies the base image, mounts its root/boot partitions through a
-loop device, stages the Rick TV payload, and writes `rick-tv.img.sha256`.
-Optionally pass `--boot-config /path/to/rick-tv.env` to put a filled first-boot
-config onto the generated image. Do not commit filled config files.
-
-If the partitions are already mounted, stage the payload directly:
-
-```sh
-rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \
-  --rootfs /mnt/rick-tv-root \
-  --bootfs /mnt/rick-tv-boot
-```
-
-The installer copies the project to `/opt/rick-tv-src`, installs
-`/usr/local/sbin/rick-tv-firstboot`, enables `rick-tv-firstboot.service`, and
-places `rick-tv.env.example` on the boot partition.
+The builder downloads/extracts the Video Looper image outside tracked repo
+paths, copies it to the requested output image, runs `sdm --customize` with Rick
+TV's custom phase script, stages the Rick TV payload, and writes
+`dist/rick-tv-pi.img.sha256`. Optionally pass
+`--boot-config /path/to/rick-tv.env` to put a filled first-boot config onto a
+private generated image. Do not commit filled config files.
 
 Before the first boot, copy `rick-tv.env.example` to `rick-tv.env` on the boot
 partition and fill in Wi-Fi, API, SSH, hostname, and Rick TV runtime values.
 The first-boot service creates `/etc/rick-tv-pi.env`, configures Wi-Fi/SSH,
 installs the pinned videolooper overrides/assets, enables `rick-tv-pi.service`,
 and writes `/var/lib/rick-tv-pi/firstboot.done`. Later boots skip the setup and
-do not overwrite user-edited `/etc/rick-tv-pi.env`.
+do not overwrite user-edited `/etc/rick-tv-pi.env`. Telegram bot token and
+allowed user IDs are server-side settings; do not put them in the Pi image or
+`rick-tv.env`.
 
 ## Deploy to a Running Pi
 

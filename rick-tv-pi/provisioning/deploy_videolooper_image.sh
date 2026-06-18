@@ -92,6 +92,15 @@ package_project() {
   tar \
     --exclude=".git" \
     --exclude=".venv" \
+    --exclude=".env" \
+    --exclude="**/.env" \
+    --exclude="**/*.sqlite3" \
+    --exclude=".pytest_cache" \
+    --exclude=".mypy_cache" \
+    --exclude=".ruff_cache" \
+    --exclude="dist" \
+    --exclude="*.img" \
+    --exclude="*.zip" \
     --exclude="**/__pycache__" \
     --exclude="**/.DS_Store" \
     --exclude="rick-tv-server/.env" \

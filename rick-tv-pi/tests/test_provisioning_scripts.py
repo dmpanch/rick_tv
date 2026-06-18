@@ -10,6 +10,7 @@ IMAGE_INSTALLER = (
     PROJECT_ROOT / "provisioning" / "image" / "install_packaged_image_payload.sh"
 )
 IMAGE_BUILDER = PROJECT_ROOT / "provisioning" / "image" / "build_packaged_image.sh"
+SDM_PHASE_SCRIPT = PROJECT_ROOT / "provisioning" / "image" / "sdm_rick_tv_custom_phase.sh"
 FRAMEBUFFER_DIAGNOSTICS = (
     PROJECT_ROOT / "provisioning" / "scripts" / "collect-framebuffer-diagnostics.sh"
 )
@@ -31,6 +32,12 @@ def test_deploy_payload_excludes_local_secrets_and_runtime_data() -> None:
     content = script.read_text(encoding="utf-8")
 
     for excluded in [
+        ".env",
+        "**/.env",
+        "**/*.sqlite3",
+        "dist",
+        "*.img",
+        "*.zip",
         "rick-tv-server/.env",
         "rick-tv-server/data",
         "rick-tv-server/media",
@@ -273,7 +280,7 @@ def test_packaged_image_payload_installer_excludes_local_secrets_and_runtime_dat
         assert f'--exclude="{excluded}"' in content
 
 
-def test_packaged_image_builder_dry_run_copies_base_and_reports_steps(tmp_path) -> None:
+def test_packaged_image_builder_dry_run_uses_sdm_for_local_base(tmp_path) -> None:
     base_image = tmp_path / "base.img"
     output_image = tmp_path / "rick-tv.img"
     base_image.write_bytes(b"fake image bytes")
@@ -298,25 +305,65 @@ def test_packaged_image_builder_dry_run_copies_base_and_reports_steps(tmp_path) 
 
     assert result.returncode == 0, result.stderr
     assert output_image.read_bytes() == base_image.read_bytes()
-    assert "dry-run: would attach loop device with partitions" in result.stdout
-    assert "dry-run: would run install_packaged_image_payload.sh" in result.stdout
+    assert "dry-run: would copy" in result.stdout
+    assert "sdm --customize --batch --redo-customize --apt-options none" in result.stdout
+    assert "--cscript" in result.stdout
+    assert "sdm_rick_tv_custom_phase.sh" in result.stdout
+    assert "--csrc" in result.stdout
     assert (tmp_path / "rick-tv.img.sha256").exists()
 
 
-def test_packaged_image_builder_mounts_stages_and_cleans_up_loop_device() -> None:
+def test_packaged_image_builder_dry_run_downloads_videolooper_url(tmp_path) -> None:
+    output_image = tmp_path / "rick-tv.img"
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(IMAGE_BUILDER),
+            "--base-image-url",
+            "https://videolooper.de/video_looper_v2.11.zip",
+            "--output-image",
+            str(output_image),
+        ],
+        check=False,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "RICK_TV_IMAGE_BUILDER_DRY_RUN": "1",
+        },
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "dry-run: would download https://videolooper.de/video_looper_v2.11.zip" in result.stdout
+    assert "dry-run: would extract downloaded base image archive" in result.stdout
+    assert "sdm --customize --batch --redo-customize --apt-options none" in result.stdout
+    assert "video_looper_v2.11.zip" in result.stdout
+    assert not output_image.exists()
+
+
+def test_packaged_image_builder_no_longer_uses_manual_loop_mount_flow() -> None:
     content = IMAGE_BUILDER.read_text(encoding="utf-8")
 
-    for expected in [
-        "losetup --find --partscan --show",
-        "mount \"${loop_device}p2\"",
-        "mount \"${loop_device}p1\"",
-        "install_packaged_image_payload.sh",
-        "sha256sum",
-        "trap cleanup EXIT",
-        "umount",
-        "losetup -d",
-    ]:
-        assert expected in content
+    assert "losetup" not in content
+    assert "mount \"${loop_device}p2\"" not in content
+    assert "mount \"${loop_device}p1\"" not in content
+    assert "sdm --customize" in content
+    assert "--redo-customize" in content
+    assert "--apt-options none" in content
+
+
+def test_sdm_custom_phase_stages_payload_with_sdmpt_and_no_secret_work() -> None:
+    content = SDM_PHASE_SCRIPT.read_text(encoding="utf-8")
+
+    assert "phase=\"${1:-}\"" in content
+    assert "$SDMPT" in content
+    assert "sdm-readparams" in content
+    assert "install_packaged_image_payload.sh" in content
+    assert "--boot-config" in content
+    assert "apt-get" not in content
+    assert "RICK_TV_TELEGRAM_BOT_TOKEN" not in content
+    assert "RICK_TV_TELEGRAM_ALLOWED_USER_IDS" not in content
 
 
 def test_firstboot_example_uses_placeholders_only() -> None:

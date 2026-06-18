@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-FIRSTBOOT_DIR="$ROOT_DIR/rick-tv-pi/provisioning/firstboot"
+DEFAULT_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 usage() {
   cat <<'EOF'
 Usage:
-  install_packaged_image_payload.sh --rootfs /mnt/rick-tv-root --bootfs /mnt/rick-tv-boot
+  install_packaged_image_payload.sh --rootfs /mnt/rick-tv-root --bootfs /mnt/rick-tv-boot [--source-root /path/to/repo] [--boot-config rick-tv.env]
 
 Stages Rick TV source, first-boot service, and rick-tv.env.example into a
 mounted known-good Raspberry Pi OS Legacy/videolooper image.
@@ -21,22 +20,32 @@ die() {
 
 ROOTFS=""
 BOOTFS=""
+ROOT_DIR="$DEFAULT_ROOT_DIR"
+BOOT_CONFIG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --rootfs) ROOTFS="${2:-}"; shift 2 ;;
     --bootfs) BOOTFS="${2:-}"; shift 2 ;;
+    --source-root) ROOT_DIR="${2:-}"; shift 2 ;;
+    --boot-config) BOOT_CONFIG="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
 done
 
+FIRSTBOOT_DIR="$ROOT_DIR/rick-tv-pi/provisioning/firstboot"
+
 [[ -n "$ROOTFS" ]] || die "--rootfs is required"
 [[ -n "$BOOTFS" ]] || die "--bootfs is required"
+[[ -d "$ROOT_DIR" ]] || die "source root path not found: $ROOT_DIR"
 [[ -d "$ROOTFS" ]] || die "rootfs path not found: $ROOTFS"
 [[ -d "$BOOTFS" ]] || die "bootfs path not found: $BOOTFS"
 [[ -f "$FIRSTBOOT_DIR/rick-tv-firstboot.sh" ]] || die "missing firstboot script"
 [[ -f "$FIRSTBOOT_DIR/rick-tv-firstboot.service" ]] || die "missing firstboot service"
 [[ -f "$FIRSTBOOT_DIR/rick-tv.env.example" ]] || die "missing firstboot env example"
+if [[ -n "$BOOT_CONFIG" && ! -f "$BOOT_CONFIG" ]]; then
+  die "boot config not found: $BOOT_CONFIG"
+fi
 
 mkdir -p \
   "$ROOTFS/usr/local/sbin" \
@@ -49,10 +58,22 @@ install -m 0644 "$FIRSTBOOT_DIR/rick-tv-firstboot.service" "$ROOTFS/etc/systemd/
 ln -sfn ../rick-tv-firstboot.service \
   "$ROOTFS/etc/systemd/system/multi-user.target.wants/rick-tv-firstboot.service"
 install -m 0644 "$FIRSTBOOT_DIR/rick-tv.env.example" "$BOOTFS/rick-tv.env.example"
+if [[ -n "$BOOT_CONFIG" ]]; then
+  install -m 0600 "$BOOT_CONFIG" "$BOOTFS/rick-tv.env"
+fi
 
 tar \
   --exclude=".git" \
   --exclude=".venv" \
+  --exclude=".env" \
+  --exclude="**/.env" \
+  --exclude="**/*.sqlite3" \
+  --exclude=".pytest_cache" \
+  --exclude=".mypy_cache" \
+  --exclude=".ruff_cache" \
+  --exclude="dist" \
+  --exclude="*.img" \
+  --exclude="*.zip" \
   --exclude="**/__pycache__" \
   --exclude="**/.DS_Store" \
   --exclude="rick-tv-server/.env" \
