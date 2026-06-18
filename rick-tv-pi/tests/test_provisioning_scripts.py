@@ -60,6 +60,7 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
                 "RICK_TV_METADATA_PATH=/home/pi/rick-tv/config/channels.json",
                 "RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT=/home/pi/rick-tv/playlists",
                 "RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo",
+                "RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true",
             ]
         )
         + "\n",
@@ -87,6 +88,7 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
         "RICK_TV_METADATA_PATH=/home/pi/rick-tv/config/channels.json\n"
         "RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT=/home/pi/rick-tv/playlists\n"
         "RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo\n"
+        "RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true\n"
     )
     assert "ssid=\"Test Network\"" in (
         rootfs / "etc" / "wpa_supplicant" / "wpa_supplicant.conf"

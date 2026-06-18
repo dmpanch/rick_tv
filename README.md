@@ -128,6 +128,9 @@ runtime. Код логирует FIFO commands, playlist reload, показ
 Channel switch показывает только transition placeholder и подавляет следующий
 interstitial; обновление playlist внутри текущего канала не рисует transition и
 использует обычный in-channel interstitial перед следующим playback.
+Диагностический флаг `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true`
+отключает оба raw `/dev/fb0` placeholder writes для A/B проверки железа, не
+меняя сам videolooper playback path.
 
 ### Что должно быть в `/etc/rick-tv-pi.env`
 
@@ -145,6 +148,7 @@ interstitial; обновление playlist внутри текущего кан
 - `RICK_TV_REMOTE_POLL_INTERVAL_SECONDS` — быстрый интервал опроса Telegram remote-control команд.
 - `RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT` — путь к рабочей папке `videolooper`.
 - `RICK_TV_VIDEOLOOPER_COMMAND_PATH` — FIFO для команд проигрывателю.
+- `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS` — диагностически отключает raw framebuffer заглушки.
 - `RICK_TV_CHANNEL_SHUFFLE_SECONDS` — как часто перемешивать плейлист внутри канала.
 - `RICK_TV_TOUCH_SCREEN_WIDTH` — ширина touch input-экрана.
 - `RICK_TV_TOUCH_SCREEN_HEIGHT` — высота touch input-экрана.

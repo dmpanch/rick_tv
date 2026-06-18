@@ -36,6 +36,10 @@ kernel panic.
   the planned Pi evidence over SSH into a local tarball: service journal,
   supervisor status/tails, `dmesg`, `fb0` metadata, playback process command
   lines, installed override markers, and redacted Pi env.
+- `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` is a diagnostic A/B flag. The
+  videolooper override reads it from process env or `/etc/rick-tv-pi.env` and
+  skips both raw `/dev/fb0` placeholder writes while keeping FIFO switching and
+  playback unchanged.
 
 ## Lab Pi Observation
 - 2026-06-18 03:16 Europe/Kyiv: after deploying the diagnostic override to
@@ -90,6 +94,20 @@ kernel panic.
 - `omxplayer` stderr still shows occasional `Aborted` lines when commands stop a
   running player. The loop recovers and continues playback, but this remains a
   candidate timing edge to instrument if freezes return.
+- 2026-06-18 10:52 Europe/Kyiv: deployed the A/B override to `192.168.1.68`,
+  set `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` in `/etc/rick-tv-pi.env`,
+  and restarted supervisor `video_looper`.
+- A second remote-command stress test queued six `select_channel` commands after
+  disabling raw placeholders. All six completed between
+  `2026-06-18 07:52:26 UTC` and `07:52:37 UTC`; `video_looper` remained
+  `RUNNING`, `rick-tv-pi.service` remained `active`, and `dmesg` had no new
+  panic/oops/framebuffer/GPU errors.
+- In A/B mode, each channel switch logged
+  `Rick TV transition placeholder disabled by RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS`
+  before playlist reload, and natural in-channel playback logged
+  `Rick TV interstitial ad disabled by RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS`.
+  That confirms the test removed the raw draw path while preserving playback and
+  command ack behavior.
 
 ## Current Hypothesis
 - The current code-level routing now appears correct: different-channel switch
@@ -99,11 +117,13 @@ kernel panic.
   still unproven because the reboot did not preserve a panic stack. The strongest
   remaining suspects are timing around `omxplayer.stop/play` plus raw fb writes,
   or lower-level display/GPIO configuration instability on the legacy image.
-- Next useful experiment is an A/B build that disables raw `/dev/fb0`
-  placeholders, or replaces them with a pre-rendered MP4/omxplayer-managed
-  transition, while leaving remote switching and playlist reload logic unchanged.
-  If that build survives repeated channel-switch stress longer than the current
-  build, raw framebuffer access becomes the leading suspect.
+- The short A/B run did not reproduce the panic with raw placeholder writes
+  disabled. This is useful but not conclusive: a longer soak and visual evidence
+  are still needed before deciding whether raw framebuffer writes are the root
+  cause or merely adjacent to the failure.
+- If the A/B build survives repeated channel-switch stress longer than the raw
+  framebuffer build, raw framebuffer access becomes the leading suspect and the
+  replacement should be an omxplayer-managed or pre-rendered MP4 transition path.
 
 ## Test Plan
 - [x] Unit/source tests assert exactly one transition draw path for FIFO channel
@@ -112,11 +132,13 @@ kernel panic.
   in-channel transition.
 - [x] `dmesg` after remote channel-switch stress has no new framebuffer, GPU, or
   kernel panic errors.
+- [x] Short A/B remote-switch stress runs with raw `/dev/fb0` placeholders
+  disabled and confirms playback/ack still work.
 - [ ] Capture video/photo evidence of actual screen behavior during channel
   switch and in-channel transition, because logs prove code path selection but
   not visual flicker timing.
-- [ ] Run the A/B test with raw `/dev/fb0` placeholders disabled/replaced before
-  deciding whether to delete the `.fb` path.
+- [ ] Run a longer A/B soak with raw `/dev/fb0` placeholders disabled before
+  deciding whether to delete or replace the `.fb` path.
 
 ## Assumptions
 - This task is investigation-first; do not remove the existing `.fb` assets until

@@ -68,6 +68,7 @@ RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media
 RICK_TV_METADATA_PATH=/home/pi/rick-tv/config/channels.json
 RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT=/home/pi/rick-tv/playlists
 RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo
+RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=false
 RICK_TV_CHANNEL_SHUFFLE_SECONDS=3600
 RICK_TV_REMOTE_POLL_INTERVAL_SECONDS=2
 ```
@@ -142,7 +143,10 @@ playlist reloads, raw framebuffer draws, and `player.play(...)` boundaries.
 A real channel switch draws only `transition-placeholder.fb` and suppresses the
 next interstitial. A same-channel playlist refresh suppresses the transition
 placeholder and lets the normal in-channel path draw `interstitial-ad.fb` before
-the next playback. For hardware investigation, collect:
+the next playback. For A/B hardware investigation only,
+`RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` disables both raw `/dev/fb0`
+placeholder writes while leaving videolooper switching/playback behavior in
+place. For hardware investigation, collect:
 
 ```sh
 rick-tv-pi/provisioning/scripts/collect-framebuffer-diagnostics.sh \

@@ -102,6 +102,37 @@ def test_videolooper_override_hides_framebuffer_console_before_raw_frame_writes(
     assert "/dev/tty1" in source
 
 
+def test_videolooper_override_can_disable_raw_framebuffer_placeholders_for_ab_testing():
+    source = VIDEO_LOOPER_OVERRIDE.read_text()
+
+    assert "RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS" in source
+    assert "def _rick_tv_framebuffer_placeholders_enabled(self):" in source
+
+    transition_method = source.index("def _rick_tv_show_transition_placeholder(self):")
+    transition_skip = source.index(
+        "Rick TV transition placeholder disabled by RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS"
+    )
+    transition_write = source.index("os.open('/dev/fb0', os.O_WRONLY)", transition_method)
+    assert transition_method < transition_skip < transition_write
+
+    interstitial_method = source.index("def _rick_tv_show_interstitial_ad(self):")
+    interstitial_skip = source.index(
+        "Rick TV interstitial ad disabled by RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS"
+    )
+    interstitial_write = source.index("os.open('/dev/fb0', os.O_WRONLY)", interstitial_method)
+    assert interstitial_method < interstitial_skip < interstitial_write
+
+
+def test_videolooper_override_reads_framebuffer_flag_from_pi_env_file_for_supervisor():
+    source = VIDEO_LOOPER_OVERRIDE.read_text()
+
+    assert "def _rick_tv_env_value(self, name):" in source
+    assert "def _rick_tv_env_truthy(self, name):" in source
+    assert "/etc/rick-tv-pi.env" in source
+    assert "os.environ.get(name)" in source
+    assert "self._rick_tv_env_truthy('RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS')" in source
+
+
 def test_videolooper_override_quit_does_not_post_pygame_event_when_osd_disabled():
     source = VIDEO_LOOPER_OVERRIDE.read_text()
 

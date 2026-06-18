@@ -135,6 +135,7 @@ class VideoLooper:
         self._rick_tv_interstitial_frame_path = '/home/pi/rick-tv/system/interstitial-ad.fb'
         self._rick_tv_interstitial_frame = None
         self._rick_tv_skip_next_interstitial = False
+        self._rick_tv_disable_framebuffer_placeholders = self._rick_tv_env_truthy('RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS')
         self._playbackStopped = not self._play_on_startup
         #used for not waiting the first time
         self._firstStart = True
@@ -594,6 +595,11 @@ class VideoLooper:
         return frame + b"\0" * (expected_bytes - len(frame))
 
     def _rick_tv_show_transition_placeholder(self):
+        if not self._rick_tv_framebuffer_placeholders_enabled():
+            self._print(
+                "Rick TV transition placeholder disabled by RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS"
+            )
+            return
         frame = self._rick_tv_transition_frame
         expected_bytes = self._rick_tv_framebuffer_bytes()
         if expected_bytes is None:
@@ -624,6 +630,11 @@ class VideoLooper:
             self._print(f"Rick TV transition placeholder unavailable: {exc}")
 
     def _rick_tv_show_interstitial_ad(self):
+        if not self._rick_tv_framebuffer_placeholders_enabled():
+            self._print(
+                "Rick TV interstitial ad disabled by RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS"
+            )
+            return
         frame = self._rick_tv_interstitial_frame
         expected_bytes = self._rick_tv_framebuffer_bytes()
         if expected_bytes is None:
@@ -652,6 +663,42 @@ class VideoLooper:
                 os.close(fd)
         except OSError as exc:
             self._print(f"Rick TV interstitial ad unavailable: {exc}")
+
+    def _rick_tv_framebuffer_placeholders_enabled(self):
+        return not self._rick_tv_disable_framebuffer_placeholders
+
+    def _rick_tv_env_truthy(self, name):
+        return self._rick_tv_env_value(name).strip().lower() in ('1', 'true', 'yes', 'on')
+
+    def _rick_tv_env_value(self, name):
+        value = os.environ.get(name)
+        if value is not None:
+            return value
+        try:
+            fd = os.open('/etc/rick-tv-pi.env', os.O_RDONLY)
+            try:
+                content = os.read(fd, 65536).decode('utf-8')
+            finally:
+                os.close(fd)
+        except OSError:
+            return ''
+
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, file_value = line.split('=', 1)
+            if key.strip() != name:
+                continue
+            file_value = file_value.strip()
+            if (
+                len(file_value) >= 2
+                and file_value[0] == file_value[-1]
+                and file_value[0] in ('"', "'")
+            ):
+                file_value = file_value[1:-1]
+            return file_value
+        return ''
 
     def _rick_tv_prepare_framebuffer_console(self):
         try:

@@ -118,3 +118,6 @@ The bundle includes `rick-tv-pi.service` journal output, `video_looper`
 supervisor status/tails, `dmesg`, `/sys/class/graphics/fb0/*`, playback process
 command lines, installed override markers, and a redacted `/etc/rick-tv-pi.env`.
 Supervisor tails are wrapped with `timeout` so empty logs do not hang collection.
+For A/B testing, set `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` in
+`/etc/rick-tv-pi.env` to keep videolooper playback/switching active while
+skipping both raw `/dev/fb0` placeholder writes.
