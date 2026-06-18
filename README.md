@@ -165,11 +165,12 @@ sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
 The builder copies the Video Looper base image, runs `sdm --customize` with Rick
 TV's custom phase script, stages the Rick TV payload, and writes
 `dist/rick-tv-pi.img.sha256`. The generated image applies the Waveshare 2.8inch
-DPI LCD boot config and overlays during image customization, and contains only
-placeholder first-boot config. Copy `rick-tv.env.example` from the boot
-partition to `rick-tv.env`, then fill in Wi-Fi, SSH, hostname, server URL, API
-token, and Pi runtime settings. On first boot, `rick-tv-firstboot.service`
-creates `/etc/rick-tv-pi.env`, configures Wi-Fi and SSH, installs pinned
+DPI LCD boot config and overlays during image customization, writes Rick TV's
+`/boot/video_looper.ini`, and contains only placeholder first-boot config. Copy
+`rick-tv.env.example` from the boot partition to `rick-tv.env`, then fill in
+Wi-Fi, SSH, hostname, server URL, API token, and Pi runtime settings. On first
+boot, `rick-tv-firstboot.service` creates `/etc/rick-tv-pi.env`, configures
+Wi-Fi and SSH, verifies the same `videolooper` config, installs pinned
 `videolooper` overrides and assets, enables `rick-tv-pi.service`, and then stops
 overwriting manual edits. Telegram bot credentials stay on the server and do not
 belong in the Pi image or `rick-tv.env`.

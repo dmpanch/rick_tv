@@ -42,6 +42,9 @@ partition, и first boot должен применить Wi-Fi/API/token/passwor
   it copies vendor DTBO files to boot `overlays/`, comments out conflicting
   `vc4-*kms-v3d` overlays, and appends the Rick TV legacy DPI display block to
   `config.txt`.
+- The payload installer also writes Rick TV's `/boot/video_looper.ini` settings
+  during image customization so the clean image starts in directory/playlist
+  mode before firstboot repeats the same idempotent config.
 - `rick-tv-pi/provisioning/firstboot/rick-tv-firstboot.sh` reads
   `rick-tv.env` from the boot partition, writes `/etc/rick-tv-pi.env`,
   configures Wi-Fi/SSH/hostname, installs Rick TV service/videolooper assets and

@@ -369,6 +369,74 @@ def test_packaged_image_payload_installer_applies_waveshare_display_boot_config(
         assert expected in config
 
 
+def test_packaged_image_payload_installer_applies_videolooper_boot_config(
+    tmp_path,
+) -> None:
+    rootfs = tmp_path / "rootfs"
+    bootfs = tmp_path / "bootfs"
+    rootfs.mkdir()
+    bootfs.mkdir()
+    (bootfs / "video_looper.ini").write_text(
+        "[video_looper]\n"
+        "file_reader = usb_drive\n"
+        "osd = true\n"
+        "countdown_time = 5\n"
+        "console_output = false\n"
+        "\n"
+        "[control]\n"
+        "keyboard_control = true\n"
+        "\n"
+        "[directory]\n"
+        "path = /home/pi/video\n"
+        "\n"
+        "[playlist]\n"
+        "path = \n"
+        "\n"
+        "[omxplayer]\n"
+        "show_titles = false\n"
+        "title_duration = 10\n"
+        "extra_args = --no-osd --audio_fifo 0.01 --video_fifo 0.01 --align center --font-size 55\n",
+        encoding="utf-8",
+    )
+
+    for _ in range(2):
+        result = subprocess.run(
+            [
+                "bash",
+                str(IMAGE_INSTALLER),
+                "--rootfs",
+                str(rootfs),
+                "--bootfs",
+                str(bootfs),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    content = (bootfs / "video_looper.ini").read_text(encoding="utf-8")
+    for expected in [
+        "video_player = omxplayer",
+        "file_reader = directory",
+        "osd = false",
+        "countdown_time = 0",
+        "wait_time = 0",
+        "datetime_display = false",
+        "is_random = false",
+        "console_output = true",
+        "keyboard_control = false",
+        "gpio_pin_mode = true",
+        "gpio_pin_map = ",
+        "path = /home/pi/rick-tv",
+        "path = playlists/channels.m3u",
+        "show_titles = true",
+        "command_fifo = /tmp/rick-tv-videolooper.fifo",
+    ]:
+        assert expected in content
+    assert content.count("[rick_tv]") == 1
+
+
 def test_packaged_image_payload_installer_excludes_local_secrets_and_runtime_data() -> None:
     content = IMAGE_INSTALLER.read_text(encoding="utf-8")
 

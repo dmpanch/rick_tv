@@ -39,6 +39,7 @@ FIRSTBOOT_EXAMPLE="$PROVISIONING_DIR/rick-tv.env.example"
 DISPLAY_CONFIG="$PROVISIONING_DIR/display/config.txt.waveshare-28dpi-legacy"
 DISPLAY_OVERLAY_DIR="$PROVISIONING_DIR/vendor/waveshare-28dpi/overlays"
 DISPLAY_CONFIG_MARKER="# Rick TV Waveshare 2.8inch DPI LCD"
+VIDEOLOOPER_CONFIGURER="$PROVISIONING_DIR/videolooper/configure_rick_tv_videolooper.py"
 
 apply_waveshare_display_boot_config() {
   local config_file="$BOOTFS/config.txt"
@@ -64,6 +65,14 @@ apply_waveshare_display_boot_config() {
   fi
 }
 
+apply_videolooper_boot_config() {
+  local config_file="$BOOTFS/video_looper.ini"
+
+  [[ -f "$VIDEOLOOPER_CONFIGURER" ]] || die "missing videolooper config script"
+  touch "$config_file"
+  RICK_TV_VIDEOLOOPER_CONFIG_PATH="$config_file" python3 "$VIDEOLOOPER_CONFIGURER"
+}
+
 [[ -n "$ROOTFS" ]] || die "--rootfs is required"
 [[ -n "$BOOTFS" ]] || die "--bootfs is required"
 [[ -d "$ROOT_DIR" ]] || die "source root path not found: $ROOT_DIR"
@@ -74,6 +83,7 @@ apply_waveshare_display_boot_config() {
 [[ -f "$FIRSTBOOT_EXAMPLE" ]] || die "missing firstboot env example"
 [[ -f "$DISPLAY_CONFIG" ]] || die "missing Waveshare display config"
 [[ -d "$DISPLAY_OVERLAY_DIR" ]] || die "missing Waveshare overlay directory"
+[[ -f "$VIDEOLOOPER_CONFIGURER" ]] || die "missing videolooper config script"
 if [[ -n "$BOOT_CONFIG" && ! -f "$BOOT_CONFIG" ]]; then
   die "boot config not found: $BOOT_CONFIG"
 fi
@@ -93,6 +103,7 @@ if [[ -n "$BOOT_CONFIG" ]]; then
   install -m 0600 "$BOOT_CONFIG" "$BOOTFS/rick-tv.env"
 fi
 apply_waveshare_display_boot_config
+apply_videolooper_boot_config
 
 tar \
   --exclude=".git" \

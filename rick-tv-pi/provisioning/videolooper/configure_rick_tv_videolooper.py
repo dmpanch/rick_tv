@@ -2,10 +2,11 @@
 """Configure /boot/video_looper.ini for Rick TV channel playlists."""
 
 import configparser
+import os
 from pathlib import Path
 
 
-CONFIG_PATH = Path("/boot/video_looper.ini")
+CONFIG_PATH = Path(os.environ.get("RICK_TV_VIDEOLOOPER_CONFIG_PATH", "/boot/video_looper.ini"))
 
 
 def main() -> None:
