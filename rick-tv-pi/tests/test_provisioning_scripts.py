@@ -711,6 +711,7 @@ def test_firstboot_example_uses_placeholders_only() -> None:
     assert "RICK_TV_SERVER_URL" in content
     assert "RICK_TV_REMOTE_POLL_INTERVAL_SECONDS" in content
     assert "RICK_TV_TOUCH_SCREEN_WIDTH" in content
+    assert 'RICK_TV_TOUCH_SWAP_AXES="auto"' in content
     assert "RICK_TV_TELEGRAM_BOT_TOKEN" not in content
     assert "RICK_TV_TELEGRAM_ALLOWED_USER_IDS" not in content
 
