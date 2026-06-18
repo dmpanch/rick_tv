@@ -174,6 +174,22 @@ kernel panic.
   does not initialize that FIFO tracking field. It therefore treated the command
   as a different playlist and drew `transition-placeholder.fb` even though this
   was effectively a same-channel refresh.
+- 2026-06-18 18:51-18:56 Europe/Kyiv: started an A/B run with
+  `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` and restarted supervisor
+  `video_looper`. Evidence was left on the Pi in
+  `/home/pi/rick-tv/diagnostics/watch-ab-disabled-20260618T154954Z`; local watch
+  log was `/tmp/rick-tv-ab-disabled-watch-20260618T155105Z.log`. The restart
+  logged `Rick TV cleared stale framebuffer because
+  RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS is enabled`, and subsequent video
+  changes logged `Rick TV interstitial ad disabled by
+  RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS`.
+- During the disabled-placeholder A/B run, `omxplayer` still produced three new
+  `Aborted` entries within about five minutes while ping, server polling,
+  `get_throttled=0x0`, temperature, and kernel logs stayed normal. This makes
+  raw `/dev/fb0` writes unlikely to be the primary cause of the repeated
+  user-space player aborts. The remaining leading suspect for player aborts is
+  the legacy videolooper/omxplayer process-per-file lifecycle: every video
+  transition tears down one `omxplayer.bin` process and starts another.
 
 ## Current Hypothesis
 - Code-level routing is correct for FIFO commands once
@@ -193,15 +209,15 @@ kernel panic.
   framebuffer pressure, and passive in-channel interstitial playback. Treat the
   current failure as proven user-space player instability and unproven kernel
   panic until a full freeze captures crash evidence.
-- The A/B run with raw placeholder writes disabled did not reproduce the panic
-  during its shorter stress window. This is useful but not conclusive: a longer
-  A/B soak is still needed before deciding whether repeated raw framebuffer
-  writes are the root cause or merely adjacent to the failure. The one-time black
-  clear is intentionally separate from regular placeholder drawing.
-- If the disabled-placeholder A/B build survives a longer soak while raw-enabled
-  runs continue to produce `omxplayer` abort/freeze symptoms, raw framebuffer
-  access becomes the leading suspect and the replacement should be an
-  omxplayer-managed or pre-rendered MP4 transition path.
+- The disabled-placeholder A/B run reproduced `omxplayer.bin Aborted` without
+  regular raw `/dev/fb0` placeholder writes. Raw framebuffer access can still be
+  involved in visual flicker or the unproven appliance freeze, but it is no
+  longer the leading explanation for the repeated user-space player aborts.
+- The strongest player-stability fix is likely replacing the legacy
+  `omxplayer` process-per-file model with a playback backend that keeps one
+  player process alive and accepts playlist/load commands over IPC. `mpv` is the
+  leading candidate because it supports JSON IPC and playlist/loadfile commands;
+  VLC/GStreamer are alternatives if they work better on the legacy Pi image.
 
 ## Test Plan
 - [x] Unit/source tests assert exactly one transition draw path for FIFO channel
@@ -220,13 +236,17 @@ kernel panic.
 - [x] One-hour raw-enabled post-reboot soak completed without ping loss or
   kernel evidence, while recording six `omxplayer.bin Aborted` entries during
   regular in-channel interstitial playback.
+- [x] Disabled-placeholder A/B run reproduced `omxplayer.bin Aborted` without
+  regular raw `/dev/fb0` placeholder writes.
 - [ ] Capture video/photo evidence of actual screen behavior during channel
   switch and in-channel transition, because logs prove code path selection but
   not visual flicker timing.
 - [ ] Fix and retest the first post-startup same-channel FIFO refresh so hourly
   reshuffle does not draw a channel-switch transition placeholder.
-- [ ] Run a longer A/B soak with raw `/dev/fb0` placeholders disabled before
-  deciding whether to delete or replace the `.fb` path.
+- [ ] Prototype a persistent-player backend, preferably `mpv` JSON IPC, so
+  in-channel video transitions do not recreate `omxplayer.bin` for every file.
+- [ ] Run a longer disabled-placeholder soak only if appliance-level freezes
+  continue and raw `/dev/fb0` remains a suspect for the freeze path.
 
 ## Assumptions
 - This task is investigation-first; do not remove the existing `.fb` assets until
