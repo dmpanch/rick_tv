@@ -67,7 +67,10 @@ TV's custom phase script, stages the Rick TV payload, and writes
 display block to `config.txt`, writes Rick TV's `/boot/video_looper.ini`,
 patches the Video Looper egg, installs placeholder assets, creates the empty
 playlist tree, installs panic/watchdog recovery config, installs
-`rick-tv-pi.service`, and builds `/opt/rick-tv-pi/.venv`. Optionally pass
+`rick-tv-pi.service`, and builds `/opt/rick-tv-pi/.venv`. The venv installs
+`evdev==1.7.1` and `certifi==2026.4.22` as pip-level runtime overrides because
+the legacy `videolooper.de` Buster image otherwise exposes older system
+packages through `--system-site-packages`. Optionally pass
 `--boot-config /path/to/rick-tv.env` to put a filled first-boot config onto a
 private generated image. Do not commit filled config files.
 
@@ -100,6 +103,8 @@ The deploy script:
 - installs required packages only;
 - copies the project to `/opt/rick-tv-src`;
 - installs `rick-tv-pi` into `/opt/rick-tv-pi/.venv`;
+- installs pinned venv runtime overrides matching the working Pi:
+  `evdev==1.7.1` and `certifi==2026.4.22`;
 - writes the systemd unit;
 - configures `/boot/video_looper.ini`;
 - installs pinned Rick TV overrides into the Video Looper Python egg;

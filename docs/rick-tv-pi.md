@@ -97,7 +97,10 @@ files to the boot partition, appends Rick TV's legacy DPI display config to
 `config.txt`, writes Rick TV's `/boot/video_looper.ini` settings, patches the
 Video Looper egg, installs placeholder assets, creates the empty playlist tree,
 installs panic/watchdog recovery config, installs `rick-tv-pi.service`, and
-builds `/opt/rick-tv-pi/.venv`. You can pass
+builds `/opt/rick-tv-pi/.venv`. The venv explicitly pins
+`evdev==1.7.1` and `certifi==2026.4.22` after installing `rick-tv-pi`, matching
+the working Pi and avoiding the old Debian Buster system packages from the
+base image. You can pass
 `--boot-config /path/to/rick-tv.env` to include a filled first-boot config in a
 private generated image, but filled configs must stay out of git and are not
 required for distribution.

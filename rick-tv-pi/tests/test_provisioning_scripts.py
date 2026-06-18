@@ -64,6 +64,21 @@ def test_deploy_applies_pi_recovery_config() -> None:
     )
 
 
+def test_deploy_installs_pinned_runtime_overrides_after_project() -> None:
+    script = PROJECT_ROOT / "provisioning" / "deploy_videolooper_image.sh"
+    content = script.read_text(encoding="utf-8")
+
+    project_install = "/opt/rick-tv-pi/.venv/bin/pip install /opt/rick-tv-src/rick-tv-pi"
+    override_install = (
+        "/opt/rick-tv-pi/.venv/bin/pip install "
+        "'evdev==1.7.1' 'certifi==2026.4.22'"
+    )
+
+    assert project_install in content
+    assert override_install in content
+    assert content.index(project_install) < content.index(override_install)
+
+
 def test_deploy_uses_single_full_config_example_for_missing_runtime_env() -> None:
     script = PROJECT_ROOT / "provisioning" / "deploy_videolooper_image.sh"
     content = script.read_text(encoding="utf-8")
@@ -674,6 +689,12 @@ def test_sdm_custom_phase_stages_payload_with_sdmpt_and_installs_runtime() -> No
     assert "pip<24.1" in content
     assert "setuptools>=61,<69" in content
     assert "/opt/rick-tv-pi/.venv/bin/pip install /opt/rick-tv-src/rick-tv-pi" in content
+    assert "/opt/rick-tv-pi/.venv/bin/pip install 'evdev==1.7.1' 'certifi==2026.4.22'" in content
+    assert content.index(
+        "/opt/rick-tv-pi/.venv/bin/pip install /opt/rick-tv-src/rick-tv-pi"
+    ) < content.index(
+        "/opt/rick-tv-pi/.venv/bin/pip install 'evdev==1.7.1' 'certifi==2026.4.22'"
+    )
     assert "apt-get upgrade" not in content
     assert "apt upgrade" not in content
     assert "RICK_TV_TELEGRAM_BOT_TOKEN" not in content

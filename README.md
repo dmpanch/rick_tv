@@ -169,6 +169,9 @@ DPI LCD boot config and overlays during image customization, writes Rick TV's
 `/boot/video_looper.ini`, patches the Video Looper egg, installs placeholder
 assets, creates the empty playlist tree, installs panic/watchdog recovery
 config, installs `rick-tv-pi.service`, and builds `/opt/rick-tv-pi/.venv`.
+Because the legacy `videolooper.de` image ships old Debian Buster Python
+packages, the image also installs the venv runtime overrides observed on the
+working Pi: `evdev==1.7.1` and `certifi==2026.4.22`.
 
 The generated image contains only the placeholder `rick-tv.env.example`, not a
 filled `/boot/rick-tv.env`. Copy `rick-tv.env.example` from the boot partition

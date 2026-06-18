@@ -32,7 +32,9 @@ partition, и first boot должен применить Wi-Fi/API/token/passwor
   payload during sdm Phase 0 and installs the non-secret Pi runtime during Phase
   1. Phase 1 installs only required packages, creates
   `/opt/rick-tv-pi/.venv --system-site-packages`, pins Python 3.7-compatible
-  packaging tools, and installs `rick-tv-pi` from `/opt/rick-tv-src/rick-tv-pi`.
+  packaging tools, installs `rick-tv-pi` from `/opt/rick-tv-src/rick-tv-pi`,
+  then installs the working-Pi runtime overrides `evdev==1.7.1` and
+  `certifi==2026.4.22`.
   It does not run `apt upgrade` and does not install secrets.
 - `rick-tv-pi/provisioning/image/install_packaged_image_payload.sh` stages the
   repository into `/opt/rick-tv-src`, installs

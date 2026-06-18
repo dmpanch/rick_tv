@@ -77,6 +77,7 @@ run_phase1() {
   python3 -m venv --system-site-packages /opt/rick-tv-pi/.venv
   /opt/rick-tv-pi/.venv/bin/pip install --upgrade 'pip<24.1' 'setuptools>=61,<69'
   /opt/rick-tv-pi/.venv/bin/pip install /opt/rick-tv-src/rick-tv-pi
+  /opt/rick-tv-pi/.venv/bin/pip install 'evdev==1.7.1' 'certifi==2026.4.22'
 }
 
 load_sdm_params
