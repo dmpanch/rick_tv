@@ -13,8 +13,21 @@ Do not run `apt upgrade` on the target Pi as part of Rick TV deployment.
 ## Packaged Image Payload
 
 The preferred install path is a Rick TV-prepared image made from the known-good
-legacy videolooper base image. Mount the image root and boot partitions, then
-stage the Rick TV payload from the repository root:
+legacy videolooper base image. If you have the base image file locally, build a
+flashable Rick TV image from the repository root:
+
+```sh
+sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
+  --base-image /path/to/known-good-videolooper.img \
+  --output-image /path/to/rick-tv.img
+```
+
+The builder copies the base image, mounts its root/boot partitions through a
+loop device, stages the Rick TV payload, and writes `rick-tv.img.sha256`.
+Optionally pass `--boot-config /path/to/rick-tv.env` to put a filled first-boot
+config onto the generated image. Do not commit filled config files.
+
+If the partitions are already mounted, stage the payload directly:
 
 ```sh
 rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \

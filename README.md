@@ -82,8 +82,17 @@ docker compose --profile bot up -d --build
 После первого входа замените пароль или добавьте SSH key и отключите парольный доступ, если Pi будет жить в постоянной сети.
 
 Для новой установки предпочтительный путь — подготовить known-good legacy
-`videolooper` image как Rick TV image. Смонтируйте root/boot partitions образа и
-запустите:
+`videolooper` image как Rick TV image:
+
+```bash
+sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
+  --base-image /path/to/known-good-videolooper.img \
+  --output-image /path/to/rick-tv.img
+```
+
+Builder копирует base image, монтирует root/boot partitions через loop device,
+кладёт Rick TV payload и пишет `rick-tv.img.sha256`. Если root/boot partitions
+уже смонтированы вручную, можно вызвать низкоуровневый installer:
 
 ```bash
 rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \

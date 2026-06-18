@@ -9,6 +9,7 @@ FIRSTBOOT_EXAMPLE = PROJECT_ROOT / "provisioning" / "firstboot" / "rick-tv.env.e
 IMAGE_INSTALLER = (
     PROJECT_ROOT / "provisioning" / "image" / "install_packaged_image_payload.sh"
 )
+IMAGE_BUILDER = PROJECT_ROOT / "provisioning" / "image" / "build_packaged_image.sh"
 
 
 def test_deploy_restarts_videolooper_before_pi_runtime() -> None:
@@ -177,6 +178,52 @@ def test_packaged_image_payload_installer_excludes_local_secrets_and_runtime_dat
         "manual-test-videos",
     ]:
         assert f'--exclude="{excluded}"' in content
+
+
+def test_packaged_image_builder_dry_run_copies_base_and_reports_steps(tmp_path) -> None:
+    base_image = tmp_path / "base.img"
+    output_image = tmp_path / "rick-tv.img"
+    base_image.write_bytes(b"fake image bytes")
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(IMAGE_BUILDER),
+            "--base-image",
+            str(base_image),
+            "--output-image",
+            str(output_image),
+        ],
+        check=False,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "RICK_TV_IMAGE_BUILDER_DRY_RUN": "1",
+        },
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert output_image.read_bytes() == base_image.read_bytes()
+    assert "dry-run: would attach loop device with partitions" in result.stdout
+    assert "dry-run: would run install_packaged_image_payload.sh" in result.stdout
+    assert (tmp_path / "rick-tv.img.sha256").exists()
+
+
+def test_packaged_image_builder_mounts_stages_and_cleans_up_loop_device() -> None:
+    content = IMAGE_BUILDER.read_text(encoding="utf-8")
+
+    for expected in [
+        "losetup --find --partscan --show",
+        "mount \"${loop_device}p2\"",
+        "mount \"${loop_device}p1\"",
+        "install_packaged_image_payload.sh",
+        "sha256sum",
+        "trap cleanup EXIT",
+        "umount",
+        "losetup -d",
+    ]:
+        assert expected in content
 
 
 def test_firstboot_example_uses_placeholders_only() -> None:

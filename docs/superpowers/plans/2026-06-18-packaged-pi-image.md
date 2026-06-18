@@ -22,6 +22,11 @@ partition, и first boot должен применить Wi-Fi/API/token/passwor
   lab Pi, but the packaged image becomes the preferred install path.
 
 ## Current Implementation
+- `rick-tv-pi/provisioning/image/build_packaged_image.sh` is the documented
+  local builder. It copies a known-good legacy base image, mounts its
+  root/boot partitions via loop device, runs the payload installer, optionally
+  copies a filled `rick-tv.env` to the boot partition, cleans up mounts/loop
+  devices through a trap, and writes an image `.sha256`.
 - `rick-tv-pi/provisioning/image/install_packaged_image_payload.sh` stages the
   repository into `/opt/rick-tv-src` on a mounted known-good legacy rootfs,
   installs `/usr/local/sbin/rick-tv-firstboot`, enables
@@ -37,7 +42,7 @@ partition, и first boot должен применить Wi-Fi/API/token/passwor
   `RICK_TV_OVERWRITE_ENV=true` is explicitly set.
 
 ## Test Plan
-- [ ] Build image artifact in CI or documented local builder.
+- [x] Build image artifact in CI or documented local builder.
 - [x] Mount image boot partition and verify placeholder first-boot config exists.
 - [ ] Boot on a spare Pi from a config file only; verify Wi-Fi, SSH, display,
   `video_looper`, `rick-tv-pi.service`, `/api/v1/channels` sync, media download,
@@ -48,5 +53,6 @@ partition, и first boot должен применить Wi-Fi/API/token/passwor
 ## Assumptions
 - The initial target remains the known working legacy videolooper image because
   it is the current stable playback solution.
-- A full flashed image artifact and spare-Pi boot validation remain follow-up
-  verification work; this change adds the payload and first-boot mechanism.
+- A full spare-Pi boot validation remains follow-up verification work; this
+  change adds the local image builder, payload installer, and first-boot
+  mechanism.

@@ -16,7 +16,20 @@ The Phase 1 runtime assumes the existing Raspberry Pi TV hardware remains in pla
 
 Rick TV Pi currently targets the prepared Raspberry Pi OS Legacy/Buster image
 with Adafruit `pi_video_looper` already installed. For a new installation,
-prepare that known-good base image with the packaged Rick TV payload:
+build a Rick TV image from that known-good base image:
+
+```sh
+sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
+  --base-image /path/to/known-good-videolooper.img \
+  --output-image /path/to/rick-tv.img
+```
+
+The builder copies the base image, mounts its root/boot partitions through a
+loop device, stages Rick TV, and writes a `.sha256` file beside the output. You
+can pass `--boot-config /path/to/rick-tv.env` to include a filled first-boot
+config in the generated image. Keep filled configs out of git.
+
+If you already have the image partitions mounted, stage the payload directly:
 
 ```sh
 rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \
