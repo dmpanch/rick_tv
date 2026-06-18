@@ -93,7 +93,8 @@ case "$phase" in
     log "Phase 1 runtime install completed"
     ;;
   post-install)
-    log "post-install skipped; firstboot applies external runtime configuration"
+    log "post-install refreshing SD-safe logging cleanup"
+    RICK_TV_LOGGING_ROOT="/" bash /opt/rick-tv-src/rick-tv-pi/provisioning/scripts/configure-pi-logging.sh
     ;;
   *)
     die "unknown sdm phase: $phase"

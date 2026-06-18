@@ -247,6 +247,20 @@ The diagnostics bundle includes `journalctl`, supervisor status/tails, `dmesg`,
 `/sys/class/graphics/fb0/*`, playback process command lines, installed
 videolooper override markers, and a redacted `/etc/rick-tv-pi.env`.
 
+## Logging
+
+Provisioning runs `scripts/configure-pi-logging.sh` so normal runtime logs do not
+wear the SD card. `journald` uses volatile storage with a small RAM cap, and
+`rsyslog` is masked so logs are not duplicated into `/var/log/syslog`,
+`/var/log/daemon.log`, or `/var/log/messages`. `journalctl` still shows current
+boot logs, including successful remote command polling, but that history is lost
+after reboot.
+
+Supervisor and `video_looper` logs are written under `/run/rick-tv-logs` with
+small rotation limits. Use `journalctl -u rick-tv-pi.service` and
+`sudo supervisorctl tail video_looper stdout` for live debugging; do not expect
+durable Pi-side runtime logs after a reboot.
+
 Provisioning installs Pi recovery hardening for appliance freezes:
 `kernel.panic=10`, `kernel.panic_on_oops=1`, `panic=10` in the boot cmdline,
 `dtparam=watchdog=on`, and a systemd manager watchdog drop-in with
@@ -266,7 +280,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now rick-tv-pi.service
 ```
 
-The service writes stdout and stderr to the journal. Rick TV delivery state remains server-authoritative; the Pi does not maintain durable delivery logs.
+The service writes stdout and stderr to the volatile journal. Rick TV delivery
+state remains server-authoritative; the Pi does not maintain durable delivery
+logs.
 
 ## SSH Access
 

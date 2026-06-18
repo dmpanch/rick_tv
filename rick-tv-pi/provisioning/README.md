@@ -177,6 +177,15 @@ skipping both regular raw `/dev/fb0` placeholder writes. On startup, the
 override clears any stale framebuffer image to black once so an old placeholder
 does not show through when omxplayer stops between videos.
 
+## SD-Safe Logging
+
+Provisioning runs `scripts/configure-pi-logging.sh` for both packaged images and
+running-Pi deploys. It keeps runtime logs in RAM: `journald` is volatile,
+`rsyslog` is masked, and supervisor/`video_looper` logs rotate under
+`/run/rick-tv-logs`. Current-boot logs are still available through `journalctl`
+and `supervisorctl tail`, including successful remote command polls, but they
+are not durable after reboot.
+
 ## Panic And Watchdog Recovery
 
 Provisioning runs `scripts/configure-pi-recovery.sh` on both a running deploy and

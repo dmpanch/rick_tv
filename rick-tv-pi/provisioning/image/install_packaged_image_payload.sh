@@ -46,6 +46,7 @@ VIDEOLOOPER_PLAYLIST_GENERATOR="$PROVISIONING_DIR/videolooper/generate_channel_p
 VIDEOLOOPER_ASSET_DIR="$PROVISIONING_DIR/videolooper/assets"
 VIDEOLOOPER_EGG="$ROOTFS/usr/local/lib/python3.7/dist-packages/Adafruit_Video_Looper-1.0.21-py3.7.egg"
 RECOVERY_SCRIPT="$PROVISIONING_DIR/scripts/configure-pi-recovery.sh"
+LOGGING_SCRIPT="$PROVISIONING_DIR/scripts/configure-pi-logging.sh"
 
 apply_waveshare_display_boot_config() {
   local config_file="$BOOTFS/config.txt"
@@ -109,6 +110,9 @@ stage_rick_tv_runtime_payload() {
     RICK_TV_RECOVERY_BOOT="$BOOTFS" \
     bash "$RECOVERY_SCRIPT"
 
+  RICK_TV_LOGGING_ROOT="$ROOTFS" \
+    bash "$LOGGING_SCRIPT"
+
   chown -R 1000:1000 "$ROOTFS/home/pi/rick-tv" 2>/dev/null || true
 }
 
@@ -129,6 +133,7 @@ stage_rick_tv_runtime_payload() {
 [[ -f "$VIDEOLOOPER_ASSET_DIR/transition-placeholder.fb" ]] || die "missing transition placeholder"
 [[ -f "$VIDEOLOOPER_ASSET_DIR/interstitial-ad.fb" ]] || die "missing interstitial placeholder"
 [[ -f "$RECOVERY_SCRIPT" ]] || die "missing recovery config script"
+[[ -f "$LOGGING_SCRIPT" ]] || die "missing SD-safe logging config script"
 if [[ -n "$BOOT_CONFIG" && ! -f "$BOOT_CONFIG" ]]; then
   die "boot config not found: $BOOT_CONFIG"
 fi
