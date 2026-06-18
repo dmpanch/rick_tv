@@ -5,7 +5,7 @@
 Rick TV Pi runtime, legacy videolooper dependencies, Waveshare display setup,
 systemd service, supervisor config, and pinned Rick TV videolooper overrides.
 Пользователь после записи образа должен положить один config file на boot
-partition, и first boot должен применить Wi-Fi/API/token/password settings.
+partition, и first boot должен применить Wi-Fi/API/token/password/env variables settings.
 
 ## Key Changes
 - Выбрать image build path: reproducible builder based on Raspberry Pi OS
