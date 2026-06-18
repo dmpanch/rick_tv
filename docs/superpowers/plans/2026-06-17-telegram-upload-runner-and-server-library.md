@@ -167,7 +167,7 @@ The server becomes the canonical media library: it keeps original uploads and co
 ### Task 12: End-To-End Contract Coverage
 
 **Files:**
-- Modify: `tests/test_end_to_end_contract.py`
+- Modify: `rick-tv-pi/tests/test_end_to_end_contract.py`
 
 - [x] Test first upload to a new registry channel is available to an empty Pi media root.
 - [x] Test Pi downloads channel registry JSON, polls with registry IDs, downloads pending media, atomically places it, and acks it.
@@ -190,7 +190,7 @@ Run after implementation:
 ```bash
 cd rick-tv-server && python -m pytest -v
 cd ../rick-tv-pi && python -m pytest -v
-cd .. && python -m pytest tests/test_end_to_end_contract.py -v
+cd .. && python -m pytest rick-tv-pi/tests/test_end_to_end_contract.py -v
 cd rick-tv-server && docker compose config
 ```
 

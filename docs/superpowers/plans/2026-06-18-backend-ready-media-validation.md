@@ -25,7 +25,7 @@
 - Delete `rick-tv-pi/src/rick_tv_pi/validator.py`: validation no longer belongs to Pi runtime.
 - Delete `rick-tv-pi/tests/test_validator.py`: validator tests move to the server.
 - Modify `rick-tv-pi/tests/test_poller.py`: rewrite delivery tests around checksum and atomic placement, not media-profile validation.
-- Modify `tests/test_end_to_end_contract.py`: remove Pi validator monkeypatches and assert server-ready media delivery.
+- Modify `rick-tv-pi/tests/test_end_to_end_contract.py`: remove Pi validator monkeypatches and assert server-ready media delivery.
 - Modify `README.md`, `docs/rick-tv-pi.md`, and `docs/rick-tv-server.md`: document server validation and Pi runtime requirements.
 
 ## Task 1: Add Server Ready-Profile Validator
@@ -974,11 +974,11 @@ git commit -m "feat: trust server-validated media on pi"
 ## Task 6: Update End-to-End Contract Tests
 
 **Files:**
-- Modify: `tests/test_end_to_end_contract.py`
+- Modify: `rick-tv-pi/tests/test_end_to_end_contract.py`
 
 - [ ] **Step 1: Remove Pi validator monkeypatches from contract tests**
 
-In `tests/test_end_to_end_contract.py`, remove:
+In `rick-tv-pi/tests/test_end_to_end_contract.py`, remove:
 
 ```python
 import rick_tv_pi.poller as poller_module
@@ -999,14 +999,14 @@ For tests that only use `monkeypatch` for this block, remove the `monkeypatch` f
 
 - [ ] **Step 2: Run contract tests and verify they pass**
 
-Run: `python -m pytest tests/test_end_to_end_contract.py -v`
+Run: `python -m pytest rick-tv-pi/tests/test_end_to_end_contract.py -v`
 
 Expected: PASS.
 
 - [ ] **Step 3: Commit contract update**
 
 ```bash
-git add tests/test_end_to_end_contract.py
+git add rick-tv-pi/tests/test_end_to_end_contract.py
 git commit -m "test: update media delivery contract"
 ```
 
@@ -1096,7 +1096,7 @@ Expected: PASS.
 Run:
 
 ```bash
-python -m pytest tests/test_end_to_end_contract.py -v
+python -m pytest rick-tv-pi/tests/test_end_to_end_contract.py -v
 ```
 
 Expected: PASS.

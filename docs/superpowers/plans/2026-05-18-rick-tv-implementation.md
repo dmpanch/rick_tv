@@ -78,7 +78,7 @@ Audited against the current repository state on 2026-06-17. These checkboxes mar
 - [x] Task 26: Repo-level Pi/server contract test exists.
 - [x] Task 27: Full Pi verification passes with `.venv/bin/python -m pytest rick-tv-pi/tests -v`.
 - [x] Task 28: Full server verification passes with `.venv/bin/python -m pytest rick-tv-server/tests -v` plus Docker smoke.
-- [x] Task 29: Automated end-to-end verification passes with `.venv/bin/python -m pytest tests/test_end_to_end_contract.py -v` and root `.venv/bin/python -m pytest -v`.
+- [x] Task 29: Automated end-to-end verification passes with `.venv/bin/python -m pytest rick-tv-pi/tests/test_end_to_end_contract.py -v` and root `.venv/bin/python -m pytest -v`.
 
 ### Task 1: Scaffold Pi Package
 
@@ -889,7 +889,7 @@ Run: `git add rick-tv-server/src/rick_tv_server/api.py rick-tv-server/tests/test
 ### Task 26: End-To-End Local Contract Test
 
 **Files:**
-- Create: `tests/test_end_to_end_contract.py`
+- Create: `rick-tv-pi/tests/test_end_to_end_contract.py`
 - Modify: `pyproject.toml` if a repo-level test runner is introduced
 
 - [ ] **Step 1: Write failing cross-project test**
@@ -898,7 +898,7 @@ Create a repo-level pytest that initializes server state with a pending converte
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest tests/test_end_to_end_contract.py -v`
+Run: `pytest rick-tv-pi/tests/test_end_to_end_contract.py -v`
 
 Expected: FAIL until imports/test path wiring is configured.
 
@@ -912,13 +912,13 @@ Adjust only public interfaces from previous tasks if needed: server ready/downlo
 
 - [ ] **Step 5: Run contract test**
 
-Run: `pytest tests/test_end_to_end_contract.py -v`
+Run: `pytest rick-tv-pi/tests/test_end_to_end_contract.py -v`
 
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
-Run: `git add pyproject.toml tests/test_end_to_end_contract.py rick-tv-pi rick-tv-server && git commit -m "test: verify pi server delivery contract"`
+Run: `git add pyproject.toml rick-tv-pi/tests/test_end_to_end_contract.py rick-tv-pi rick-tv-server && git commit -m "test: verify pi server delivery contract"`
 
 ### Task 27: Full Pi Verification
 

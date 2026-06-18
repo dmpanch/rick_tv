@@ -1,8 +1,16 @@
 .worktrees/
 .venv/
 __pycache__/
+*.py[cod]
 *.egg-info/
 .pytest_cache/
+.coverage
+.coverage.*
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+build/
+dist/
 
 rick-tv-server/.env
 rick-tv-server/media/

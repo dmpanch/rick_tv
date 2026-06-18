@@ -98,7 +98,7 @@ Expected: all API tests pass.
 **Files:**
 - Modify: `rick-tv-pi/src/rick_tv_pi/poller.py`
 - Test: `rick-tv-pi/tests/test_poller.py`
-- Test: `tests/test_end_to_end_contract.py`
+- Test: `rick-tv-pi/tests/test_end_to_end_contract.py`
 
 - [x] **Step 1: Write failing poller tests**
 
@@ -109,7 +109,7 @@ Add tests asserting the Pi poller removes `media_root/<channel_id>/<filename>` f
 Run:
 
 ```bash
-.venv/bin/python -m pytest rick-tv-pi/tests/test_poller.py tests/test_end_to_end_contract.py -v
+.venv/bin/python -m pytest rick-tv-pi/tests/test_poller.py rick-tv-pi/tests/test_end_to_end_contract.py -v
 ```
 
 Expected: new tests fail because the poller ignores deletions.
@@ -123,7 +123,7 @@ Add a `DeleteItem` dataclass, parse `response.json().get("deletions", [])`, unli
 Run:
 
 ```bash
-.venv/bin/python -m pytest rick-tv-pi/tests/test_poller.py tests/test_end_to_end_contract.py -v
+.venv/bin/python -m pytest rick-tv-pi/tests/test_poller.py rick-tv-pi/tests/test_end_to_end_contract.py -v
 ```
 
 Expected: all poller and contract tests pass.
@@ -199,7 +199,7 @@ Expected: all tests pass and whitespace check is clean.
 Run:
 
 ```bash
-git add README.md docs/rick-tv-server.md docs/superpowers/plans/2026-06-17-channel-video-management.md rick-tv-server/src/rick_tv_server rick-tv-server/tests rick-tv-pi/src/rick_tv_pi rick-tv-pi/tests tests/test_end_to_end_contract.py
+git add README.md docs/rick-tv-server.md docs/superpowers/plans/2026-06-17-channel-video-management.md rick-tv-server/src/rick_tv_server rick-tv-server/tests rick-tv-pi/src/rick_tv_pi rick-tv-pi/tests rick-tv-pi/tests/test_end_to_end_contract.py
 git commit -m "feat: manage channel videos from telegram"
 git push
 ```
