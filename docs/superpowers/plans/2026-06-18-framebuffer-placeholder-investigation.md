@@ -213,6 +213,11 @@ kernel panic.
   regular raw `/dev/fb0` placeholder writes. Raw framebuffer access can still be
   involved in visual flicker or the unproven appliance freeze, but it is no
   longer the leading explanation for the repeated user-space player aborts.
+- Pi provisioning now installs recovery hardening: kernel panic reboot after 10
+  seconds, panic-on-oops, `panic=10` boot arg, Raspberry Pi watchdog enablement,
+  and a systemd manager watchdog. This should improve appliance recovery after a
+  panic or full-system hang, but it does not identify the root cause and does not
+  change framebuffer placeholder rendering.
 - The strongest player-stability fix is likely replacing the legacy
   `omxplayer` process-per-file model with a playback backend that keeps one
   player process alive and accepts playlist/load commands over IPC. `mpv` is the
@@ -247,6 +252,8 @@ kernel panic.
   in-channel video transitions do not recreate `omxplayer.bin` for every file.
 - [ ] Run a longer disabled-placeholder soak only if appliance-level freezes
   continue and raw `/dev/fb0` remains a suspect for the freeze path.
+- [ ] After deploying recovery hardening, verify the Pi reboots cleanly after a
+  controlled reboot and records the configured panic/watchdog settings.
 
 ## Assumptions
 - This task is investigation-first; do not remove the existing `.fb` assets until

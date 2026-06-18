@@ -71,6 +71,7 @@ The deploy script:
 - installs pinned Rick TV `pi_video_looper` overrides into the Adafruit Video Looper egg;
 - installs `/home/pi/rick-tv/system/transition-placeholder.fb`;
 - installs `/home/pi/rick-tv/system/interstitial-ad.fb`;
+- installs kernel panic reboot and watchdog recovery config;
 - restarts `rick-tv-pi.service` and supervisor `video_looper`.
 
 If `/etc/rick-tv-pi.env` does not exist, the script installs
@@ -123,3 +124,18 @@ For A/B testing, set `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` in
 skipping both regular raw `/dev/fb0` placeholder writes. On startup, the
 override clears any stale framebuffer image to black once so an old placeholder
 does not show through when omxplayer stops between videos.
+
+## Panic And Watchdog Recovery
+
+Provisioning runs `scripts/configure-pi-recovery.sh` on both a running deploy and
+first boot of a packaged image. It installs:
+
+- `/etc/sysctl.d/99-rick-tv-panic.conf` with `kernel.panic=10` and `kernel.panic_on_oops=1`;
+- `panic=10` in the boot partition `cmdline.txt`;
+- `dtparam=watchdog=on` in the boot partition `config.txt`;
+- `/etc/systemd/system.conf.d/10-rick-tv-watchdog.conf` with `RuntimeWatchdogSec=15s` and `ShutdownWatchdogSec=2min`.
+
+The script is idempotent and does not run `apt upgrade`. Reboot once after
+deploying to activate boot-level panic/watchdog settings. This is recovery
+hardening only; placeholder rendering and `videolooper` playback behavior stay
+unchanged.

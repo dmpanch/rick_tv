@@ -113,6 +113,8 @@ Raw framebuffer placeholders are still part of the legacy `videolooper` runtime.
 
 `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` is a diagnostic flag. It disables the regular raw `/dev/fb0` placeholder writes, clears stale framebuffer content to black once at startup, and does not otherwise change the playback path. Recent diagnostics showed player aborts even with regular framebuffer placeholder writes disabled, so `omxplayer`/`videolooper` process lifecycle stability remains an active investigation item.
 
+Pi provisioning also installs recovery settings for appliance outages: kernel panic reboot after 10 seconds, panic-on-oops, and the Raspberry Pi/systemd hardware watchdog. This is recovery hardening only; it does not change placeholder rendering or prove the cause of any freeze. A controlled reboot after deploy is required for boot-level `panic=10` and watchdog settings to take full effect.
+
 ## Pi Environment
 
 The environment template is:

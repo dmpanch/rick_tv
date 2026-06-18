@@ -162,6 +162,22 @@ configure_ssh() {
   fi
 }
 
+configure_recovery() {
+  local source_root script
+  source_root="${RICK_TV_SOURCE_ROOT:-$(target_path /opt/rick-tv-src)}"
+  script="$source_root/rick-tv-pi/provisioning/scripts/configure-pi-recovery.sh"
+
+  if [[ ! -f "$script" ]]; then
+    log "Rick TV recovery script not found; skipping panic/watchdog config"
+    return 0
+  fi
+
+  RICK_TV_RECOVERY_ROOT="$ROOT" \
+    RICK_TV_RECOVERY_BOOT="$BOOT_OVERRIDE" \
+    RICK_TV_RECOVERY_DRY_RUN="$DRY_RUN" \
+    bash "$script"
+}
+
 install_rick_tv_runtime() {
   local source_root
   source_root="${RICK_TV_SOURCE_ROOT:-$(target_path /opt/rick-tv-src)}"
@@ -228,6 +244,7 @@ main() {
   configure_wifi
   configure_hostname
   configure_ssh
+  configure_recovery
   install_rick_tv_runtime
 
   mkdir -p "$state_dir"

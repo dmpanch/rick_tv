@@ -13,6 +13,7 @@ VIDEOLOOPER_OVERRIDES="$VIDEOLOOPER_PROVISIONING/overrides"
 VIDEOLOOPER_INSTALLER="$VIDEOLOOPER_PROVISIONING/rick_tv_fifo_patch.py"
 TRANSITION_FRAME="$VIDEOLOOPER_PROVISIONING/assets/transition-placeholder.fb"
 INTERSTITIAL_FRAME="$VIDEOLOOPER_PROVISIONING/assets/interstitial-ad.fb"
+RECOVERY_SCRIPT="$PI_PROVISIONING/scripts/configure-pi-recovery.sh"
 
 usage() {
   cat <<'EOF'
@@ -111,6 +112,7 @@ validate_deploy_payload() {
     "$VIDEOLOOPER_OVERRIDES/omxplayer.py"
     "$TRANSITION_FRAME"
     "$INTERSTITIAL_FRAME"
+    "$RECOVERY_SCRIPT"
     "rick-tv-pi/systemd/rick-tv-pi.service"
     "rick-tv-pi/provisioning/rick-tv-pi.env.example"
   )
@@ -171,6 +173,7 @@ python3 /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/rick_tv_fifo_patch.
 cp /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/assets/transition-placeholder.fb /home/pi/rick-tv/system/transition-placeholder.fb
 cp /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/assets/interstitial-ad.fb /home/pi/rick-tv/system/interstitial-ad.fb
 python3 /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/generate_channel_playlists.py || true
+bash /opt/rick-tv-src/rick-tv-pi/provisioning/scripts/configure-pi-recovery.sh
 
 systemctl daemon-reload
 systemctl enable rick-tv-pi.service

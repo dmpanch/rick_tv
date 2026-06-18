@@ -160,6 +160,14 @@ The diagnostics bundle includes `journalctl`, supervisor status/tails, `dmesg`,
 `/sys/class/graphics/fb0/*`, playback process command lines, installed
 videolooper override markers, and a redacted `/etc/rick-tv-pi.env`.
 
+Provisioning installs Pi recovery hardening for appliance freezes:
+`kernel.panic=10`, `kernel.panic_on_oops=1`, `panic=10` in the boot cmdline,
+`dtparam=watchdog=on`, and a systemd manager watchdog drop-in with
+`RuntimeWatchdogSec=15s` and `ShutdownWatchdogSec=2min`. These settings help the
+Pi reboot after kernel panic or full-system hang, but they do not change
+videolooper rendering and are not a root-cause fix. Reboot once after deployment
+to activate the boot-level settings.
+
 The Pi exposes no inbound Rick TV ports. Delivery is initiated by authenticated outbound polling to the server.
 
 ## Service

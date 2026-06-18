@@ -13,6 +13,7 @@ IMAGE_BUILDER = PROJECT_ROOT / "provisioning" / "image" / "build_packaged_image.
 FRAMEBUFFER_DIAGNOSTICS = (
     PROJECT_ROOT / "provisioning" / "scripts" / "collect-framebuffer-diagnostics.sh"
 )
+RECOVERY_SCRIPT = PROJECT_ROOT / "provisioning" / "scripts" / "configure-pi-recovery.sh"
 
 
 def test_deploy_restarts_videolooper_before_pi_runtime() -> None:
@@ -40,11 +41,88 @@ def test_deploy_payload_excludes_local_secrets_and_runtime_data() -> None:
         assert f'--exclude="{excluded}"' in content
 
 
+def test_deploy_applies_pi_recovery_config() -> None:
+    script = PROJECT_ROOT / "provisioning" / "deploy_videolooper_image.sh"
+    content = script.read_text(encoding="utf-8")
+
+    assert "configure-pi-recovery.sh" in content
+    assert content.index("configure-pi-recovery.sh") < content.index(
+        "systemctl restart rick-tv-pi.service"
+    )
+
+
+def test_recovery_script_writes_panic_and_watchdog_config_idempotently(tmp_path) -> None:
+    rootfs = tmp_path / "rootfs"
+    bootfs = tmp_path / "bootfs"
+    (bootfs).mkdir(parents=True)
+    (bootfs / "cmdline.txt").write_text(
+        "console=serial0,115200 console=tty1 root=/dev/mmcblk0p2 rw rootwait\n",
+        encoding="utf-8",
+    )
+    (bootfs / "config.txt").write_text(
+        "disable_overscan=1\n",
+        encoding="utf-8",
+    )
+
+    for _ in range(2):
+        result = subprocess.run(
+            ["bash", str(RECOVERY_SCRIPT)],
+            check=False,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "RICK_TV_RECOVERY_ROOT": str(rootfs),
+                "RICK_TV_RECOVERY_BOOT": str(bootfs),
+                "RICK_TV_RECOVERY_DRY_RUN": "1",
+            },
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    assert (
+        rootfs / "etc" / "sysctl.d" / "99-rick-tv-panic.conf"
+    ).read_text(encoding="utf-8") == "kernel.panic=10\nkernel.panic_on_oops=1\n"
+    assert (
+        rootfs / "etc" / "systemd" / "system.conf.d" / "10-rick-tv-watchdog.conf"
+    ).read_text(encoding="utf-8") == (
+        "[Manager]\n"
+        "RuntimeWatchdogSec=15s\n"
+        "ShutdownWatchdogSec=2min\n"
+    )
+    assert (bootfs / "cmdline.txt").read_text(encoding="utf-8").count("panic=10") == 1
+    assert (
+        bootfs / "cmdline.txt"
+    ).read_text(encoding="utf-8") == (
+        "console=serial0,115200 console=tty1 root=/dev/mmcblk0p2 rw rootwait panic=10\n"
+    )
+    assert (bootfs / "config.txt").read_text(encoding="utf-8").count(
+        "dtparam=watchdog=on"
+    ) == 1
+    assert (bootfs / "config.txt").read_text(encoding="utf-8") == (
+        "disable_overscan=1\n"
+        "\n"
+        "# Rick TV recovery watchdog\n"
+        "dtparam=watchdog=on\n"
+    )
+
+
 def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_path) -> None:
     rootfs = tmp_path / "rootfs"
     bootfs = tmp_path / "bootfs"
     bootfs.mkdir()
     (rootfs / "opt" / "rick-tv-src").mkdir(parents=True)
+    (rootfs / "opt" / "rick-tv-src" / "rick-tv-pi" / "provisioning" / "scripts").mkdir(
+        parents=True
+    )
+    (rootfs / "opt" / "rick-tv-src" / "rick-tv-pi" / "provisioning" / "scripts" / "configure-pi-recovery.sh").write_text(
+        RECOVERY_SCRIPT.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (bootfs / "cmdline.txt").write_text(
+        "console=serial0,115200 console=tty1 root=/dev/mmcblk0p2 rw rootwait\n",
+        encoding="utf-8",
+    )
+    (bootfs / "config.txt").write_text("disable_overscan=1\n", encoding="utf-8")
     (bootfs / "rick-tv.env").write_text(
         "\n".join(
             [
@@ -97,6 +175,16 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
     assert "ssh-ed25519 AAAATEST rick-tv" in (
         rootfs / "home" / "pi" / ".ssh" / "authorized_keys"
     ).read_text(encoding="utf-8")
+    assert "kernel.panic=10" in (
+        rootfs / "etc" / "sysctl.d" / "99-rick-tv-panic.conf"
+    ).read_text(encoding="utf-8")
+    assert "RuntimeWatchdogSec=15s" in (
+        rootfs / "etc" / "systemd" / "system.conf.d" / "10-rick-tv-watchdog.conf"
+    ).read_text(encoding="utf-8")
+    assert (bootfs / "cmdline.txt").read_text(encoding="utf-8").count("panic=10") == 1
+    assert (bootfs / "config.txt").read_text(encoding="utf-8").count(
+        "dtparam=watchdog=on"
+    ) == 1
     assert (rootfs / "var" / "lib" / "rick-tv-pi" / "firstboot.done").exists()
 
 
