@@ -215,6 +215,7 @@ install_rick_tv_runtime() {
 
   run_cmd systemctl daemon-reload
   run_cmd systemctl enable rick-tv-pi.service
+  run_cmd systemctl restart rick-tv-pi.service
   run_cmd supervisorctl restart video_looper
   log "Rick TV runtime verified"
 }

@@ -28,10 +28,12 @@ partition, и first boot должен применить Wi-Fi/API/token/passwor
   extracted base image to the requested output path, runs
   `sdm --customize --batch --apt-options none` with Rick TV's custom phase
   script, and writes an image `.sha256`.
-- `rick-tv-pi/provisioning/image/sdm_rick_tv_custom_phase.sh` runs during sdm
-  Phase 0. It uses `$SDMPT`, `--csrc`, and optional `--custom1` boot config to
-  stage Rick TV without installing secrets or running package upgrades inside
-  the legacy videolooper image.
+- `rick-tv-pi/provisioning/image/sdm_rick_tv_custom_phase.sh` stages the image
+  payload during sdm Phase 0 and installs the non-secret Pi runtime during Phase
+  1. Phase 1 installs only required packages, creates
+  `/opt/rick-tv-pi/.venv --system-site-packages`, pins Python 3.7-compatible
+  packaging tools, and installs `rick-tv-pi` from `/opt/rick-tv-src/rick-tv-pi`.
+  It does not run `apt upgrade` and does not install secrets.
 - `rick-tv-pi/provisioning/image/install_packaged_image_payload.sh` stages the
   repository into `/opt/rick-tv-src`, installs
   `/usr/local/sbin/rick-tv-firstboot`, enables `rick-tv-firstboot.service`,
@@ -45,11 +47,16 @@ partition, и first boot должен применить Wi-Fi/API/token/passwor
 - The payload installer also writes Rick TV's `/boot/video_looper.ini` settings
   during image customization so the clean image starts in directory/playlist
   mode before firstboot repeats the same idempotent config.
+- The payload installer now also installs `rick-tv-pi.service`, creates
+  `/home/pi/rick-tv/{media,playlists,system,config}`, installs
+  `transition-placeholder.fb` and `interstitial-ad.fb`, generates an empty
+  `playlists/channels.m3u`, patches the `Adafruit_Video_Looper` egg inside the
+  image, and applies panic/watchdog recovery config to the staged rootfs/bootfs.
 - `rick-tv-pi/provisioning/firstboot/rick-tv-firstboot.sh` reads
   `rick-tv.env` from the boot partition, writes `/etc/rick-tv-pi.env`,
   configures Wi-Fi/SSH/hostname, installs Rick TV service/videolooper assets and
-  overrides, enables `rick-tv-pi.service`, and writes
-  `/var/lib/rick-tv-pi/firstboot.done`.
+  overrides, enables and restarts `rick-tv-pi.service`, restarts
+  `video_looper`, and writes `/var/lib/rick-tv-pi/firstboot.done`.
 - `rick-tv-pi/provisioning/rick-tv.env.example` is the only human-facing Pi env
   example. It includes Wi-Fi/SSH/hostname and Pi runtime values; firstboot and
   deploy write only the `RICK_TV_*` subset to `/etc/rick-tv-pi.env`.

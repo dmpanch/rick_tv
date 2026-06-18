@@ -70,6 +70,15 @@ run_phase0() {
   fi
 }
 
+run_phase1() {
+  log "Phase 1 installing Rick TV Pi runtime"
+  apt-get update
+  apt-get install -y --no-install-recommends python3-venv python3-pip python3-evdev
+  python3 -m venv --system-site-packages /opt/rick-tv-pi/.venv
+  /opt/rick-tv-pi/.venv/bin/pip install --upgrade 'pip<24.1' 'setuptools>=61,<69'
+  /opt/rick-tv-pi/.venv/bin/pip install /opt/rick-tv-src/rick-tv-pi
+}
+
 load_sdm_params
 
 case "$phase" in
@@ -79,10 +88,11 @@ case "$phase" in
     log "Phase 0 staging completed"
     ;;
   1)
-    log "Phase 1 skipped; Rick TV does not install secrets or packages here"
+    run_phase1
+    log "Phase 1 runtime install completed"
     ;;
   post-install)
-    log "post-install skipped; firstboot applies runtime configuration"
+    log "post-install skipped; firstboot applies external runtime configuration"
     ;;
   *)
     die "unknown sdm phase: $phase"

@@ -39,7 +39,13 @@ FIRSTBOOT_EXAMPLE="$PROVISIONING_DIR/rick-tv.env.example"
 DISPLAY_CONFIG="$PROVISIONING_DIR/display/config.txt.waveshare-28dpi-legacy"
 DISPLAY_OVERLAY_DIR="$PROVISIONING_DIR/vendor/waveshare-28dpi/overlays"
 DISPLAY_CONFIG_MARKER="# Rick TV Waveshare 2.8inch DPI LCD"
+RICK_TV_SERVICE="$ROOT_DIR/rick-tv-pi/systemd/rick-tv-pi.service"
 VIDEOLOOPER_CONFIGURER="$PROVISIONING_DIR/videolooper/configure_rick_tv_videolooper.py"
+VIDEOLOOPER_PATCHER="$PROVISIONING_DIR/videolooper/rick_tv_fifo_patch.py"
+VIDEOLOOPER_PLAYLIST_GENERATOR="$PROVISIONING_DIR/videolooper/generate_channel_playlists.py"
+VIDEOLOOPER_ASSET_DIR="$PROVISIONING_DIR/videolooper/assets"
+VIDEOLOOPER_EGG="$ROOTFS/usr/local/lib/python3.7/dist-packages/Adafruit_Video_Looper-1.0.21-py3.7.egg"
+RECOVERY_SCRIPT="$PROVISIONING_DIR/scripts/configure-pi-recovery.sh"
 
 apply_waveshare_display_boot_config() {
   local config_file="$BOOTFS/config.txt"
@@ -73,6 +79,39 @@ apply_videolooper_boot_config() {
   RICK_TV_VIDEOLOOPER_CONFIG_PATH="$config_file" python3 "$VIDEOLOOPER_CONFIGURER"
 }
 
+stage_rick_tv_runtime_payload() {
+  mkdir -p \
+    "$ROOTFS/etc/systemd/system" \
+    "$ROOTFS/home/pi/rick-tv/media" \
+    "$ROOTFS/home/pi/rick-tv/playlists" \
+    "$ROOTFS/home/pi/rick-tv/system" \
+    "$ROOTFS/home/pi/rick-tv/config"
+
+  install -m 0644 "$RICK_TV_SERVICE" "$ROOTFS/etc/systemd/system/rick-tv-pi.service"
+  install -m 0644 \
+    "$VIDEOLOOPER_ASSET_DIR/transition-placeholder.fb" \
+    "$ROOTFS/home/pi/rick-tv/system/transition-placeholder.fb"
+  install -m 0644 \
+    "$VIDEOLOOPER_ASSET_DIR/interstitial-ad.fb" \
+    "$ROOTFS/home/pi/rick-tv/system/interstitial-ad.fb"
+
+  if [[ -f "$VIDEOLOOPER_EGG" ]]; then
+    RICK_TV_VIDEOLOOPER_EGG_PATH="$VIDEOLOOPER_EGG" python3 "$VIDEOLOOPER_PATCHER"
+  else
+    echo "warning: pi_video_looper egg not found in image; skipping patch: $VIDEOLOOPER_EGG" >&2
+  fi
+
+  RICK_TV_MEDIA_ROOT="$ROOTFS/home/pi/rick-tv/media" \
+    RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT="$ROOTFS/home/pi/rick-tv/playlists" \
+    python3 "$VIDEOLOOPER_PLAYLIST_GENERATOR"
+
+  RICK_TV_RECOVERY_ROOT="$ROOTFS" \
+    RICK_TV_RECOVERY_BOOT="$BOOTFS" \
+    bash "$RECOVERY_SCRIPT"
+
+  chown -R 1000:1000 "$ROOTFS/home/pi/rick-tv" 2>/dev/null || true
+}
+
 [[ -n "$ROOTFS" ]] || die "--rootfs is required"
 [[ -n "$BOOTFS" ]] || die "--bootfs is required"
 [[ -d "$ROOT_DIR" ]] || die "source root path not found: $ROOT_DIR"
@@ -83,7 +122,13 @@ apply_videolooper_boot_config() {
 [[ -f "$FIRSTBOOT_EXAMPLE" ]] || die "missing firstboot env example"
 [[ -f "$DISPLAY_CONFIG" ]] || die "missing Waveshare display config"
 [[ -d "$DISPLAY_OVERLAY_DIR" ]] || die "missing Waveshare overlay directory"
+[[ -f "$RICK_TV_SERVICE" ]] || die "missing Rick TV service unit"
 [[ -f "$VIDEOLOOPER_CONFIGURER" ]] || die "missing videolooper config script"
+[[ -f "$VIDEOLOOPER_PATCHER" ]] || die "missing videolooper patcher"
+[[ -f "$VIDEOLOOPER_PLAYLIST_GENERATOR" ]] || die "missing playlist generator"
+[[ -f "$VIDEOLOOPER_ASSET_DIR/transition-placeholder.fb" ]] || die "missing transition placeholder"
+[[ -f "$VIDEOLOOPER_ASSET_DIR/interstitial-ad.fb" ]] || die "missing interstitial placeholder"
+[[ -f "$RECOVERY_SCRIPT" ]] || die "missing recovery config script"
 if [[ -n "$BOOT_CONFIG" && ! -f "$BOOT_CONFIG" ]]; then
   die "boot config not found: $BOOT_CONFIG"
 fi
@@ -104,6 +149,7 @@ if [[ -n "$BOOT_CONFIG" ]]; then
 fi
 apply_waveshare_display_boot_config
 apply_videolooper_boot_config
+stage_rick_tv_runtime_payload
 
 tar \
   --exclude=".git" \

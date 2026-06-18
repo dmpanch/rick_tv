@@ -64,19 +64,21 @@ paths, copies it to the requested output image, runs `sdm --customize` with Rick
 TV's custom phase script, stages the Rick TV payload, and writes
 `dist/rick-tv-pi.img.sha256`. During staging it also copies the Waveshare
 2.8inch DPI LCD DTBO files to the boot partition, appends Rick TV's legacy DPI
-display block to `config.txt`, and writes Rick TV's `/boot/video_looper.ini`
-settings. Optionally pass `--boot-config /path/to/rick-tv.env` to put a filled
-first-boot config onto a private generated image. Do not commit filled config
-files.
+display block to `config.txt`, writes Rick TV's `/boot/video_looper.ini`,
+patches the Video Looper egg, installs placeholder assets, creates the empty
+playlist tree, installs panic/watchdog recovery config, installs
+`rick-tv-pi.service`, and builds `/opt/rick-tv-pi/.venv`. Optionally pass
+`--boot-config /path/to/rick-tv.env` to put a filled first-boot config onto a
+private generated image. Do not commit filled config files.
 
 Before the first boot, copy `rick-tv.env.example` to `rick-tv.env` on the boot
 partition and fill in Wi-Fi, API, SSH, hostname, and Rick TV runtime values.
 The first-boot service creates `/etc/rick-tv-pi.env`, configures Wi-Fi/SSH,
-installs the pinned videolooper overrides/assets, enables `rick-tv-pi.service`,
-and writes `/var/lib/rick-tv-pi/firstboot.done`. Later boots skip the setup and
-do not overwrite user-edited `/etc/rick-tv-pi.env`. Telegram bot token and
-allowed user IDs are server-side settings; do not put them in the Pi image or
-`rick-tv.env`.
+re-applies the same idempotent runtime checks, starts `rick-tv-pi.service`,
+restarts `video_looper`, and writes `/var/lib/rick-tv-pi/firstboot.done`. Later
+boots skip the setup and do not overwrite user-edited `/etc/rick-tv-pi.env`.
+Telegram bot token and allowed user IDs are server-side settings; do not put
+them in the Pi image or `rick-tv.env`.
 
 ## Deploy to a Running Pi
 

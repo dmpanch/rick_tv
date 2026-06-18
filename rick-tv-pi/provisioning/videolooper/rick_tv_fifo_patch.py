@@ -12,14 +12,14 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 OVERRIDES = ROOT / "overrides"
 
-VIDEO_LOOPER_EGG = Path(
+DEFAULT_VIDEO_LOOPER_EGG = Path(
     "/usr/local/lib/python3.7/dist-packages/"
     "Adafruit_Video_Looper-1.0.21-py3.7.egg"
 )
 VIDEO_LOOPER_ZIP_NAME = "Adafruit_Video_Looper/video_looper.py"
 VIDEO_LOOPER_OVERRIDE = OVERRIDES / "video_looper.py"
 
-OMX_PLAYER_EGG = VIDEO_LOOPER_EGG
+OMX_PLAYER_EGG = DEFAULT_VIDEO_LOOPER_EGG
 OMX_PLAYER_ZIP_NAME = "Adafruit_Video_Looper/omxplayer.py"
 OMX_PLAYER_OVERRIDE = OVERRIDES / "omxplayer.py"
 
@@ -27,8 +27,11 @@ PYC_SUFFIXES = (".pyc", ".pyo")
 
 
 def main() -> None:
+    egg_path = Path(
+        os.environ.get("RICK_TV_VIDEOLOOPER_EGG_PATH", str(DEFAULT_VIDEO_LOOPER_EGG))
+    )
     install_overrides(
-        VIDEO_LOOPER_EGG,
+        egg_path,
         {
             VIDEO_LOOPER_ZIP_NAME: VIDEO_LOOPER_OVERRIDE,
             OMX_PLAYER_ZIP_NAME: OMX_PLAYER_OVERRIDE,

@@ -195,3 +195,20 @@ def test_installer_replaces_zip_entries_and_removes_stale_bytecode(tmp_path):
         assert egg.read("Adafruit_Video_Looper/model.py") == b"kept"
         assert "Adafruit_Video_Looper/__pycache__/video_looper.cpython-37.pyc" not in egg.namelist()
         assert "Adafruit_Video_Looper/__pycache__/omxplayer.cpython-37.pyc" not in egg.namelist()
+
+
+def test_installer_main_accepts_custom_egg_path_for_image_staging(tmp_path, monkeypatch):
+    installer = load_installer()
+    egg_path = tmp_path / "rootfs" / "usr" / "local" / "lib" / "python3.7" / "dist-packages" / "Adafruit_Video_Looper-1.0.21-py3.7.egg"
+    egg_path.parent.mkdir(parents=True)
+    with zipfile.ZipFile(egg_path, "w") as egg:
+        egg.writestr("Adafruit_Video_Looper/video_looper.py", "old video")
+        egg.writestr("Adafruit_Video_Looper/omxplayer.py", "old omx")
+
+    monkeypatch.setenv("RICK_TV_VIDEOLOOPER_EGG_PATH", str(egg_path))
+
+    installer.main()
+
+    with zipfile.ZipFile(egg_path) as egg:
+        assert egg.read("Adafruit_Video_Looper/video_looper.py") == VIDEO_LOOPER_OVERRIDE.read_bytes()
+        assert egg.read("Adafruit_Video_Looper/omxplayer.py") == OMX_PLAYER_OVERRIDE.read_bytes()

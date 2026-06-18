@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Generate Rick TV master/channel M3U files for pi_video_looper."""
 
+import os
 from pathlib import Path
 
 
-MEDIA_ROOT = Path("/home/pi/rick-tv/media")
-PLAYLIST_ROOT = Path("/home/pi/rick-tv/playlists")
+MEDIA_ROOT = Path(os.environ.get("RICK_TV_MEDIA_ROOT", "/home/pi/rick-tv/media"))
+PLAYLIST_ROOT = Path(
+    os.environ.get("RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT", "/home/pi/rick-tv/playlists")
+)
 
 
 def channel_title(index: int, channel_id: str) -> str:
@@ -14,6 +17,8 @@ def channel_title(index: int, channel_id: str) -> str:
 
 
 def main() -> None:
+    MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+    PLAYLIST_ROOT.mkdir(parents=True, exist_ok=True)
     channels = sorted(path for path in MEDIA_ROOT.iterdir() if path.is_dir())
     channel_playlist_root = PLAYLIST_ROOT / "channels"
     channel_playlist_root.mkdir(parents=True, exist_ok=True)

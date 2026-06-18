@@ -1,5 +1,7 @@
 from pathlib import Path
 import subprocess
+import sys
+import zipfile
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +18,9 @@ FRAMEBUFFER_DIAGNOSTICS = (
     PROJECT_ROOT / "provisioning" / "scripts" / "collect-framebuffer-diagnostics.sh"
 )
 RECOVERY_SCRIPT = PROJECT_ROOT / "provisioning" / "scripts" / "configure-pi-recovery.sh"
+PLAYLIST_GENERATOR = (
+    PROJECT_ROOT / "provisioning" / "videolooper" / "generate_channel_playlists.py"
+)
 
 
 def test_deploy_restarts_videolooper_before_pi_runtime() -> None:
@@ -150,6 +155,42 @@ def test_recovery_script_writes_panic_and_watchdog_config_idempotently(tmp_path)
     )
 
 
+def test_playlist_generator_accepts_offline_root_overrides(tmp_path) -> None:
+    media_root = tmp_path / "rootfs" / "home" / "pi" / "rick-tv" / "media"
+    playlist_root = tmp_path / "rootfs" / "home" / "pi" / "rick-tv" / "playlists"
+    channel_root = media_root / "01_Citadel"
+    channel_root.mkdir(parents=True)
+    video_path = channel_root / "episode-01.mp4"
+    video_path.write_bytes(b"fake mp4")
+
+    result = subprocess.run(
+        [sys.executable, str(PLAYLIST_GENERATOR)],
+        check=False,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "RICK_TV_MEDIA_ROOT": str(media_root),
+            "RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT": str(playlist_root),
+        },
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    master = (playlist_root / "channels.m3u").read_text(encoding="utf-8")
+    channel_playlist = (
+        playlist_root / "channels" / "01_Citadel.m3u"
+    ).read_text(encoding="utf-8")
+    assert str(playlist_root / "channels" / "01_Citadel.m3u") in master
+    assert str(video_path) in channel_playlist
+    paths = [
+        line
+        for line in (master + channel_playlist).splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert paths
+    assert all(line.startswith(str(tmp_path)) for line in paths)
+
+
 def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_path) -> None:
     rootfs = tmp_path / "rootfs"
     bootfs = tmp_path / "bootfs"
@@ -241,6 +282,8 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
     assert (bootfs / "config.txt").read_text(encoding="utf-8").count(
         "dtparam=watchdog=on"
     ) == 1
+    assert "systemctl restart rick-tv-pi.service" in result.stdout
+    assert "supervisorctl restart video_looper" in result.stdout
     assert (rootfs / "var" / "lib" / "rick-tv-pi" / "firstboot.done").exists()
 
 
@@ -437,6 +480,96 @@ def test_packaged_image_payload_installer_applies_videolooper_boot_config(
     assert content.count("[rick_tv]") == 1
 
 
+def test_packaged_image_payload_installer_stages_full_runtime_payload(
+    tmp_path,
+) -> None:
+    rootfs = tmp_path / "rootfs"
+    bootfs = tmp_path / "bootfs"
+    rootfs.mkdir()
+    bootfs.mkdir()
+    (bootfs / "cmdline.txt").write_text(
+        "console=serial0,115200 console=tty1 root=/dev/mmcblk0p2 rw rootwait\n",
+        encoding="utf-8",
+    )
+    (bootfs / "config.txt").write_text("disable_overscan=1\n", encoding="utf-8")
+    egg_path = (
+        rootfs
+        / "usr"
+        / "local"
+        / "lib"
+        / "python3.7"
+        / "dist-packages"
+        / "Adafruit_Video_Looper-1.0.21-py3.7.egg"
+    )
+    egg_path.parent.mkdir(parents=True)
+    with zipfile.ZipFile(egg_path, "w") as egg:
+        egg.writestr("Adafruit_Video_Looper/video_looper.py", "old video")
+        egg.writestr("Adafruit_Video_Looper/omxplayer.py", "old omx")
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(IMAGE_INSTALLER),
+            "--rootfs",
+            str(rootfs),
+            "--bootfs",
+            str(bootfs),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (rootfs / "etc" / "systemd" / "system" / "rick-tv-pi.service").exists()
+    assert not (
+        rootfs
+        / "etc"
+        / "systemd"
+        / "system"
+        / "multi-user.target.wants"
+        / "rick-tv-pi.service"
+    ).exists()
+    assert (
+        rootfs / "home" / "pi" / "rick-tv" / "system" / "transition-placeholder.fb"
+    ).read_bytes() == (
+        PROJECT_ROOT
+        / "provisioning"
+        / "videolooper"
+        / "assets"
+        / "transition-placeholder.fb"
+    ).read_bytes()
+    assert (
+        rootfs / "home" / "pi" / "rick-tv" / "system" / "interstitial-ad.fb"
+    ).exists()
+    assert (
+        rootfs / "home" / "pi" / "rick-tv" / "playlists" / "channels.m3u"
+    ).read_text(encoding="utf-8") == "#EXTM3U\n"
+    assert (rootfs / "home" / "pi" / "rick-tv" / "media").is_dir()
+    assert (rootfs / "home" / "pi" / "rick-tv" / "config").is_dir()
+    assert (
+        rootfs / "etc" / "sysctl.d" / "99-rick-tv-panic.conf"
+    ).read_text(encoding="utf-8") == "kernel.panic=10\nkernel.panic_on_oops=1\n"
+    assert (
+        rootfs / "etc" / "systemd" / "system.conf.d" / "10-rick-tv-watchdog.conf"
+    ).read_text(encoding="utf-8") == (
+        "[Manager]\n"
+        "RuntimeWatchdogSec=15s\n"
+        "ShutdownWatchdogSec=2min\n"
+    )
+    assert "panic=10" in (bootfs / "cmdline.txt").read_text(encoding="utf-8")
+    assert "dtparam=watchdog=on" in (bootfs / "config.txt").read_text(encoding="utf-8")
+
+    with zipfile.ZipFile(egg_path) as egg:
+        video_looper = egg.read("Adafruit_Video_Looper/video_looper.py").decode()
+        omxplayer = egg.read("Adafruit_Video_Looper/omxplayer.py").decode()
+    assert "_rick_tv" in video_looper
+    assert "command_fifo" in video_looper
+    assert "interstitial-ad.fb" in video_looper
+    assert "transition-placeholder.fb" in video_looper
+    assert "self.stop(0)  # Up to 3 second delay to let the old player stop." in omxplayer
+
+
 def test_packaged_image_payload_installer_excludes_local_secrets_and_runtime_data() -> None:
     content = IMAGE_INSTALLER.read_text(encoding="utf-8")
 
@@ -524,7 +657,7 @@ def test_packaged_image_builder_no_longer_uses_manual_loop_mount_flow() -> None:
     assert "--apt-options none" in content
 
 
-def test_sdm_custom_phase_stages_payload_with_sdmpt_and_no_secret_work() -> None:
+def test_sdm_custom_phase_stages_payload_with_sdmpt_and_installs_runtime() -> None:
     content = SDM_PHASE_SCRIPT.read_text(encoding="utf-8")
 
     assert "phase=\"${1:-}\"" in content
@@ -532,7 +665,16 @@ def test_sdm_custom_phase_stages_payload_with_sdmpt_and_no_secret_work() -> None
     assert "sdm-readparams" in content
     assert "install_packaged_image_payload.sh" in content
     assert "--boot-config" in content
-    assert "apt-get" not in content
+    assert "apt-get install -y --no-install-recommends" in content
+    assert "python3-venv" in content
+    assert "python3-pip" in content
+    assert "python3-evdev" in content
+    assert "python3 -m venv --system-site-packages /opt/rick-tv-pi/.venv" in content
+    assert "pip<24.1" in content
+    assert "setuptools>=61,<69" in content
+    assert "/opt/rick-tv-pi/.venv/bin/pip install /opt/rick-tv-src/rick-tv-pi" in content
+    assert "apt-get upgrade" not in content
+    assert "apt upgrade" not in content
     assert "RICK_TV_TELEGRAM_BOT_TOKEN" not in content
     assert "RICK_TV_TELEGRAM_ALLOWED_USER_IDS" not in content
 
