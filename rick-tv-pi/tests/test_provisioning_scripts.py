@@ -373,6 +373,14 @@ def test_logging_script_moves_supervisor_logs_to_run_with_rotation(tmp_path) -> 
     assert "stderr_logfile_backups = 1" in video_looper
 
 
+def test_logging_script_inline_python_is_compatible_with_legacy_python37() -> None:
+    content = LOGGING_SCRIPT.read_text(encoding="utf-8")
+
+    assert "dict[str" not in content
+    assert "list[str" not in content
+    assert "set[str" not in content
+
+
 def test_playlist_generator_accepts_offline_root_overrides(tmp_path) -> None:
     media_root = tmp_path / "rootfs" / "home" / "pi" / "rick-tv" / "media"
     playlist_root = tmp_path / "rootfs" / "home" / "pi" / "rick-tv" / "playlists"

@@ -97,7 +97,7 @@ def target(path: str) -> Path:
     return root / path.lstrip("/")
 
 
-def update_config(path: Path, section: str, values: dict[str, str]) -> None:
+def update_config(path, section, values):
     if not path.exists():
         return
     parser = configparser.ConfigParser(interpolation=None)
