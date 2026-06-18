@@ -76,7 +76,11 @@ def _install_into_zip(egg_path: Path, replacements: dict[str, Path]) -> None:
                 f"Cannot install pi_video_looper overrides; missing egg entries: {', '.join(missing)}"
             )
 
-        fd, tmp_name = tempfile.mkstemp(prefix="rick-tv-videolooper-", suffix=".egg")
+        fd, tmp_name = tempfile.mkstemp(
+            prefix="rick-tv-videolooper-",
+            suffix=".egg",
+            dir=str(egg_path.parent),
+        )
         os.close(fd)
         tmp_path = Path(tmp_name)
 
