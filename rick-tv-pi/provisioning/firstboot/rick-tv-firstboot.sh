@@ -153,11 +153,11 @@ configure_ssh() {
     log "installed SSH authorized key"
   fi
 
-  if [[ -n "${SSH_PASSWORD:-${PI_PASSWORD:-}}" ]]; then
+  if [[ -n "${SSH_PASSWORD:-}" ]]; then
     if [[ "$DRY_RUN" == "1" ]]; then
       log "dry-run: would set pi password"
     else
-      printf 'pi:%s\n' "${SSH_PASSWORD:-${PI_PASSWORD:-}}" | chpasswd
+      printf 'pi:%s\n' "$SSH_PASSWORD" | chpasswd
     fi
   fi
 }
