@@ -38,8 +38,10 @@ kernel panic.
   lines, installed override markers, and redacted Pi env.
 - `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` is a diagnostic A/B flag. The
   videolooper override reads it from process env or `/etc/rick-tv-pi.env` and
-  skips both raw `/dev/fb0` placeholder writes while keeping FIFO switching and
-  playback unchanged.
+  skips both regular raw `/dev/fb0` placeholder writes while keeping FIFO
+  switching and playback unchanged. At startup it clears the existing
+  framebuffer to black once, because an old `.fb` image can otherwise remain
+  underneath the omxplayer video plane and show through during stop/start.
 
 ## Lab Pi Observation
 - 2026-06-18 03:16 Europe/Kyiv: after deploying the diagnostic override to
@@ -108,6 +110,12 @@ kernel panic.
   `Rick TV interstitial ad disabled by RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS`.
   That confirms the test removed the raw draw path while preserving playback and
   command ack behavior.
+- 2026-06-18 10:56 Europe/Kyiv: user still saw placeholders in A/B mode. Direct
+  evidence showed `/dev/fb0` hash matched `interstitial-ad.fb` exactly even
+  though no new placeholder writes were logged after the A/B restart. Clearing
+  `/dev/fb0` to black changed the hash and kept `rick-tv-pi.service` active and
+  `video_looper` running. Root cause for this symptom: stale framebuffer content
+  from before A/B mode, not continued placeholder drawing.
 
 ## Current Hypothesis
 - The current code-level routing now appears correct: different-channel switch
@@ -119,8 +127,9 @@ kernel panic.
   or lower-level display/GPIO configuration instability on the legacy image.
 - The short A/B run did not reproduce the panic with raw placeholder writes
   disabled. This is useful but not conclusive: a longer soak and visual evidence
-  are still needed before deciding whether raw framebuffer writes are the root
-  cause or merely adjacent to the failure.
+  are still needed before deciding whether repeated raw framebuffer writes are
+  the root cause or merely adjacent to the failure. The one-time black clear is
+  intentionally separate from regular placeholder drawing.
 - If the A/B build survives repeated channel-switch stress longer than the raw
   framebuffer build, raw framebuffer access becomes the leading suspect and the
   replacement should be an omxplayer-managed or pre-rendered MP4 transition path.

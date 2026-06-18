@@ -144,9 +144,10 @@ A real channel switch draws only `transition-placeholder.fb` and suppresses the
 next interstitial. A same-channel playlist refresh suppresses the transition
 placeholder and lets the normal in-channel path draw `interstitial-ad.fb` before
 the next playback. For A/B hardware investigation only,
-`RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` disables both raw `/dev/fb0`
-placeholder writes while leaving videolooper switching/playback behavior in
-place. For hardware investigation, collect:
+`RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` disables both regular raw
+`/dev/fb0` placeholder writes, clears any stale framebuffer image to black once
+at startup, and leaves videolooper switching/playback behavior in place. For
+hardware investigation, collect:
 
 ```sh
 rick-tv-pi/provisioning/scripts/collect-framebuffer-diagnostics.sh \

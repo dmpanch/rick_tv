@@ -129,8 +129,9 @@ Channel switch показывает только transition placeholder и по�
 interstitial; обновление playlist внутри текущего канала не рисует transition и
 использует обычный in-channel interstitial перед следующим playback.
 Диагностический флаг `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true`
-отключает оба raw `/dev/fb0` placeholder writes для A/B проверки железа, не
-меняя сам videolooper playback path.
+отключает оба регулярных raw `/dev/fb0` placeholder writes для A/B проверки
+железа, один раз очищает stale framebuffer в чёрный при старте и не меняет сам
+videolooper playback path.
 
 ### Что должно быть в `/etc/rick-tv-pi.env`
 

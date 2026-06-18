@@ -120,4 +120,6 @@ command lines, installed override markers, and a redacted `/etc/rick-tv-pi.env`.
 Supervisor tails are wrapped with `timeout` so empty logs do not hang collection.
 For A/B testing, set `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true` in
 `/etc/rick-tv-pi.env` to keep videolooper playback/switching active while
-skipping both raw `/dev/fb0` placeholder writes.
+skipping both regular raw `/dev/fb0` placeholder writes. On startup, the
+override clears any stale framebuffer image to black once so an old placeholder
+does not show through when omxplayer stops between videos.

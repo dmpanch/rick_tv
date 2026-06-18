@@ -136,6 +136,7 @@ class VideoLooper:
         self._rick_tv_interstitial_frame = None
         self._rick_tv_skip_next_interstitial = False
         self._rick_tv_disable_framebuffer_placeholders = self._rick_tv_env_truthy('RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS')
+        self._rick_tv_clear_stale_framebuffer()
         self._playbackStopped = not self._play_on_startup
         #used for not waiting the first time
         self._firstStart = True
@@ -666,6 +667,30 @@ class VideoLooper:
 
     def _rick_tv_framebuffer_placeholders_enabled(self):
         return not self._rick_tv_disable_framebuffer_placeholders
+
+    def _rick_tv_clear_stale_framebuffer(self):
+        if not self._rick_tv_disable_framebuffer_placeholders:
+            return
+        expected_bytes = self._rick_tv_framebuffer_bytes()
+        if expected_bytes is None:
+            return
+        try:
+            fd = os.open('/dev/fb0', os.O_WRONLY)
+            try:
+                chunk = b'\0' * 65536
+                remaining = expected_bytes
+                while remaining > 0:
+                    written = os.write(fd, chunk[:min(len(chunk), remaining)])
+                    if written <= 0:
+                        break
+                    remaining -= written
+                self._print(
+                    "Rick TV cleared stale framebuffer because RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS is enabled"
+                )
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            self._print(f"Rick TV stale framebuffer clear failed: {exc}")
 
     def _rick_tv_env_truthy(self, name):
         return self._rick_tv_env_value(name).strip().lower() in ('1', 'true', 'yes', 'on')
