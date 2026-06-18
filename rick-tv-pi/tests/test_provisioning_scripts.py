@@ -282,7 +282,8 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
     assert (bootfs / "config.txt").read_text(encoding="utf-8").count(
         "dtparam=watchdog=on"
     ) == 1
-    assert "systemctl restart rick-tv-pi.service" in result.stdout
+    assert "systemctl --no-block restart rick-tv-pi.service" in result.stdout
+    assert "systemctl restart rick-tv-pi.service" not in result.stdout
     assert "supervisorctl restart video_looper" in result.stdout
     assert (rootfs / "var" / "lib" / "rick-tv-pi" / "firstboot.done").exists()
 
