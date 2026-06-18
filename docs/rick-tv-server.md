@@ -15,6 +15,8 @@ Set these environment variables before starting the service:
   local smoke checks; set a real token before using the service.
 - `RICK_TV_PUBLIC_BASE_URL`: public URL used when generating download links.
   Defaults to `http://localhost:8080`.
+- `RICK_TV_LOG_LEVEL`: Python logging level for the API and Telegram runner.
+  Defaults to `INFO`.
 - `RICK_TV_DATA_DIR`: host directory mounted by Docker Compose for media,
   config, and state. Defaults to `./data`; for production prefer an absolute
   path such as `/srv/rick-tv`.

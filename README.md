@@ -204,7 +204,7 @@ Important settings:
 - `RICK_TV_CHANNEL_SHUFFLE_SECONDS`: interval for reshuffling a channel playlist
 - `RICK_TV_TOUCH_SCREEN_WIDTH`: touch input width
 - `RICK_TV_TOUCH_SCREEN_HEIGHT`: touch input height
-- `RICK_TV_TOUCH_SWAP_AXES`: whether to swap touch axes
+- `RICK_TV_TOUCH_SWAP_AXES`: `auto` for the packaged Waveshare DPI image, or explicit `true`/`false`
 - `RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS`: gesture axis, `x` or `y`
 - `RICK_TV_TOUCH_INVERT_X`: whether to invert touch X
 - `RICK_TV_TOUCH_INVERT_Y`: whether to invert touch Y
