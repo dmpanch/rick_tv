@@ -36,6 +36,33 @@ done
 PROVISIONING_DIR="$ROOT_DIR/rick-tv-pi/provisioning"
 FIRSTBOOT_DIR="$PROVISIONING_DIR/firstboot"
 FIRSTBOOT_EXAMPLE="$PROVISIONING_DIR/rick-tv.env.example"
+DISPLAY_CONFIG="$PROVISIONING_DIR/display/config.txt.waveshare-28dpi-legacy"
+DISPLAY_OVERLAY_DIR="$PROVISIONING_DIR/vendor/waveshare-28dpi/overlays"
+DISPLAY_CONFIG_MARKER="# Rick TV Waveshare 2.8inch DPI LCD"
+
+apply_waveshare_display_boot_config() {
+  local config_file="$BOOTFS/config.txt"
+
+  [[ -f "$DISPLAY_CONFIG" ]] || die "missing Waveshare display config"
+  [[ -d "$DISPLAY_OVERLAY_DIR" ]] || die "missing Waveshare overlay directory"
+
+  mkdir -p "$BOOTFS/overlays"
+  cp "$DISPLAY_OVERLAY_DIR"/*.dtbo "$BOOTFS/overlays/"
+
+  touch "$config_file"
+  sed -i -E \
+    -e 's/^([[:space:]]*)dtoverlay=vc4-kms-v3d([[:space:]]*)$/# \1dtoverlay=vc4-kms-v3d\2 # disabled by Rick TV Waveshare DPI config/' \
+    -e 's/^([[:space:]]*)dtoverlay=vc4-fkms-v3d([[:space:]]*)$/# \1dtoverlay=vc4-fkms-v3d\2 # disabled by Rick TV Waveshare DPI config/' \
+    "$config_file"
+
+  if ! grep -qxF "$DISPLAY_CONFIG_MARKER" "$config_file"; then
+    {
+      printf '\n%s\n' "$DISPLAY_CONFIG_MARKER"
+      cat "$DISPLAY_CONFIG"
+      printf '# End Rick TV Waveshare 2.8inch DPI LCD\n'
+    } >> "$config_file"
+  fi
+}
 
 [[ -n "$ROOTFS" ]] || die "--rootfs is required"
 [[ -n "$BOOTFS" ]] || die "--bootfs is required"
@@ -45,6 +72,8 @@ FIRSTBOOT_EXAMPLE="$PROVISIONING_DIR/rick-tv.env.example"
 [[ -f "$FIRSTBOOT_DIR/rick-tv-firstboot.sh" ]] || die "missing firstboot script"
 [[ -f "$FIRSTBOOT_DIR/rick-tv-firstboot.service" ]] || die "missing firstboot service"
 [[ -f "$FIRSTBOOT_EXAMPLE" ]] || die "missing firstboot env example"
+[[ -f "$DISPLAY_CONFIG" ]] || die "missing Waveshare display config"
+[[ -d "$DISPLAY_OVERLAY_DIR" ]] || die "missing Waveshare overlay directory"
 if [[ -n "$BOOT_CONFIG" && ! -f "$BOOT_CONFIG" ]]; then
   die "boot config not found: $BOOT_CONFIG"
 fi
@@ -63,6 +92,7 @@ install -m 0644 "$FIRSTBOOT_EXAMPLE" "$BOOTFS/rick-tv.env.example"
 if [[ -n "$BOOT_CONFIG" ]]; then
   install -m 0600 "$BOOT_CONFIG" "$BOOTFS/rick-tv.env"
 fi
+apply_waveshare_display_boot_config
 
 tar \
   --exclude=".git" \

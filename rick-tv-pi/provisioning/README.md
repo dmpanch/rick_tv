@@ -62,9 +62,11 @@ sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
 The builder downloads/extracts the Video Looper image outside tracked repo
 paths, copies it to the requested output image, runs `sdm --customize` with Rick
 TV's custom phase script, stages the Rick TV payload, and writes
-`dist/rick-tv-pi.img.sha256`. Optionally pass
-`--boot-config /path/to/rick-tv.env` to put a filled first-boot config onto a
-private generated image. Do not commit filled config files.
+`dist/rick-tv-pi.img.sha256`. During staging it also copies the Waveshare
+2.8inch DPI LCD DTBO files to the boot partition and appends Rick TV's legacy
+DPI display block to `config.txt`. Optionally pass `--boot-config
+/path/to/rick-tv.env` to put a filled first-boot config onto a private generated
+image. Do not commit filled config files.
 
 Before the first boot, copy `rick-tv.env.example` to `rick-tv.env` on the boot
 partition and fill in Wi-Fi, API, SSH, hostname, and Rick TV runtime values.
@@ -142,8 +144,8 @@ For the Waveshare 2.8inch DPI LCD on the legacy image, use:
 - `display/config.txt.waveshare-28dpi-legacy`
 - `vendor/waveshare-28dpi/overlays/*.dtbo`
 
-Copy the overlay files to the boot partition `overlays/` directory if the image
-does not already contain them.
+The packaged-image builder applies these automatically. Manual copying is only
+for lab repair of an already-written boot partition.
 
 ## Framebuffer Diagnostics
 

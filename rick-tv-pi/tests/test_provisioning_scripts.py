@@ -315,6 +315,60 @@ def test_packaged_image_payload_installer_stages_firstboot_files(tmp_path) -> No
     )
 
 
+def test_packaged_image_payload_installer_applies_waveshare_display_boot_config(
+    tmp_path,
+) -> None:
+    rootfs = tmp_path / "rootfs"
+    bootfs = tmp_path / "bootfs"
+    rootfs.mkdir()
+    bootfs.mkdir()
+    (bootfs / "config.txt").write_text(
+        "# base config\n"
+        "dtoverlay=vc4-fkms-v3d\n",
+        encoding="utf-8",
+    )
+
+    for _ in range(2):
+        result = subprocess.run(
+            [
+                "bash",
+                str(IMAGE_INSTALLER),
+                "--rootfs",
+                str(rootfs),
+                "--bootfs",
+                str(bootfs),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    overlays = sorted(path.name for path in (bootfs / "overlays").glob("*.dtbo"))
+    assert overlays == [
+        "vc4-kms-dpi-2inch8.dtbo",
+        "waveshare-28dpi-3b-4b.dtbo",
+        "waveshare-28dpi-3b.dtbo",
+        "waveshare-28dpi-4b.dtbo",
+        "waveshare-touch-28dpi.dtbo",
+    ]
+
+    config = (bootfs / "config.txt").read_text(encoding="utf-8")
+    assert "# dtoverlay=vc4-fkms-v3d # disabled by Rick TV Waveshare DPI config" in config
+    assert config.count("# Rick TV Waveshare 2.8inch DPI LCD") == 1
+    for expected in [
+        "dtoverlay=dpi24",
+        "enable_dpi_lcd=1",
+        "display_default_lcd=1",
+        "hdmi_timings=480 0 26 16 10 640 0 25 10 15 0 0 0 60 0 32000000 1",
+        "dtoverlay=waveshare-28dpi-3b-4b",
+        "dtoverlay=waveshare-28dpi-3b",
+        "dtoverlay=waveshare-28dpi-4b",
+        "display_rotate=3",
+    ]:
+        assert expected in config
+
+
 def test_packaged_image_payload_installer_excludes_local_secrets_and_runtime_data() -> None:
     content = IMAGE_INSTALLER.read_text(encoding="utf-8")
 

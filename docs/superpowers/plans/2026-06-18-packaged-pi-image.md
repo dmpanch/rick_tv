@@ -38,6 +38,10 @@ partition, и first boot должен применить Wi-Fi/API/token/passwor
   writes the canonical `rick-tv-pi/provisioning/rick-tv.env.example` to the boot
   partition, and can copy a private filled `rick-tv.env` only when explicitly
   requested with `--boot-config`.
+- The same payload installer applies the Waveshare 2.8inch DPI LCD boot config:
+  it copies vendor DTBO files to boot `overlays/`, comments out conflicting
+  `vc4-*kms-v3d` overlays, and appends the Rick TV legacy DPI display block to
+  `config.txt`.
 - `rick-tv-pi/provisioning/firstboot/rick-tv-firstboot.sh` reads
   `rick-tv.env` from the boot partition, writes `/etc/rick-tv-pi.env`,
   configures Wi-Fi/SSH/hostname, installs Rick TV service/videolooper assets and
