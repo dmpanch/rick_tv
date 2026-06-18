@@ -102,6 +102,13 @@ def test_videolooper_override_hides_framebuffer_console_before_raw_frame_writes(
     assert "/dev/tty1" in source
 
 
+def test_videolooper_override_quit_does_not_post_pygame_event_when_osd_disabled():
+    source = VIDEO_LOOPER_OVERRIDE.read_text()
+
+    assert "if self._osd and pygame.get_init():" in source
+    assert source.count("pygame.event.post(pygame.event.Event(pygame.QUIT))") == 1
+
+
 def test_omxplayer_override_uses_nonblocking_stop():
     source = OMX_PLAYER_OVERRIDE.read_text()
 

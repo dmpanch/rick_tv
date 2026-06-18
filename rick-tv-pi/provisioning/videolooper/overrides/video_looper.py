@@ -968,7 +968,8 @@ class VideoLooper:
 
         self._playbackStopped = True
         self._running = False
-        pygame.event.post(pygame.event.Event(pygame.QUIT))
+        if self._osd and pygame.get_init():
+            pygame.event.post(pygame.event.Event(pygame.QUIT))
 
         if self._player is not None:
             self._player.stop()
