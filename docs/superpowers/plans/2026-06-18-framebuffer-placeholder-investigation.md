@@ -33,6 +33,19 @@ kernel panic.
 - Source tests cover the draw-path invariants. Hardware evidence and dmesg
   stress results are still required before replacing raw `/dev/fb0` writes.
 
+## Lab Pi Observation
+- 2026-06-18 03:16 Europe/Kyiv: after deploying the diagnostic override to
+  `192.168.1.68`, `video_looper` restarted and reported `RUNNING`. The installed
+  egg contained the new diagnostic strings and the guarded `quit()` path.
+- The supervisor log was cleared and `video_looper` was restarted again to
+  verify that the old `pygame.error: video system not initialized` traceback no
+  longer reproduced. During that verification SSH connectivity to
+  `192.168.1.68` was lost; six ping attempts over about one minute returned no
+  replies and ARP stayed `INCOMPLETE`.
+- This does not prove a kernel panic by itself. Next hardware step is physical
+  inspection or power-cycle, then collect `uptime`, `journalctl`, supervisor
+  logs, and `dmesg` before running more placeholder stress tests.
+
 ## Test Plan
 - [x] Unit/source tests assert exactly one transition draw path for FIFO channel
   commands and exactly one interstitial draw path before in-channel playback.
