@@ -29,24 +29,21 @@ Set these environment variables before starting the service:
 - `RICK_TV_UID` and `RICK_TV_GID`: host user/group used by Docker Compose when
   running the API and bot containers. Defaults to `1000:1000` so bind-mounted
   runtime files stay editable from the host on a typical Linux workstation.
-- `RICK_TV_TELEGRAM_BOT_TOKEN`: Telegram bot token. Required only for the
-  `rick-tv-bot` service.
+- `RICK_TV_TELEGRAM_BOT_TOKEN`: Telegram bot token. Required for the default
+  Docker Compose stack.
 - `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`: comma-separated allowlist of Telegram
   user IDs allowed to manage channels, upload media, and restore available
   media.
 
 ## Docker Compose
 
-From `rick-tv-server/`, create local runtime directories and start the service:
+From `rick-tv-server/`, copy the environment template, fill in the API and
+Telegram values, and start the full stack:
 
 ```bash
-mkdir -p data/media data/config data/state
-export RICK_TV_API_TOKEN="$(openssl rand -hex 32)"
-export RICK_TV_PUBLIC_BASE_URL='http://localhost:8080'
-export RICK_TV_DATA_DIR="${RICK_TV_DATA_DIR:-./data}"
-export RICK_TV_UID="$(id -u)"
-export RICK_TV_GID="$(id -g)"
-docker compose up -d --build
+cp .env.example .env
+# edit .env
+docker compose up -d
 ```
 
 The Compose file mounts:
@@ -69,14 +66,19 @@ docker compose run --rm --user root --entrypoint sh rick-tv-server \
   -lc "chown -R $(id -u):$(id -g) /etc/rick-tv /var/lib/rick-tv/media /var/lib/rick-tv/state"
 ```
 
-The same Compose file also defines `rick-tv-bot`, a separate service using the
-same image and the same mounted runtime directories. The bot is behind the
-`bot` profile so local API smoke checks do not require Telegram credentials:
+This starts both `rick-tv-server` and `rick-tv-bot`. The bot is a separate
+service using the same image and the same mounted runtime directories.
+
+For API-only development or smoke runs without Telegram credentials:
 
 ```bash
-export RICK_TV_TELEGRAM_BOT_TOKEN='123456:telegram-token'
-export RICK_TV_TELEGRAM_ALLOWED_USER_IDS='123456789'
-docker compose --profile bot up -d --build
+docker compose up -d rick-tv-server
+```
+
+To force an image rebuild after code changes:
+
+```bash
+docker compose up -d --build
 ```
 
 The bot runner uses long polling, not webhooks.
@@ -178,7 +180,7 @@ After the public `/health` endpoint is available, extend the smoke run with a
 reachability check:
 
 ```bash
-docker compose up -d
+docker compose up -d rick-tv-server
 curl -f http://localhost:8080/health
 docker compose logs --no-color --tail=50
 docker compose down

@@ -68,6 +68,14 @@ def test_docker_compose_runs_bot_service_with_shared_runtime_volumes() -> None:
     assert "RICK_TV_CHANNELS_PATH" not in content
 
 
+def test_docker_compose_runs_bot_by_default_without_profile() -> None:
+    compose_file = PROJECT_ROOT / "docker-compose.yml"
+
+    content = compose_file.read_text(encoding="utf-8")
+
+    assert "profiles:" not in content
+
+
 def test_dockerignore_excludes_runtime_volume_directories() -> None:
     dockerignore = PROJECT_ROOT / ".dockerignore"
 
@@ -87,6 +95,30 @@ def test_env_example_documents_single_host_data_dir() -> None:
 
     assert "RICK_TV_DATA_DIR=./data" in content
     assert "/srv/rick-tv" in content
+
+
+def test_env_example_documents_telegram_as_default_stack_required() -> None:
+    env_example = PROJECT_ROOT / ".env.example"
+
+    content = env_example.read_text(encoding="utf-8")
+
+    assert "Required for the default Docker Compose stack" in content
+
+
+def test_startup_docs_use_one_command_without_bot_profile_or_manual_dirs() -> None:
+    docs_files = [
+        PROJECT_ROOT.parent / "README.md",
+        PROJECT_ROOT.parent / "docs" / "rick-tv-server.md",
+    ]
+
+    for docs_file in docs_files:
+        content = docs_file.read_text(encoding="utf-8")
+        old_profile_command = "docker compose " + "--profile" + " bot"
+        old_manual_dirs = "mkdir -p data/media " + "data/config data/state"
+
+        assert "docker compose up -d" in content
+        assert old_profile_command not in content
+        assert old_manual_dirs not in content
 
 
 def test_server_docs_document_docker_build_and_import_smoke_check() -> None:

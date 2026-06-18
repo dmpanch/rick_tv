@@ -21,8 +21,6 @@ services:
     build: .
     user: "${RICK_TV_UID:-1000}:${RICK_TV_GID:-1000}"
     command: python -m rick_tv_server.bot_runner
-    profiles:
-      - bot
     environment:
       RICK_TV_MEDIA_DIR: /var/lib/rick-tv/media
       RICK_TV_CONFIG_DIR: /etc/rick-tv
