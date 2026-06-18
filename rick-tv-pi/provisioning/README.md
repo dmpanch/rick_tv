@@ -1,14 +1,8 @@
 # Rick TV Pi Provisioning
 
-This provisioning set targets Raspberry Pi OS Lite (Legacy/Buster) on Pi Zero W
-with the original Adafruit `pi_video_looper` 1.x runtime already installed:
-
-- Upstream project: <https://github.com/adafruit/pi_video_looper>
-- Upstream install guide: <https://learn.adafruit.com/raspberry-pi-video-looper/installation>
-
-Use the original `pi_video_looper`, not `pi_video_looper2`. Rick TV installs
-pinned overrides into the original Adafruit Video Looper egg and drives
-`omxplayer` through the legacy supervisor-managed runtime.
+This provisioning set targets Raspberry Pi Zero W running the prebuilt Video
+Looper SD-card image from <https://videolooper.de/>. Rick TV installs pinned
+playlist/FIFO overrides into that existing Video Looper runtime.
 
 Current lab device:
 
@@ -17,46 +11,40 @@ Current lab device:
 
 Do not run `apt upgrade` on the target Pi as part of Rick TV deployment.
 
-## Build a Fresh Videolooper Base
+## Flash a Fresh Videolooper Base
 
 If you do not already have a known-good videolooper image, make one first:
 
-1. Flash Raspberry Pi OS Lite (Legacy, 32-bit/Buster) to the SD card and enable
-   SSH/Wi-Fi in Raspberry Pi Imager. Use the username `pi`; the current
-   provisioning paths assume `/home/pi`.
+1. Download the Video Looper image zip from <https://videolooper.de/>. Choose a
+   release that supports Raspberry Pi Zero W.
 
-2. Boot the Pi and SSH in.
+2. Open Raspberry Pi Imager, choose `Use custom`, select the downloaded
+   Video Looper image zip, choose the SD card, and write it. Keep the Linux user
+   as `pi`; the current provisioning paths assume `/home/pi`.
 
-3. Install the original Adafruit video looper:
+3. Boot the Pi. The current lab image uses:
 
-```sh
-sudo apt-get update
-sudo apt-get install -y git
-cd ~
-git clone https://github.com/adafruit/pi_video_looper.git
-cd pi_video_looper
-sudo ./install.sh no_hello_video
+```text
+user: pi
+password: video
 ```
 
-If `apt-get update` fails on an old Buster image because the repository moved,
-use the legacy Buster repository and retry:
+4. SSH into the Pi and verify that the Video Looper runtime is present:
 
 ```sh
-echo "deb http://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi" | sudo tee /etc/apt/sources.list
-sudo apt-get update
-```
-
-4. Verify the base image before applying Rick TV:
-
-```sh
+ssh pi@<pi-ip>
 sudo supervisorctl status video_looper
-ls /usr/local/lib/python3.7/dist-packages/Adafruit_Video_Looper-1.0.21-py3.7.egg
+ls /usr/local/lib/python3.7/dist-packages/Adafruit_Video_Looper-*.egg
 ```
+
+The Rick TV deploy script currently expects the legacy Python 3.7 Video Looper
+layout used by the `videolooper.de` image. Do not run `apt upgrade` on the Pi as
+part of Rick TV setup.
 
 ## Packaged Image Payload
 
 The preferred install path is a Rick TV-prepared image made from the known-good
-legacy videolooper base image. If you have the base image file locally, build a
+`videolooper.de` base image. If you have the base image file locally, build a
 flashable Rick TV image from the repository root:
 
 ```sh
@@ -111,7 +99,7 @@ The deploy script:
 - installs `rick-tv-pi` into `/opt/rick-tv-pi/.venv`;
 - writes the systemd unit;
 - configures `/boot/video_looper.ini`;
-- installs pinned Rick TV `pi_video_looper` overrides into the Adafruit Video Looper egg;
+- installs pinned Rick TV overrides into the Video Looper Python egg;
 - installs `/home/pi/rick-tv/system/transition-placeholder.fb`;
 - installs `/home/pi/rick-tv/system/interstitial-ad.fb`;
 - installs kernel panic reboot and watchdog recovery config;
