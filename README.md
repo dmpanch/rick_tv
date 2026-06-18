@@ -71,14 +71,81 @@ docker compose --profile bot up -d --build
 
 ## Raspberry Pi Setup
 
-The current legacy `videolooper` image uses this default SSH login:
+Rick TV Pi is layered on top of the prebuilt Video Looper image from
+<https://videolooper.de/>. Do not build the playback base by hand for this
+project. The supported base is the `videolooper.de` SD-card image, and Rick TV
+deploys its own playlist/FIFO overrides on top of that image.
+
+### Fresh Pi Zero W Install
+
+1. Download the Video Looper image zip from <https://videolooper.de/>. Choose a
+   release that supports Raspberry Pi Zero W.
+
+2. Open Raspberry Pi Imager, choose `Use custom`, select the downloaded
+   Video Looper image zip, choose the SD card, and write it. Keep the Linux user
+   as `pi`; the current Rick TV provisioning paths assume `/home/pi`.
+
+3. Boot the Pi. The current lab image uses:
+
+```text
+user: pi
+password: video
+```
+
+4. SSH into the Pi and verify that the Video Looper runtime is present:
+
+```bash
+ssh pi@<pi-ip>
+sudo supervisorctl status video_looper
+ls /usr/local/lib/python3.7/dist-packages/Adafruit_Video_Looper-*.egg
+```
+
+The Rick TV deploy script currently expects the legacy Python 3.7 Video Looper
+layout used by the `videolooper.de` image. Do not run `apt upgrade` on the Pi as
+part of Rick TV setup.
+
+5. From this repository on your workstation, copy and edit the Rick TV Pi env:
+
+```bash
+scp rick-tv-pi/provisioning/rick-tv-pi.env.example pi@<pi-ip>:/tmp/rick-tv-pi.env
+ssh pi@<pi-ip> 'sudo install -m 0600 /tmp/rick-tv-pi.env /etc/rick-tv-pi.env && sudo nano /etc/rick-tv-pi.env'
+```
+
+Set at least `RICK_TV_SERVER_URL`, `RICK_TV_API_TOKEN`, `RICK_TV_MEDIA_ROOT`,
+`RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT`, and `RICK_TV_VIDEOLOOPER_COMMAND_PATH`.
+
+6. Deploy Rick TV over SSH:
+
+```bash
+PI_HOST=pi@<pi-ip> PI_PASSWORD=<pi-password> \
+  rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
+```
+
+7. Reboot once so the boot-level panic/watchdog settings take effect:
+
+```bash
+ssh pi@<pi-ip> 'sudo reboot'
+```
+
+8. After reboot, verify services:
+
+```bash
+ssh pi@<pi-ip> 'systemctl is-active rick-tv-pi.service && sudo supervisorctl status video_looper'
+```
+
+### Existing Lab Image
+
+The current legacy `videolooper.de` lab image uses this default SSH login:
 
 - user: `pi`
 - password: `video`
 
 After first login, replace the password or add an SSH key and disable password login if the Pi will stay on a shared network.
 
-For a new install, the preferred path is to turn a known-good legacy `videolooper` image into a Rick TV image:
+### Packaged Image Path
+
+After you have a known-good `videolooper.de` image, you can turn it into a Rick
+TV image:
 
 ```bash
 sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \

@@ -1,7 +1,8 @@
 # Rick TV Pi Provisioning
 
-This provisioning set targets the prepared Raspberry Pi OS Legacy/Buster image
-that already contains Adafruit `pi_video_looper`, `supervisor`, and `omxplayer`.
+This provisioning set targets Raspberry Pi Zero W running the prebuilt Video
+Looper SD-card image from <https://videolooper.de/>. Rick TV installs pinned
+playlist/FIFO overrides into that existing Video Looper runtime.
 
 Current lab device:
 
@@ -10,10 +11,40 @@ Current lab device:
 
 Do not run `apt upgrade` on the target Pi as part of Rick TV deployment.
 
+## Flash a Fresh Videolooper Base
+
+If you do not already have a known-good videolooper image, make one first:
+
+1. Download the Video Looper image zip from <https://videolooper.de/>. Choose a
+   release that supports Raspberry Pi Zero W.
+
+2. Open Raspberry Pi Imager, choose `Use custom`, select the downloaded
+   Video Looper image zip, choose the SD card, and write it. Keep the Linux user
+   as `pi`; the current provisioning paths assume `/home/pi`.
+
+3. Boot the Pi. The current lab image uses:
+
+```text
+user: pi
+password: video
+```
+
+4. SSH into the Pi and verify that the Video Looper runtime is present:
+
+```sh
+ssh pi@<pi-ip>
+sudo supervisorctl status video_looper
+ls /usr/local/lib/python3.7/dist-packages/Adafruit_Video_Looper-*.egg
+```
+
+The Rick TV deploy script currently expects the legacy Python 3.7 Video Looper
+layout used by the `videolooper.de` image. Do not run `apt upgrade` on the Pi as
+part of Rick TV setup.
+
 ## Packaged Image Payload
 
 The preferred install path is a Rick TV-prepared image made from the known-good
-legacy videolooper base image. If you have the base image file locally, build a
+`videolooper.de` base image. If you have the base image file locally, build a
 flashable Rick TV image from the repository root:
 
 ```sh
@@ -68,7 +99,7 @@ The deploy script:
 - installs `rick-tv-pi` into `/opt/rick-tv-pi/.venv`;
 - writes the systemd unit;
 - configures `/boot/video_looper.ini`;
-- installs pinned Rick TV `pi_video_looper` overrides into the Adafruit Video Looper egg;
+- installs pinned Rick TV overrides into the Video Looper Python egg;
 - installs `/home/pi/rick-tv/system/transition-placeholder.fb`;
 - installs `/home/pi/rick-tv/system/interstitial-ad.fb`;
 - installs kernel panic reboot and watchdog recovery config;
