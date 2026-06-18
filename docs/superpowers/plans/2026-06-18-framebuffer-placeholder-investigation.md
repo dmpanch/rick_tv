@@ -143,21 +143,56 @@ kernel panic.
   writes plus active omxplayer playback a credible source of user-space player
   instability. It still does not prove the earlier appliance-level kernel panic
   without a preserved panic stack or a reproduced full Pi freeze.
+- 2026-06-18 15:52 Europe/Kyiv: after the user rebooted the Pi, collected
+  postmortem evidence in
+  `/home/pi/rick-tv/diagnostics/postmortem-20260618T125238Z`. The previous boot
+  ended abruptly at `2026-06-18 12:11:02 UTC` after normal HTTP polling logs.
+  Server logs saw Pi requests until about `2026-06-18 12:11:19 UTC` and then
+  again after reboot at `2026-06-18 12:51:59 UTC`. No `pstore` panic log was
+  available and previous-boot kernel logs had no panic/oops/framebuffer/GPU
+  evidence, so the outage still looks like hard freeze or power-loss class
+  without a preserved kernel stack.
+- 2026-06-18 16:01-17:02 Europe/Kyiv: ran a one-hour raw-enabled soak after the
+  reboot with `RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=false`. Remote watcher
+  evidence was left on the Pi in
+  `/home/pi/rick-tv/diagnostics/watch-20260618T125947Z`; local ping watcher log
+  was `/tmp/rick-tv-local-watch-20260618T130152Z.log`. The Pi stayed reachable
+  for the full hour, server polling continued, `get_throttled` stayed `0x0`,
+  temperature stayed about `53-55.1'C`, and kernel logs had no new panic/oops or
+  framebuffer/GPU entries.
+- During that one-hour raw-enabled soak, `omxplayer` stderr grew from zero to six
+  `Aborted` entries. Each abort correlated with an unexpectedly short playback
+  interval of about 4-5 seconds after `Rick TV showing interstitial ad`. Local
+  `ffprobe` on the server-side seed library confirmed the `01_Citadel` seed
+  videos are 20-second files, so these are premature player aborts, not expected
+  short clips.
+- The same soak also exposed a routing bug around hourly playlist reshuffle:
+  at `2026-06-18 13:51:59 UTC`, `VideolooperController` sent a FIFO command for
+  the current `01_Citadel` playlist after the default 3600-second shuffle
+  interval expired. The videolooper override had
+  `_rick_tv_current_playlist_path=None`, because normal master-playlist startup
+  does not initialize that FIFO tracking field. It therefore treated the command
+  as a different playlist and drew `transition-placeholder.fb` even though this
+  was effectively a same-channel refresh.
 
 ## Current Hypothesis
-- The current code-level routing now appears correct: different-channel switch
-  draws only the transition placeholder, same-channel refresh suppresses it, and
-  in-channel video changes use only the interstitial.
+- Code-level routing is correct for FIFO commands once
+  `_rick_tv_current_playlist_path` is initialized: different-channel switch draws
+  only the transition placeholder, same-channel refresh suppresses it, and
+  in-channel video changes use only the interstitial. However, normal
+  master-playlist startup leaves `_rick_tv_current_playlist_path=None`, so the
+  first current-channel FIFO refresh after startup can be misclassified as a
+  different-channel switch and draw the transition placeholder.
 - The earlier kernel panic was real at the appliance level, but its root cause is
   still unproven because the reboot did not preserve a panic stack. The strongest
   remaining suspect is timing/contention between active `omxplayer` playback,
   stop/start, and raw fb writes. Lower-level display/GPIO configuration
   instability on the legacy image remains a secondary suspect.
 - Longer raw-enabled tests did not reproduce kernel panic, but they did reproduce
-  `omxplayer.bin Aborted` under both remote switch pressure and direct
-  framebuffer pressure. Treat the current failure as proven user-space player
-  instability and unproven kernel panic until a full freeze captures crash
-  evidence.
+  repeated `omxplayer.bin Aborted` under remote switch pressure, direct
+  framebuffer pressure, and passive in-channel interstitial playback. Treat the
+  current failure as proven user-space player instability and unproven kernel
+  panic until a full freeze captures crash evidence.
 - The A/B run with raw placeholder writes disabled did not reproduce the panic
   during its shorter stress window. This is useful but not conclusive: a longer
   A/B soak is still needed before deciding whether repeated raw framebuffer
@@ -182,9 +217,14 @@ kernel panic.
   `omxplayer.bin Aborted`.
 - [x] Direct raw `/dev/fb0` stress completed 500 alternating placeholder writes
   without kernel panic, while recording one `omxplayer.bin Aborted`.
+- [x] One-hour raw-enabled post-reboot soak completed without ping loss or
+  kernel evidence, while recording six `omxplayer.bin Aborted` entries during
+  regular in-channel interstitial playback.
 - [ ] Capture video/photo evidence of actual screen behavior during channel
   switch and in-channel transition, because logs prove code path selection but
   not visual flicker timing.
+- [ ] Fix and retest the first post-startup same-channel FIFO refresh so hourly
+  reshuffle does not draw a channel-switch transition placeholder.
 - [ ] Run a longer A/B soak with raw `/dev/fb0` placeholders disabled before
   deciding whether to delete or replace the `.fb` path.
 
