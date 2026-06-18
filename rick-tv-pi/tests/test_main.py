@@ -59,6 +59,14 @@ def test_load_touch_settings_from_env_supports_screen_size_and_axis_options(monk
     assert settings.device_path == "/dev/input/event4"
 
 
+def test_load_touch_settings_from_env_defaults_axis_swap_to_auto(monkeypatch):
+    monkeypatch.delenv("RICK_TV_TOUCH_SWAP_AXES", raising=False)
+
+    settings = load_touch_settings_from_env()
+
+    assert settings.swap_axes == "auto"
+
+
 def test_runtime_cycle_logs_poll_failure_and_rescans_channel(tmp_path, caplog):
     channel_path = tmp_path / "01_Citadel"
     channel_path.mkdir()

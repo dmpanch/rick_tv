@@ -158,7 +158,7 @@ def load_touch_settings_from_env(
     return TouchSettings(
         screen_width=int(env.get("RICK_TV_TOUCH_SCREEN_WIDTH", "480")),
         screen_height=int(env.get("RICK_TV_TOUCH_SCREEN_HEIGHT", "640")),
-        swap_axes=env.get("RICK_TV_TOUCH_SWAP_AXES", "false"),
+        swap_axes=env.get("RICK_TV_TOUCH_SWAP_AXES", "auto"),
         gesture_horizontal_axis=_normalize_gesture_horizontal_axis(
             env.get("RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS", "x")
         ),

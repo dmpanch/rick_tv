@@ -68,6 +68,14 @@ def test_docker_compose_runs_bot_service_with_shared_runtime_volumes() -> None:
     assert "RICK_TV_CHANNELS_PATH" not in content
 
 
+def test_docker_compose_passes_log_level_to_both_services() -> None:
+    compose_file = PROJECT_ROOT / "docker-compose.yml"
+
+    content = compose_file.read_text(encoding="utf-8")
+
+    assert content.count("RICK_TV_LOG_LEVEL: ${RICK_TV_LOG_LEVEL:-INFO}") == 2
+
+
 def test_docker_compose_runs_bot_by_default_without_profile() -> None:
     compose_file = PROJECT_ROOT / "docker-compose.yml"
 
@@ -103,6 +111,14 @@ def test_env_example_documents_telegram_as_default_stack_required() -> None:
     content = env_example.read_text(encoding="utf-8")
 
     assert "Required for the default Docker Compose stack" in content
+
+
+def test_env_example_documents_log_level() -> None:
+    env_example = PROJECT_ROOT / ".env.example"
+
+    content = env_example.read_text(encoding="utf-8")
+
+    assert "RICK_TV_LOG_LEVEL=INFO" in content
 
 
 def test_startup_docs_use_one_command_without_bot_profile_or_manual_dirs() -> None:

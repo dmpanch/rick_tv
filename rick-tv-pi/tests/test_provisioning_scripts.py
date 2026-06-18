@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import subprocess
 import sys
 import zipfile
@@ -21,6 +22,25 @@ RECOVERY_SCRIPT = PROJECT_ROOT / "provisioning" / "scripts" / "configure-pi-reco
 PLAYLIST_GENERATOR = (
     PROJECT_ROOT / "provisioning" / "videolooper" / "generate_channel_playlists.py"
 )
+PI_DOCS = PROJECT_ROOT.parent / "docs" / "rick-tv-pi.md"
+
+
+def env_assignment_keys(path: Path) -> set[str]:
+    return {
+        match.group(1)
+        for match in re.finditer(
+            r"^([A-Z][A-Z0-9_]*)=",
+            path.read_text(encoding="utf-8"),
+            flags=re.MULTILINE,
+        )
+    }
+
+
+def runtime_names_from_script(path: Path) -> set[str]:
+    content = path.read_text(encoding="utf-8")
+    match = re.search(r"\b(?:runtime_)?names=\((.*?)\)", content, flags=re.DOTALL)
+    assert match is not None
+    return set(re.findall(r"\bRICK_TV_[A-Z0-9_]+\b", match.group(1)))
 
 
 def test_deploy_restarts_videolooper_before_pi_runtime() -> None:
@@ -113,6 +133,75 @@ def test_deploy_uses_single_full_config_example_for_missing_runtime_env() -> Non
         "RICK_TV_TELEGRAM_ALLOWED_USER_IDS",
     ]:
         assert secret_or_boot_only not in runtime_section
+
+
+def test_pi_env_example_matches_firstboot_and_deploy_runtime_subset() -> None:
+    firstboot_runtime = runtime_names_from_script(FIRSTBOOT_SCRIPT)
+    deploy_runtime = runtime_names_from_script(
+        PROJECT_ROOT / "provisioning" / "deploy_videolooper_image.sh"
+    )
+    example_keys = env_assignment_keys(FIRSTBOOT_EXAMPLE)
+
+    assert firstboot_runtime == deploy_runtime
+    assert firstboot_runtime <= example_keys
+    assert {
+        "WIFI_COUNTRY",
+        "WIFI_SSID",
+        "WIFI_PSK",
+        "SSH_ENABLE",
+        "SSH_PASSWORD",
+        "SSH_AUTHORIZED_KEY",
+        "RICK_TV_HOSTNAME",
+    } <= example_keys
+    assert "RICK_TV_TELEGRAM_BOT_TOKEN" not in example_keys
+    assert "RICK_TV_TELEGRAM_ALLOWED_USER_IDS" not in example_keys
+    assert "RICK_TV_OVERWRITE_ENV" not in example_keys
+
+
+def test_pi_docs_show_generated_runtime_env_subset() -> None:
+    docs = PI_DOCS.read_text(encoding="utf-8")
+    start = docs.index("The generated `/etc/rick-tv-pi.env`")
+    block_start = docs.index("```text", start)
+    block_end = docs.index("```", block_start + len("```text"))
+    runtime_block = docs[block_start:block_end]
+
+    for name in sorted(runtime_names_from_script(FIRSTBOOT_SCRIPT)):
+        assert name in runtime_block
+
+
+def test_pi_docs_document_overwrite_env_as_admin_recovery_option() -> None:
+    docs = PI_DOCS.read_text(encoding="utf-8")
+    example = FIRSTBOOT_EXAMPLE.read_text(encoding="utf-8")
+
+    assert "RICK_TV_OVERWRITE_ENV" in docs
+    assert "advanced recovery" in docs
+    assert "RICK_TV_OVERWRITE_ENV" not in example
+
+
+def test_firstboot_ignores_legacy_pi_password_alias(tmp_path) -> None:
+    rootfs = tmp_path / "rootfs"
+    bootfs = tmp_path / "bootfs"
+    bootfs.mkdir()
+    (bootfs / "rick-tv.env").write_text(
+        "PI_PASSWORD='legacy-password'\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["bash", str(FIRSTBOOT_SCRIPT)],
+        check=False,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "RICK_TV_FIRSTBOOT_ROOT": str(rootfs),
+            "RICK_TV_FIRSTBOOT_BOOT": str(bootfs),
+            "RICK_TV_FIRSTBOOT_DRY_RUN": "1",
+        },
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "would set pi password" not in result.stdout
 
 
 def test_recovery_script_writes_panic_and_watchdog_config_idempotently(tmp_path) -> None:
@@ -237,9 +326,20 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
                 "RICK_TV_API_TOKEN=test-token",
                 "RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media",
                 "RICK_TV_METADATA_PATH=/home/pi/rick-tv/config/channels.json",
+                "RICK_TV_POLL_INTERVAL_SECONDS=60",
+                "RICK_TV_REMOTE_POLL_INTERVAL_SECONDS=2",
                 "RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT=/home/pi/rick-tv/playlists",
                 "RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo",
                 "RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true",
+                "RICK_TV_CHANNEL_SHUFFLE_SECONDS=3600",
+                "RICK_TV_TOUCH_SCREEN_WIDTH=480",
+                "RICK_TV_TOUCH_SCREEN_HEIGHT=640",
+                "RICK_TV_TOUCH_SWAP_AXES=auto",
+                "RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS=x",
+                "RICK_TV_TOUCH_INVERT_X=0",
+                "RICK_TV_TOUCH_INVERT_Y=0",
+                "RICK_TV_TOUCH_DEVICE=",
+                "RICK_TV_RUNTIME_TICK_SECONDS=0.1",
                 "RICK_TV_TELEGRAM_BOT_TOKEN=server-only-token",
                 "RICK_TV_TELEGRAM_ALLOWED_USER_IDS=12345",
             ]
@@ -268,9 +368,20 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
         "RICK_TV_API_TOKEN=test-token\n"
         "RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media\n"
         "RICK_TV_METADATA_PATH=/home/pi/rick-tv/config/channels.json\n"
+        "RICK_TV_POLL_INTERVAL_SECONDS=60\n"
+        "RICK_TV_REMOTE_POLL_INTERVAL_SECONDS=2\n"
         "RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT=/home/pi/rick-tv/playlists\n"
         "RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo\n"
         "RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true\n"
+        "RICK_TV_CHANNEL_SHUFFLE_SECONDS=3600\n"
+        "RICK_TV_TOUCH_SCREEN_WIDTH=480\n"
+        "RICK_TV_TOUCH_SCREEN_HEIGHT=640\n"
+        "RICK_TV_TOUCH_SWAP_AXES=auto\n"
+        "RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS=x\n"
+        "RICK_TV_TOUCH_INVERT_X=0\n"
+        "RICK_TV_TOUCH_INVERT_Y=0\n"
+        "RICK_TV_TOUCH_DEVICE=\n"
+        "RICK_TV_RUNTIME_TICK_SECONDS=0.1\n"
     )
     for secret_or_boot_only in [
         "WIFI_PSK",
@@ -711,6 +822,7 @@ def test_firstboot_example_uses_placeholders_only() -> None:
     assert "RICK_TV_SERVER_URL" in content
     assert "RICK_TV_REMOTE_POLL_INTERVAL_SECONDS" in content
     assert "RICK_TV_TOUCH_SCREEN_WIDTH" in content
+    assert 'RICK_TV_TOUCH_SWAP_AXES="auto"' in content
     assert "RICK_TV_TELEGRAM_BOT_TOKEN" not in content
     assert "RICK_TV_TELEGRAM_ALLOWED_USER_IDS" not in content
 
