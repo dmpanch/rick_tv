@@ -71,14 +71,97 @@ docker compose --profile bot up -d --build
 
 ## Raspberry Pi Setup
 
-The current legacy `videolooper` image uses this default SSH login:
+Rick TV Pi is layered on top of the original Adafruit `pi_video_looper` 1.x
+runtime:
+
+- Upstream project: <https://github.com/adafruit/pi_video_looper>
+- Upstream install guide: <https://learn.adafruit.com/raspberry-pi-video-looper/installation>
+
+Use the original `pi_video_looper`, not `pi_video_looper2`. The current Rick TV
+Pi Zero runtime depends on the legacy `omxplayer`/`supervisor` video looper path
+and installs pinned overrides into the Adafruit Video Looper egg. `pi_video_looper2`
+targets newer Pi 4/5-style VLC playback and is not the runtime this project
+patches.
+
+### Fresh Pi Zero W Install
+
+1. Flash Raspberry Pi OS Lite (Legacy, 32-bit/Buster) to the SD card.
+   Enable SSH and Wi-Fi in Raspberry Pi Imager before writing the card. Do not
+   use the current non-Legacy Raspberry Pi OS for this runtime; the upstream
+   looper still depends on legacy `omxplayer`. Use the username `pi`; the
+   current Rick TV provisioning paths assume `/home/pi`.
+
+2. Boot the Pi and SSH in with the user/password you configured in Imager.
+
+3. Install the original Adafruit video looper:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git
+cd ~
+git clone https://github.com/adafruit/pi_video_looper.git
+cd pi_video_looper
+sudo ./install.sh no_hello_video
+```
+
+`no_hello_video` keeps the install focused on `omxplayer`, which is what Rick TV
+uses. If `apt-get update` fails on an old Buster image because the repository
+moved, point APT at the legacy Buster repository and run the update again:
+
+```bash
+echo "deb http://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi" | sudo tee /etc/apt/sources.list
+sudo apt-get update
+```
+
+4. Verify that base playback infrastructure exists:
+
+```bash
+sudo supervisorctl status video_looper
+ls /usr/local/lib/python3.7/dist-packages/Adafruit_Video_Looper-1.0.21-py3.7.egg
+```
+
+5. From this repository on your workstation, copy and edit the Rick TV Pi env:
+
+```bash
+scp rick-tv-pi/provisioning/rick-tv-pi.env.example pi@<pi-ip>:/tmp/rick-tv-pi.env
+ssh pi@<pi-ip> 'sudo install -m 0600 /tmp/rick-tv-pi.env /etc/rick-tv-pi.env && sudo nano /etc/rick-tv-pi.env'
+```
+
+Set at least `RICK_TV_SERVER_URL`, `RICK_TV_API_TOKEN`, `RICK_TV_MEDIA_ROOT`,
+`RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT`, and `RICK_TV_VIDEOLOOPER_COMMAND_PATH`.
+
+6. Deploy Rick TV over SSH:
+
+```bash
+PI_HOST=pi@<pi-ip> PI_PASSWORD=<pi-password> \
+  rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
+```
+
+7. Reboot once so the boot-level panic/watchdog settings take effect:
+
+```bash
+ssh pi@<pi-ip> 'sudo reboot'
+```
+
+8. After reboot, verify services:
+
+```bash
+ssh pi@<pi-ip> 'systemctl is-active rick-tv-pi.service && sudo supervisorctl status video_looper'
+```
+
+### Existing Lab Image
+
+The current legacy `videolooper` lab image uses this default SSH login:
 
 - user: `pi`
 - password: `video`
 
 After first login, replace the password or add an SSH key and disable password login if the Pi will stay on a shared network.
 
-For a new install, the preferred path is to turn a known-good legacy `videolooper` image into a Rick TV image:
+### Packaged Image Path
+
+After you have a known-good legacy image with original Adafruit `pi_video_looper`,
+`supervisor`, and `omxplayer` installed, you can turn it into a Rick TV image:
 
 ```bash
 sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \

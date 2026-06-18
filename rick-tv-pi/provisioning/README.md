@@ -1,7 +1,14 @@
 # Rick TV Pi Provisioning
 
-This provisioning set targets the prepared Raspberry Pi OS Legacy/Buster image
-that already contains Adafruit `pi_video_looper`, `supervisor`, and `omxplayer`.
+This provisioning set targets Raspberry Pi OS Lite (Legacy/Buster) on Pi Zero W
+with the original Adafruit `pi_video_looper` 1.x runtime already installed:
+
+- Upstream project: <https://github.com/adafruit/pi_video_looper>
+- Upstream install guide: <https://learn.adafruit.com/raspberry-pi-video-looper/installation>
+
+Use the original `pi_video_looper`, not `pi_video_looper2`. Rick TV installs
+pinned overrides into the original Adafruit Video Looper egg and drives
+`omxplayer` through the legacy supervisor-managed runtime.
 
 Current lab device:
 
@@ -9,6 +16,42 @@ Current lab device:
 - password: `video`
 
 Do not run `apt upgrade` on the target Pi as part of Rick TV deployment.
+
+## Build a Fresh Videolooper Base
+
+If you do not already have a known-good videolooper image, make one first:
+
+1. Flash Raspberry Pi OS Lite (Legacy, 32-bit/Buster) to the SD card and enable
+   SSH/Wi-Fi in Raspberry Pi Imager. Use the username `pi`; the current
+   provisioning paths assume `/home/pi`.
+
+2. Boot the Pi and SSH in.
+
+3. Install the original Adafruit video looper:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y git
+cd ~
+git clone https://github.com/adafruit/pi_video_looper.git
+cd pi_video_looper
+sudo ./install.sh no_hello_video
+```
+
+If `apt-get update` fails on an old Buster image because the repository moved,
+use the legacy Buster repository and retry:
+
+```sh
+echo "deb http://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi" | sudo tee /etc/apt/sources.list
+sudo apt-get update
+```
+
+4. Verify the base image before applying Rick TV:
+
+```sh
+sudo supervisorctl status video_looper
+ls /usr/local/lib/python3.7/dist-packages/Adafruit_Video_Looper-1.0.21-py3.7.egg
+```
 
 ## Packaged Image Payload
 
