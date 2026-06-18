@@ -104,21 +104,24 @@ The Rick TV deploy script currently expects the legacy Python 3.7 Video Looper
 layout used by the `videolooper.de` image. Do not run `apt upgrade` on the Pi as
 part of Rick TV setup.
 
-5. From this repository on your workstation, copy and edit the Rick TV Pi env:
+5. From this repository on your workstation, create one full Pi config:
 
 ```bash
-scp rick-tv-pi/provisioning/rick-tv-pi.env.example pi@<pi-ip>:/tmp/rick-tv-pi.env
-ssh pi@<pi-ip> 'sudo install -m 0600 /tmp/rick-tv-pi.env /etc/rick-tv-pi.env && sudo nano /etc/rick-tv-pi.env'
+mkdir -p dist
+cp rick-tv-pi/provisioning/rick-tv.env.example dist/rick-tv.env
+nano dist/rick-tv.env
 ```
 
 Set at least `RICK_TV_SERVER_URL`, `RICK_TV_API_TOKEN`, `RICK_TV_MEDIA_ROOT`,
 `RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT`, and `RICK_TV_VIDEOLOOPER_COMMAND_PATH`.
+For a fresh SD card, also set Wi-Fi and SSH fields. `dist/` is ignored, so the
+filled config stays private.
 
 6. Deploy Rick TV over SSH:
 
 ```bash
 PI_HOST=pi@<pi-ip> PI_PASSWORD=<pi-password> \
-  rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
+  rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy --config dist/rick-tv.env
 ```
 
 7. Reboot once so the boot-level panic/watchdog settings take effect:
@@ -170,18 +173,20 @@ overrides and assets, enables `rick-tv-pi.service`, and then stops overwriting
 manual edits. Telegram bot credentials stay on the server and do not belong in
 the Pi image or `rick-tv.env`.
 
-For the current lab Pi, SSH deployment is still supported. Before deploying, prepare `/etc/rick-tv-pi.env` from the template:
+For the current lab Pi, SSH deployment is still supported. The same
+`rick-tv-pi/provisioning/rick-tv.env.example` file can be copied to
+`dist/rick-tv.env`, edited, and passed to deploy:
 
 ```bash
-sudo cp rick-tv-pi/provisioning/rick-tv-pi.env.example /etc/rick-tv-pi.env
-sudo nano /etc/rick-tv-pi.env
+mkdir -p dist
+cp rick-tv-pi/provisioning/rick-tv.env.example dist/rick-tv.env
+nano dist/rick-tv.env
+rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy --config dist/rick-tv.env
 ```
 
-Edit the file before running deploy so the service starts with the intended values.
-
-```bash
-rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
-```
+If `/etc/rick-tv-pi.env` already exists on the Pi, deploy preserves it. Edit or
+remove that runtime file on the Pi when you intentionally want new runtime
+values.
 
 Raw framebuffer placeholders are still part of the legacy `videolooper` runtime. The code logs FIFO commands, playlist reloads, `transition-placeholder.fb` and `interstitial-ad.fb` display events, and `player.play(...)` boundaries. A channel switch draws only the transition placeholder and suppresses the next interstitial; an in-channel playlist refresh does not draw the transition placeholder and uses the regular interstitial before the next playback.
 
@@ -193,7 +198,12 @@ Pi provisioning also installs recovery settings for appliance outages: kernel pa
 
 The environment template is:
 
-- `rick-tv-pi/provisioning/rick-tv-pi.env.example`
+- `rick-tv-pi/provisioning/rick-tv.env.example`
+
+It is intentionally a full first-boot config: Wi-Fi, SSH, hostname, and Pi
+runtime values live in one file. Firstboot and SSH deploy write only the
+`RICK_TV_*` runtime subset to `/etc/rick-tv-pi.env` for systemd. Telegram bot
+credentials are server-side only and must not be added to the Pi config.
 
 Important settings:
 

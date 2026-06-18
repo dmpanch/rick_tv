@@ -5,7 +5,8 @@ import subprocess
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIRSTBOOT_SCRIPT = PROJECT_ROOT / "provisioning" / "firstboot" / "rick-tv-firstboot.sh"
 FIRSTBOOT_SERVICE = PROJECT_ROOT / "provisioning" / "firstboot" / "rick-tv-firstboot.service"
-FIRSTBOOT_EXAMPLE = PROJECT_ROOT / "provisioning" / "firstboot" / "rick-tv.env.example"
+FIRSTBOOT_EXAMPLE = PROJECT_ROOT / "provisioning" / "rick-tv.env.example"
+REMOVED_RUNTIME_EXAMPLE = PROJECT_ROOT / "provisioning" / "rick-tv-pi.env.example"
 IMAGE_INSTALLER = (
     PROJECT_ROOT / "provisioning" / "image" / "install_packaged_image_payload.sh"
 )
@@ -56,6 +57,42 @@ def test_deploy_applies_pi_recovery_config() -> None:
     assert content.index("configure-pi-recovery.sh") < content.index(
         "systemctl restart rick-tv-pi.service"
     )
+
+
+def test_deploy_uses_single_full_config_example_for_missing_runtime_env() -> None:
+    script = PROJECT_ROOT / "provisioning" / "deploy_videolooper_image.sh"
+    content = script.read_text(encoding="utf-8")
+
+    assert "rick-tv-pi/provisioning/rick-tv.env.example" in content
+    assert "rick-tv-pi.env.example" not in content
+    assert "--config rick-tv.env" in content
+    assert 'scp_pi "$full_config" "$PI_HOST:$REMOTE_TMP/rick-tv.env"' in content
+    assert "runtime_config=/tmp/rick-tv-deploy/rick-tv.env" in content
+    assert "write_runtime_env_from_full_config" in content
+    assert "if [ ! -f /etc/rick-tv-pi.env ]; then" in content
+    assert "preserving existing /etc/rick-tv-pi.env" in content
+
+    runtime_start = content.index("runtime_names=(")
+    runtime_section = content[
+        runtime_start : content.index("local name value", runtime_start)
+    ]
+    for name in [
+        "RICK_TV_SERVER_URL",
+        "RICK_TV_API_TOKEN",
+        "RICK_TV_METADATA_PATH",
+        "RICK_TV_REMOTE_POLL_INTERVAL_SECONDS",
+        "RICK_TV_RUNTIME_TICK_SECONDS",
+    ]:
+        assert name in runtime_section
+    for secret_or_boot_only in [
+        "WIFI_SSID",
+        "WIFI_PSK",
+        "SSH_PASSWORD",
+        "SSH_AUTHORIZED_KEY",
+        "RICK_TV_TELEGRAM_BOT_TOKEN",
+        "RICK_TV_TELEGRAM_ALLOWED_USER_IDS",
+    ]:
+        assert secret_or_boot_only not in runtime_section
 
 
 def test_recovery_script_writes_panic_and_watchdog_config_idempotently(tmp_path) -> None:
@@ -138,6 +175,7 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
                 "WIFI_PSK='test-password'",
                 "RICK_TV_HOSTNAME=rick-tv-test",
                 "SSH_ENABLE=true",
+                "SSH_PASSWORD='ssh-password'",
                 "SSH_AUTHORIZED_KEY='ssh-ed25519 AAAATEST rick-tv'",
                 "RICK_TV_SERVER_URL=http://192.168.1.10:8080",
                 "RICK_TV_API_TOKEN=test-token",
@@ -146,6 +184,8 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
                 "RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT=/home/pi/rick-tv/playlists",
                 "RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo",
                 "RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true",
+                "RICK_TV_TELEGRAM_BOT_TOKEN=server-only-token",
+                "RICK_TV_TELEGRAM_ALLOWED_USER_IDS=12345",
             ]
         )
         + "\n",
@@ -166,7 +206,8 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
     )
 
     assert result.returncode == 0, result.stderr
-    assert (rootfs / "etc" / "rick-tv-pi.env").read_text(encoding="utf-8") == (
+    runtime_env = (rootfs / "etc" / "rick-tv-pi.env").read_text(encoding="utf-8")
+    assert runtime_env == (
         "RICK_TV_SERVER_URL=http://192.168.1.10:8080\n"
         "RICK_TV_API_TOKEN=test-token\n"
         "RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media\n"
@@ -175,6 +216,14 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
         "RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo\n"
         "RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=true\n"
     )
+    for secret_or_boot_only in [
+        "WIFI_PSK",
+        "SSH_PASSWORD",
+        "SSH_AUTHORIZED_KEY",
+        "RICK_TV_TELEGRAM_BOT_TOKEN",
+        "RICK_TV_TELEGRAM_ALLOWED_USER_IDS",
+    ]:
+        assert secret_or_boot_only not in runtime_env
     assert "ssid=\"Test Network\"" in (
         rootfs / "etc" / "wpa_supplicant" / "wpa_supplicant.conf"
     ).read_text(encoding="utf-8")
@@ -369,10 +418,26 @@ def test_sdm_custom_phase_stages_payload_with_sdmpt_and_no_secret_work() -> None
 def test_firstboot_example_uses_placeholders_only() -> None:
     content = FIRSTBOOT_EXAMPLE.read_text(encoding="utf-8")
 
+    assert not REMOVED_RUNTIME_EXAMPLE.exists()
     assert "YOUR_WIFI_SSID" in content
+    assert "SSH_PASSWORD" in content
     assert "YOUR_RICK_TV_API_TOKEN" in content
+    assert "RICK_TV_SERVER_URL" in content
+    assert "RICK_TV_REMOTE_POLL_INTERVAL_SECONDS" in content
+    assert "RICK_TV_TOUCH_SCREEN_WIDTH" in content
+    assert "RICK_TV_TELEGRAM_BOT_TOKEN" not in content
+    assert "RICK_TV_TELEGRAM_ALLOWED_USER_IDS" not in content
     assert "8905534821" not in content
     assert "104065396" not in content
+
+
+def test_only_one_public_pi_env_example_remains() -> None:
+    examples = sorted(
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for path in (PROJECT_ROOT / "provisioning").rglob("*.env.example")
+    )
+
+    assert examples == ["provisioning/rick-tv.env.example"]
 
 
 def test_framebuffer_diagnostics_dry_run_records_expected_remote_commands(tmp_path) -> None:

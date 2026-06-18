@@ -103,8 +103,21 @@ The deploy script:
 - installs kernel panic reboot and watchdog recovery config;
 - restarts `rick-tv-pi.service` and supervisor `video_looper`.
 
-If `/etc/rick-tv-pi.env` does not exist, the script installs
-`rick-tv-pi.env.example`. Edit the real file on the Pi with server URL and token.
+If `/etc/rick-tv-pi.env` does not exist, the script generates it from the
+`RICK_TV_*` values in `rick-tv-pi/provisioning/rick-tv.env.example`. For real
+values, create a private filled config and pass it to deploy:
+
+```sh
+mkdir -p dist
+cp rick-tv-pi/provisioning/rick-tv.env.example dist/rick-tv.env
+nano dist/rick-tv.env
+PI_HOST=pi@192.168.1.68 PI_PASSWORD=video \
+  rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy --config dist/rick-tv.env
+```
+
+Existing `/etc/rick-tv-pi.env` files are preserved. Wi-Fi/SSH fields from the
+full config are firstboot-only; deploy writes only the runtime `RICK_TV_*`
+subset.
 
 ## Wi-Fi Bootstrap
 

@@ -48,21 +48,24 @@ The Rick TV deploy script currently expects the legacy Python 3.7 Video Looper
 layout used by the `videolooper.de` image. Do not run `apt upgrade` on the Pi as
 part of Rick TV setup.
 
-5. From the repository root on your workstation, create the Pi runtime env:
+5. From the repository root on your workstation, create one full Pi config:
 
 ```sh
-scp rick-tv-pi/provisioning/rick-tv-pi.env.example pi@<pi-ip>:/tmp/rick-tv-pi.env
-ssh pi@<pi-ip> 'sudo install -m 0600 /tmp/rick-tv-pi.env /etc/rick-tv-pi.env && sudo nano /etc/rick-tv-pi.env'
+mkdir -p dist
+cp rick-tv-pi/provisioning/rick-tv.env.example dist/rick-tv.env
+nano dist/rick-tv.env
 ```
 
 Fill in at least the server URL, shared API token, media root, playlist root,
-and videolooper FIFO path.
+and videolooper FIFO path. For first boot from a freshly written SD card, also
+fill in Wi-Fi and SSH values. `dist/` is ignored so local filled configs are not
+committed.
 
 6. Deploy Rick TV:
 
 ```sh
 PI_HOST=pi@<pi-ip> PI_PASSWORD=<pi-password> \
-  rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
+  rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy --config dist/rick-tv.env
 ```
 
 7. Reboot once for boot-level panic/watchdog settings, then verify both services:
@@ -118,7 +121,14 @@ Legacy display files and Waveshare DTBO overlays are kept under
 
 ## Environment
 
-Create `/etc/rick-tv-pi.env` for the systemd service:
+Use `rick-tv-pi/provisioning/rick-tv.env.example` as the single human-facing Pi
+config template. It includes Wi-Fi, SSH, hostname, and all Pi `RICK_TV_*`
+runtime values. Firstboot reads `rick-tv.env` from the boot partition and writes
+only the `RICK_TV_*` subset to `/etc/rick-tv-pi.env`; SSH deploy can do the same
+from `deploy --config dist/rick-tv.env` if the runtime file does not already
+exist.
+
+The generated `/etc/rick-tv-pi.env` used by systemd contains values like:
 
 ```text
 RICK_TV_SERVER_URL=https://rick-tv.example
@@ -131,6 +141,9 @@ RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=false
 RICK_TV_CHANNEL_SHUFFLE_SECONDS=3600
 RICK_TV_REMOTE_POLL_INTERVAL_SECONDS=2
 ```
+
+Telegram bot token and allowed user IDs are server-side settings and must not be
+placed in `rick-tv.env` or `/etc/rick-tv-pi.env`.
 
 `RICK_TV_METADATA_PATH` is optional, but it should be set when the Pi is expected
 to receive the first file for a registry channel that does not yet exist locally.

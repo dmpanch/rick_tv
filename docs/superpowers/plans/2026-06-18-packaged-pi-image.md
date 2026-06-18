@@ -35,13 +35,17 @@ partition, и first boot должен применить Wi-Fi/API/token/passwor
 - `rick-tv-pi/provisioning/image/install_packaged_image_payload.sh` stages the
   repository into `/opt/rick-tv-src`, installs
   `/usr/local/sbin/rick-tv-firstboot`, enables `rick-tv-firstboot.service`,
-  writes `rick-tv.env.example` to the boot partition, and can copy a private
-  filled `rick-tv.env` only when explicitly requested with `--boot-config`.
+  writes the canonical `rick-tv-pi/provisioning/rick-tv.env.example` to the boot
+  partition, and can copy a private filled `rick-tv.env` only when explicitly
+  requested with `--boot-config`.
 - `rick-tv-pi/provisioning/firstboot/rick-tv-firstboot.sh` reads
   `rick-tv.env` from the boot partition, writes `/etc/rick-tv-pi.env`,
   configures Wi-Fi/SSH/hostname, installs Rick TV service/videolooper assets and
   overrides, enables `rick-tv-pi.service`, and writes
   `/var/lib/rick-tv-pi/firstboot.done`.
+- `rick-tv-pi/provisioning/rick-tv.env.example` is the only human-facing Pi env
+  example. It includes Wi-Fi/SSH/hostname and Pi runtime values; firstboot and
+  deploy write only the `RICK_TV_*` subset to `/etc/rick-tv-pi.env`.
 - The first-boot script supports dry-run/rootfs/bootfs overrides for tests and
   preserves an existing `/etc/rick-tv-pi.env` unless
   `RICK_TV_OVERWRITE_ENV=true` is explicitly set.

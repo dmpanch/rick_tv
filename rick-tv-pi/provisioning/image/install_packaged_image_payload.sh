@@ -33,7 +33,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-FIRSTBOOT_DIR="$ROOT_DIR/rick-tv-pi/provisioning/firstboot"
+PROVISIONING_DIR="$ROOT_DIR/rick-tv-pi/provisioning"
+FIRSTBOOT_DIR="$PROVISIONING_DIR/firstboot"
+FIRSTBOOT_EXAMPLE="$PROVISIONING_DIR/rick-tv.env.example"
 
 [[ -n "$ROOTFS" ]] || die "--rootfs is required"
 [[ -n "$BOOTFS" ]] || die "--bootfs is required"
@@ -42,7 +44,7 @@ FIRSTBOOT_DIR="$ROOT_DIR/rick-tv-pi/provisioning/firstboot"
 [[ -d "$BOOTFS" ]] || die "bootfs path not found: $BOOTFS"
 [[ -f "$FIRSTBOOT_DIR/rick-tv-firstboot.sh" ]] || die "missing firstboot script"
 [[ -f "$FIRSTBOOT_DIR/rick-tv-firstboot.service" ]] || die "missing firstboot service"
-[[ -f "$FIRSTBOOT_DIR/rick-tv.env.example" ]] || die "missing firstboot env example"
+[[ -f "$FIRSTBOOT_EXAMPLE" ]] || die "missing firstboot env example"
 if [[ -n "$BOOT_CONFIG" && ! -f "$BOOT_CONFIG" ]]; then
   die "boot config not found: $BOOT_CONFIG"
 fi
@@ -57,7 +59,7 @@ install -m 0755 "$FIRSTBOOT_DIR/rick-tv-firstboot.sh" "$ROOTFS/usr/local/sbin/ri
 install -m 0644 "$FIRSTBOOT_DIR/rick-tv-firstboot.service" "$ROOTFS/etc/systemd/system/rick-tv-firstboot.service"
 ln -sfn ../rick-tv-firstboot.service \
   "$ROOTFS/etc/systemd/system/multi-user.target.wants/rick-tv-firstboot.service"
-install -m 0644 "$FIRSTBOOT_DIR/rick-tv.env.example" "$BOOTFS/rick-tv.env.example"
+install -m 0644 "$FIRSTBOOT_EXAMPLE" "$BOOTFS/rick-tv.env.example"
 if [[ -n "$BOOT_CONFIG" ]]; then
   install -m 0600 "$BOOT_CONFIG" "$BOOTFS/rick-tv.env"
 fi
