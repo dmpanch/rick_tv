@@ -44,29 +44,41 @@ Raspberry Pi:
 
 Run the server commands from `rick-tv-server`.
 
-1. Copy the environment template and fill it for your host.
+Copy the environment template and fill it for your host.
 
 ```bash
 cd rick-tv-server
 cp .env.example .env
 # edit .env
-# RICK_TV_UID=$(id -u) and RICK_TV_GID=$(id -g) keep runtime files editable on the host
 ```
 
-2. Start the API service.
+Set `RICK_TV_API_TOKEN`, `RICK_TV_PUBLIC_BASE_URL`,
+`RICK_TV_TELEGRAM_BOT_TOKEN`, and `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`. Keep
+`RICK_TV_UID=$(id -u)` and `RICK_TV_GID=$(id -g)` in `.env` so bind-mounted
+runtime files stay editable from the host.
+
+Start the full stack:
 
 ```bash
-mkdir -p data/media data/config data/state
+docker compose up -d
+```
+
+This starts both `rick-tv-server` and `rick-tv-bot`. `docker-compose.yml` reads
+`RICK_TV_*` values from the environment or `.env`. Containers run as
+`RICK_TV_UID:RICK_TV_GID`, and Compose stores runtime data under
+`${RICK_TV_DATA_DIR:-./data}` by default. For a persistent installation, set
+`RICK_TV_DATA_DIR=/srv/rick-tv` or another absolute path on the host disk.
+
+For API-only development runs:
+
+```bash
+docker compose up -d rick-tv-server
+```
+
+To force a rebuild after code changes:
+
+```bash
 docker compose up -d --build
-```
-
-`docker-compose.yml` reads `RICK_TV_*` values from the environment or `.env`.
-Containers run as `RICK_TV_UID:RICK_TV_GID`, so bind-mounted runtime files remain readable and editable from the host. By default, Compose stores all runtime data under `./data`. For a persistent installation, set `RICK_TV_DATA_DIR=/srv/rick-tv` or another absolute path on the host disk.
-
-The API runs with plain `docker compose up`. The Telegram runner is the `rick-tv-bot` service in the same Compose file, using the same image and the same `RICK_TV_DATA_DIR`. To run the bot, set `RICK_TV_TELEGRAM_BOT_TOKEN` and `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`, then enable the `bot` profile:
-
-```bash
-docker compose --profile bot up -d --build
 ```
 
 ## Raspberry Pi Setup

@@ -1125,7 +1125,7 @@ Run:
 
 ```bash
 cd rick-tv-server
-docker compose --profile bot up -d --build
+docker compose up -d --build
 ```
 
 Expected: `rick-tv-server` and `rick-tv-bot` containers are running.
