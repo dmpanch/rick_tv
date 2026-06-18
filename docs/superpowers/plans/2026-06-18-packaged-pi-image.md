@@ -8,8 +8,8 @@ systemd service, supervisor config, and pinned Rick TV videolooper overrides.
 partition, и first boot должен применить Wi-Fi/API/token/password/env variables settings.
 
 ## Key Changes
-- [x] Выбрать image build path: reproducible builder based on Raspberry Pi OS
-  Legacy/Buster or a captured known-good legacy videolooper base image.
+- [x] Выбрать image build path: reproducible sdm builder based on the
+  `videolooper.de` v2.11 base image archive.
 - [x] Добавить first-boot config reader on boot partition, например
   `rick-tv.env`, with Wi-Fi SSID/PSK/country, API URL/token, optional SSH
   password/key, hostname, and Rick TV runtime env values.
@@ -23,20 +23,45 @@ partition, и first boot должен применить Wi-Fi/API/token/passwor
 
 ## Current Implementation
 - `rick-tv-pi/provisioning/image/build_packaged_image.sh` is the documented
-  local builder. It copies a known-good legacy base image, mounts its
-  root/boot partitions via loop device, runs the payload installer, optionally
-  copies a filled `rick-tv.env` to the boot partition, cleans up mounts/loop
-  devices through a trap, and writes an image `.sha256`.
+  sdm-based builder. It accepts either a local `videolooper.de` image/archive or
+  `--base-image-url https://videolooper.de/video_looper_v2.11.zip`, copies the
+  extracted base image to the requested output path, runs
+  `sdm --customize --batch --apt-options none` with Rick TV's custom phase
+  script, and writes an image `.sha256`.
+- `rick-tv-pi/provisioning/image/sdm_rick_tv_custom_phase.sh` stages the image
+  payload during sdm Phase 0 and installs the non-secret Pi runtime during Phase
+  1. Phase 1 installs only required packages, creates
+  `/opt/rick-tv-pi/.venv --system-site-packages`, pins Python 3.7-compatible
+  packaging tools, installs `rick-tv-pi` from `/opt/rick-tv-src/rick-tv-pi`,
+  then installs the working-Pi runtime overrides `evdev==1.7.1` and
+  `certifi==2026.4.22`.
+  It does not run `apt upgrade` and does not install secrets.
 - `rick-tv-pi/provisioning/image/install_packaged_image_payload.sh` stages the
-  repository into `/opt/rick-tv-src` on a mounted known-good legacy rootfs,
-  installs `/usr/local/sbin/rick-tv-firstboot`, enables
-  `rick-tv-firstboot.service`, and writes `rick-tv.env.example` to the mounted
-  boot partition.
+  repository into `/opt/rick-tv-src`, installs
+  `/usr/local/sbin/rick-tv-firstboot`, enables `rick-tv-firstboot.service`,
+  writes the canonical `rick-tv-pi/provisioning/rick-tv.env.example` to the boot
+  partition, and can copy a private filled `rick-tv.env` only when explicitly
+  requested with `--boot-config`.
+- The same payload installer applies the Waveshare 2.8inch DPI LCD boot config:
+  it copies vendor DTBO files to boot `overlays/`, comments out conflicting
+  `vc4-*kms-v3d` overlays, and appends the Rick TV legacy DPI display block to
+  `config.txt`.
+- The payload installer also writes Rick TV's `/boot/video_looper.ini` settings
+  during image customization so the clean image starts in directory/playlist
+  mode before firstboot repeats the same idempotent config.
+- The payload installer now also installs `rick-tv-pi.service`, creates
+  `/home/pi/rick-tv/{media,playlists,system,config}`, installs
+  `transition-placeholder.fb` and `interstitial-ad.fb`, generates an empty
+  `playlists/channels.m3u`, patches the `Adafruit_Video_Looper` egg inside the
+  image, and applies panic/watchdog recovery config to the staged rootfs/bootfs.
 - `rick-tv-pi/provisioning/firstboot/rick-tv-firstboot.sh` reads
   `rick-tv.env` from the boot partition, writes `/etc/rick-tv-pi.env`,
   configures Wi-Fi/SSH/hostname, installs Rick TV service/videolooper assets and
-  overrides, enables `rick-tv-pi.service`, and writes
-  `/var/lib/rick-tv-pi/firstboot.done`.
+  overrides, enables and restarts `rick-tv-pi.service`, restarts
+  `video_looper`, and writes `/var/lib/rick-tv-pi/firstboot.done`.
+- `rick-tv-pi/provisioning/rick-tv.env.example` is the only human-facing Pi env
+  example. It includes Wi-Fi/SSH/hostname and Pi runtime values; firstboot and
+  deploy write only the `RICK_TV_*` subset to `/etc/rick-tv-pi.env`.
 - The first-boot script supports dry-run/rootfs/bootfs overrides for tests and
   preserves an existing `/etc/rick-tv-pi.env` unless
   `RICK_TV_OVERWRITE_ENV=true` is explicitly set.

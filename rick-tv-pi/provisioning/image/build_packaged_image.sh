@@ -3,20 +3,19 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 IMAGE_DIR="$ROOT_DIR/rick-tv-pi/provisioning/image"
-PAYLOAD_INSTALLER="$IMAGE_DIR/install_packaged_image_payload.sh"
+SDM_PHASE_SCRIPT="$IMAGE_DIR/sdm_rick_tv_custom_phase.sh"
 DRY_RUN="${RICK_TV_IMAGE_BUILDER_DRY_RUN:-0}"
+DEFAULT_BASE_IMAGE_URL="https://videolooper.de/video_looper_v2.11.zip"
 
 usage() {
   cat <<'EOF'
 Usage:
   build_packaged_image.sh --base-image base.img --output-image rick-tv.img [--boot-config rick-tv.env]
+  build_packaged_image.sh --base-image-url https://videolooper.de/video_looper_v2.11.zip --output-image rick-tv.img [--boot-config rick-tv.env]
 
-Copies a known-good Raspberry Pi OS Legacy/videolooper base image, mounts its
-boot/root partitions through a loop device, stages Rick TV's packaged-image
-payload, and writes rick-tv.img.sha256 next to the output image.
-
-The optional --boot-config copies a local filled rick-tv.env onto the output
-image boot partition. Do not commit filled config files.
+Builds a Rick TV Raspberry Pi image from the videolooper.de base image using
+gitbls/sdm. The generated image contains Rick TV software and placeholder
+first-boot config only. Keep filled rick-tv.env files out of git.
 EOF
 }
 
@@ -29,12 +28,115 @@ log() {
   printf '%s\n' "$*"
 }
 
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
+}
+
+find_sdm() {
+  if [[ -n "${RICK_TV_SDM_BIN:-}" ]]; then
+    printf '%s\n' "$RICK_TV_SDM_BIN"
+    return 0
+  fi
+  if command -v sdm >/dev/null 2>&1; then
+    command -v sdm
+    return 0
+  fi
+  if [[ -x /usr/local/sdm/sdm ]]; then
+    printf '%s\n' /usr/local/sdm/sdm
+    return 0
+  fi
+  return 1
+}
+
+is_zip() {
+  case "${1,,}" in
+    *.zip) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+extract_base_image() {
+  local archive="$1"
+  local dest="$2"
+  local found
+
+  require_cmd unzip
+  mkdir -p "$dest"
+  unzip -q "$archive" -d "$dest"
+  found="$(find "$dest" -type f -name '*.img' | sort | head -n 1)"
+  [[ -n "$found" ]] || die "no .img found in archive: $archive"
+  printf '%s\n' "$found"
+}
+
+copy_base_image() {
+  local source_image="$1"
+  local output_image="$2"
+
+  mkdir -p "$(dirname "$output_image")"
+  cp "$source_image" "$output_image"
+  log "Copied $source_image to $output_image"
+}
+
+build_sdm_command_for_log() {
+  local output_image="$1"
+  local boot_config="$2"
+  local boot_arg=""
+
+  if [[ -n "$boot_config" ]]; then
+    boot_arg=" --custom1 $boot_config"
+  fi
+
+  printf 'sudo sdm --customize --batch --redo-customize --apt-options none --cscript %s --csrc %s%s %s' \
+    "$SDM_PHASE_SCRIPT" \
+    "$ROOT_DIR" \
+    "$boot_arg" \
+    "$output_image"
+}
+
+run_sdm_customize() {
+  local output_image="$1"
+  local boot_config="$2"
+  local sdm_bin
+  local sudo_prefix=()
+  local sdm_args=()
+
+  sdm_bin="$(find_sdm)" || die "sdm not found; install with: curl -L https://raw.githubusercontent.com/gitbls/sdm/master/install-sdm | bash"
+  if [[ "$(id -u)" != "0" ]]; then
+    require_cmd sudo
+    sudo_prefix=(sudo)
+  fi
+
+  sdm_args=(
+    --customize
+    --batch
+    --redo-customize
+    --apt-options none
+    --cscript "$SDM_PHASE_SCRIPT"
+    --csrc "$ROOT_DIR"
+  )
+  if [[ -n "$boot_config" ]]; then
+    sdm_args+=(--custom1 "$boot_config")
+  fi
+  sdm_args+=("$output_image")
+
+  "${sudo_prefix[@]}" "$sdm_bin" "${sdm_args[@]}"
+}
+
+preflight_sdm_customize() {
+  find_sdm >/dev/null || die "sdm not found; install with: curl -L https://raw.githubusercontent.com/gitbls/sdm/master/install-sdm | bash"
+  if [[ "$(id -u)" != "0" ]]; then
+    require_cmd sudo
+  fi
+}
+
 BASE_IMAGE=""
+BASE_IMAGE_URL=""
 OUTPUT_IMAGE=""
 BOOT_CONFIG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --base-image) BASE_IMAGE="${2:-}"; shift 2 ;;
+    --base-image-url) BASE_IMAGE_URL="${2:-}"; shift 2 ;;
     --output-image) OUTPUT_IMAGE="${2:-}"; shift 2 ;;
     --boot-config) BOOT_CONFIG="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -42,86 +144,73 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$BASE_IMAGE" ]] || die "--base-image is required"
 [[ -n "$OUTPUT_IMAGE" ]] || die "--output-image is required"
-[[ -f "$BASE_IMAGE" ]] || die "base image not found: $BASE_IMAGE"
-[[ -f "$PAYLOAD_INSTALLER" ]] || die "payload installer not found: $PAYLOAD_INSTALLER"
+[[ -f "$SDM_PHASE_SCRIPT" ]] || die "sdm custom phase script not found: $SDM_PHASE_SCRIPT"
+if [[ -n "$BASE_IMAGE" && -n "$BASE_IMAGE_URL" ]]; then
+  die "use only one of --base-image or --base-image-url"
+fi
+if [[ -z "$BASE_IMAGE" && -z "$BASE_IMAGE_URL" ]]; then
+  BASE_IMAGE_URL="$DEFAULT_BASE_IMAGE_URL"
+fi
+if [[ -n "$BASE_IMAGE" && ! -f "$BASE_IMAGE" ]]; then
+  die "base image not found: $BASE_IMAGE"
+fi
 if [[ -n "$BOOT_CONFIG" && ! -f "$BOOT_CONFIG" ]]; then
   die "boot config not found: $BOOT_CONFIG"
 fi
+if [[ "$DRY_RUN" != "1" ]]; then
+  preflight_sdm_customize
+fi
 
-loop_device=""
 work_dir=""
-root_mount=""
-boot_mount=""
-
 cleanup() {
-  local status=$?
-  set +e
-  if [[ -n "$boot_mount" && -d "$boot_mount" ]]; then
-    mountpoint -q "$boot_mount" && umount "$boot_mount"
-  fi
-  if [[ -n "$root_mount" && -d "$root_mount" ]]; then
-    mountpoint -q "$root_mount" && umount "$root_mount"
-  fi
-  if [[ -n "$loop_device" ]]; then
-    losetup -d "$loop_device" >/dev/null 2>&1 || true
-  fi
   if [[ -n "$work_dir" && -d "$work_dir" ]]; then
     rm -rf "$work_dir"
   fi
-  exit "$status"
 }
 trap cleanup EXIT
 
-mkdir -p "$(dirname "$OUTPUT_IMAGE")"
-cp "$BASE_IMAGE" "$OUTPUT_IMAGE"
-log "Copied $BASE_IMAGE to $OUTPUT_IMAGE"
+source_image="$BASE_IMAGE"
+if [[ -n "$BASE_IMAGE_URL" ]]; then
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "dry-run: would download $BASE_IMAGE_URL"
+    log "dry-run: would extract downloaded base image archive"
+    log "dry-run: would copy extracted base image to $OUTPUT_IMAGE"
+    log "dry-run: would run $(build_sdm_command_for_log "$OUTPUT_IMAGE" "$BOOT_CONFIG")"
+    exit 0
+  fi
+
+  require_cmd curl
+  work_dir="$(mktemp -d)"
+  archive_path="$work_dir/$(basename "$BASE_IMAGE_URL")"
+  log "Downloading $BASE_IMAGE_URL"
+  curl -fL "$BASE_IMAGE_URL" -o "$archive_path"
+  source_image="$(extract_base_image "$archive_path" "$work_dir/extracted")"
+fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
-  log "dry-run: would attach loop device with partitions using losetup --find --partscan --show $OUTPUT_IMAGE"
-  log "dry-run: would mount root partition at a temporary rootfs directory"
-  log "dry-run: would mount boot partition at a temporary bootfs directory"
-  log "dry-run: would run install_packaged_image_payload.sh against mounted partitions"
-  if [[ -n "$BOOT_CONFIG" ]]; then
-    log "dry-run: would copy $BOOT_CONFIG to boot partition as rick-tv.env"
+  if is_zip "$source_image"; then
+    log "dry-run: would extract local base image archive $source_image"
+    log "dry-run: would copy extracted base image to $OUTPUT_IMAGE"
+  else
+    copy_base_image "$source_image" "$OUTPUT_IMAGE"
+    log "dry-run: would copy $source_image to $OUTPUT_IMAGE"
   fi
-  sha256sum "$OUTPUT_IMAGE" > "$OUTPUT_IMAGE.sha256"
-  log "Wrote $OUTPUT_IMAGE.sha256"
+  log "dry-run: would run $(build_sdm_command_for_log "$OUTPUT_IMAGE" "$BOOT_CONFIG")"
+  if [[ -f "$OUTPUT_IMAGE" ]]; then
+    sha256sum "$OUTPUT_IMAGE" > "$OUTPUT_IMAGE.sha256"
+    log "Wrote $OUTPUT_IMAGE.sha256"
+  fi
   exit 0
 fi
 
-for command in losetup mount umount sha256sum; do
-  command -v "$command" >/dev/null 2>&1 || die "missing command: $command"
-done
-
-work_dir="$(mktemp -d)"
-root_mount="$work_dir/rootfs"
-boot_mount="$work_dir/bootfs"
-mkdir -p "$root_mount" "$boot_mount"
-
-loop_device="$(losetup --find --partscan --show "$OUTPUT_IMAGE")"
-for _ in 1 2 3 4 5; do
-  [[ -b "${loop_device}p1" && -b "${loop_device}p2" ]] && break
-  sleep 1
-done
-[[ -b "${loop_device}p1" ]] || die "boot partition not found: ${loop_device}p1"
-[[ -b "${loop_device}p2" ]] || die "root partition not found: ${loop_device}p2"
-
-mount "${loop_device}p2" "$root_mount"
-mount "${loop_device}p1" "$boot_mount"
-
-"$PAYLOAD_INSTALLER" --rootfs "$root_mount" --bootfs "$boot_mount"
-if [[ -n "$BOOT_CONFIG" ]]; then
-  install -m 0600 "$BOOT_CONFIG" "$boot_mount/rick-tv.env"
+if is_zip "$source_image"; then
+  work_dir="${work_dir:-$(mktemp -d)}"
+  source_image="$(extract_base_image "$source_image" "$work_dir/extracted-local")"
 fi
 
-sync
-umount "$boot_mount"
-umount "$root_mount"
-losetup -d "$loop_device"
-loop_device=""
-
+copy_base_image "$source_image" "$OUTPUT_IMAGE"
+run_sdm_customize "$OUTPUT_IMAGE" "$BOOT_CONFIG"
 sha256sum "$OUTPUT_IMAGE" > "$OUTPUT_IMAGE.sha256"
 log "Built $OUTPUT_IMAGE"
 log "Wrote $OUTPUT_IMAGE.sha256"

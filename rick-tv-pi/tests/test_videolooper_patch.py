@@ -195,3 +195,48 @@ def test_installer_replaces_zip_entries_and_removes_stale_bytecode(tmp_path):
         assert egg.read("Adafruit_Video_Looper/model.py") == b"kept"
         assert "Adafruit_Video_Looper/__pycache__/video_looper.cpython-37.pyc" not in egg.namelist()
         assert "Adafruit_Video_Looper/__pycache__/omxplayer.cpython-37.pyc" not in egg.namelist()
+
+
+def test_installer_rewrites_zip_via_temp_file_next_to_target_egg(tmp_path, monkeypatch):
+    installer = load_installer()
+    egg_path = tmp_path / "dist-packages" / "Adafruit_Video_Looper-1.0.21-py3.7.egg"
+    egg_path.parent.mkdir()
+    with zipfile.ZipFile(egg_path, "w") as egg:
+        egg.writestr("Adafruit_Video_Looper/video_looper.py", "old video")
+        egg.writestr("Adafruit_Video_Looper/omxplayer.py", "old omx")
+
+    real_mkstemp = installer.tempfile.mkstemp
+    temp_dirs = []
+
+    def recording_mkstemp(*args, **kwargs):
+        temp_dirs.append(kwargs.get("dir"))
+        return real_mkstemp(*args, **kwargs)
+
+    monkeypatch.setattr(installer.tempfile, "mkstemp", recording_mkstemp)
+
+    installer.install_overrides(
+        egg_path,
+        {
+            "Adafruit_Video_Looper/video_looper.py": VIDEO_LOOPER_OVERRIDE,
+            "Adafruit_Video_Looper/omxplayer.py": OMX_PLAYER_OVERRIDE,
+        },
+    )
+
+    assert temp_dirs == [str(egg_path.parent)]
+
+
+def test_installer_main_accepts_custom_egg_path_for_image_staging(tmp_path, monkeypatch):
+    installer = load_installer()
+    egg_path = tmp_path / "rootfs" / "usr" / "local" / "lib" / "python3.7" / "dist-packages" / "Adafruit_Video_Looper-1.0.21-py3.7.egg"
+    egg_path.parent.mkdir(parents=True)
+    with zipfile.ZipFile(egg_path, "w") as egg:
+        egg.writestr("Adafruit_Video_Looper/video_looper.py", "old video")
+        egg.writestr("Adafruit_Video_Looper/omxplayer.py", "old omx")
+
+    monkeypatch.setenv("RICK_TV_VIDEOLOOPER_EGG_PATH", str(egg_path))
+
+    installer.main()
+
+    with zipfile.ZipFile(egg_path) as egg:
+        assert egg.read("Adafruit_Video_Looper/video_looper.py") == VIDEO_LOOPER_OVERRIDE.read_bytes()
+        assert egg.read("Adafruit_Video_Looper/omxplayer.py") == OMX_PLAYER_OVERRIDE.read_bytes()

@@ -71,110 +71,95 @@ docker compose --profile bot up -d --build
 
 ## Raspberry Pi Setup
 
-Rick TV Pi is layered on top of the prebuilt Video Looper image from
-<https://videolooper.de/>. Do not build the playback base by hand for this
-project. The supported base is the `videolooper.de` SD-card image, and Rick TV
-deploys its own playlist/FIFO overrides on top of that image.
+Rick TV Pi is distributed as a prepared SD-card image built on top of Video
+Looper v2.11 from <https://videolooper.de/>. For a normal install, flash the
+Rick TV image and add one first-boot config file on the SD card boot partition.
+Do not build the playback base by hand or start from a plain Raspberry Pi OS
+image.
 
-### Fresh Pi Zero W Install
+### Fresh Pi Install
 
-1. Download the Video Looper image zip from <https://videolooper.de/>. Choose a
-   release that supports Raspberry Pi Zero W.
-
-2. Open Raspberry Pi Imager, choose `Use custom`, select the downloaded
-   Video Looper image zip, choose the SD card, and write it. Keep the Linux user
-   as `pi`; the current Rick TV provisioning paths assume `/home/pi`.
-
-3. Boot the Pi. The current lab image uses:
+Ready-made image download:
 
 ```text
-user: pi
-password: video
+<ADD_IMAGE_DOWNLOAD_LINK_HERE>
 ```
 
-4. SSH into the Pi and verify that the Video Looper runtime is present:
+You can also build the same image locally. Install `sdm` on the build machine:
 
 ```bash
-ssh pi@<pi-ip>
-sudo supervisorctl status video_looper
-ls /usr/local/lib/python3.7/dist-packages/Adafruit_Video_Looper-*.egg
+curl -L https://raw.githubusercontent.com/gitbls/sdm/master/install-sdm | bash
 ```
 
-The Rick TV deploy script currently expects the legacy Python 3.7 Video Looper
-layout used by the `videolooper.de` image. Do not run `apt upgrade` on the Pi as
-part of Rick TV setup.
-
-5. From this repository on your workstation, copy and edit the Rick TV Pi env:
+Then build from the Video Looper v2.11 archive:
 
 ```bash
-scp rick-tv-pi/provisioning/rick-tv-pi.env.example pi@<pi-ip>:/tmp/rick-tv-pi.env
-ssh pi@<pi-ip> 'sudo install -m 0600 /tmp/rick-tv-pi.env /etc/rick-tv-pi.env && sudo nano /etc/rick-tv-pi.env'
+sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
+  --base-image-url https://videolooper.de/video_looper_v2.11.zip \
+  --output-image dist/rick-tv-pi.img
 ```
 
-Set at least `RICK_TV_SERVER_URL`, `RICK_TV_API_TOKEN`, `RICK_TV_MEDIA_ROOT`,
-`RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT`, and `RICK_TV_VIDEOLOOPER_COMMAND_PATH`.
+The local builder writes `dist/rick-tv-pi.img` and
+`dist/rick-tv-pi.img.sha256`. The generated image includes the Waveshare 2.8inch
+DPI LCD boot config, Rick TV's `/boot/video_looper.ini`, the patched Video
+Looper egg, placeholder assets, panic/watchdog recovery config,
+`rick-tv-pi.service`, `/opt/rick-tv-pi/.venv`, and the pinned Pi runtime
+overrides `evdev==1.7.1` and `certifi==2026.4.22`.
 
-6. Deploy Rick TV over SSH:
+The image contains `rick-tv.env.example`, but it does not contain a filled
+`rick-tv.env`. Flash either the downloaded image or `dist/rick-tv-pi.img` with
+Raspberry Pi Imager by choosing `Use custom`, selecting the image, choosing the
+SD card, and writing it. After flashing, open the SD card boot partition and
+copy a filled `rick-tv.env` there before the first boot:
 
 ```bash
-PI_HOST=pi@<pi-ip> PI_PASSWORD=<pi-password> \
-  rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
+mkdir -p dist
+cp rick-tv-pi/provisioning/rick-tv.env.example dist/rick-tv.env
+nano dist/rick-tv.env
+cp dist/rick-tv.env /path/to/boot/rick-tv.env
 ```
 
-7. Reboot once so the boot-level panic/watchdog settings take effect:
+Fill in Wi-Fi, SSH, hostname, `RICK_TV_SERVER_URL`, `RICK_TV_API_TOKEN`, and
+the Pi runtime values. Telegram bot token and allowed user IDs stay on the
+server only; do not put them in the Pi image or `rick-tv.env`. Keep filled env
+files out of git.
 
-```bash
-ssh pi@<pi-ip> 'sudo reboot'
-```
-
-8. After reboot, verify services:
+On first boot, `rick-tv-firstboot.service` reads `/boot/rick-tv.env`, configures
+Wi-Fi and SSH, writes `/etc/rick-tv-pi.env`, verifies the non-secret Rick TV
+runtime payload, starts `rick-tv-pi.service`, restarts `video_looper`, and then
+stops overwriting manual edits. After the Pi joins the network, verify services:
 
 ```bash
 ssh pi@<pi-ip> 'systemctl is-active rick-tv-pi.service && sudo supervisorctl status video_looper'
 ```
 
-### Existing Lab Image
+### Update an Existing Lab Pi
 
-The current legacy `videolooper.de` lab image uses this default SSH login:
+For development and lab updates, SSH deployment is still supported on an
+already-running `videolooper.de` image. The current legacy lab image uses this
+default SSH login:
 
 - user: `pi`
 - password: `video`
 
-After first login, replace the password or add an SSH key and disable password login if the Pi will stay on a shared network.
+After first login, replace the password or add an SSH key and disable password
+login if the Pi will stay on a shared network. Do not run `apt upgrade` on the
+target Pi as part of Rick TV setup; the deploy path expects the legacy Python
+3.7 Video Looper layout.
 
-### Packaged Image Path
-
-After you have a known-good `videolooper.de` image, you can turn it into a Rick
-TV image:
-
-```bash
-sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
-  --base-image /path/to/known-good-videolooper.img \
-  --output-image /path/to/rick-tv.img
-```
-
-The builder copies the base image, mounts the root and boot partitions through a loop device, installs the Rick TV payload, and writes `rick-tv.img.sha256`. If the root and boot partitions are already mounted manually, use the lower-level installer:
+Use the same full Pi config template and pass it to the deploy script:
 
 ```bash
-rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \
-  --rootfs /mnt/rick-tv-root \
-  --bootfs /mnt/rick-tv-boot
+mkdir -p dist
+cp rick-tv-pi/provisioning/rick-tv.env.example dist/rick-tv.env
+nano dist/rick-tv.env
+PI_HOST=pi@<pi-ip> PI_PASSWORD=<pi-password> \
+  rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy --config dist/rick-tv.env
 ```
 
-The boot partition will contain `rick-tv.env.example`. Copy it to `rick-tv.env`, then fill in Wi-Fi, SSH, hostname, API token, and runtime settings. On first boot, `rick-tv-firstboot.service` creates `/etc/rick-tv-pi.env`, configures Wi-Fi and SSH, installs pinned `videolooper` overrides and assets, enables `rick-tv-pi.service`, and then stops overwriting manual edits.
-
-For the current lab Pi, SSH deployment is still supported. Before deploying, prepare `/etc/rick-tv-pi.env` from the template:
-
-```bash
-sudo cp rick-tv-pi/provisioning/rick-tv-pi.env.example /etc/rick-tv-pi.env
-sudo nano /etc/rick-tv-pi.env
-```
-
-Edit the file before running deploy so the service starts with the intended values.
-
-```bash
-rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy
-```
+If `/etc/rick-tv-pi.env` already exists on the Pi, deploy preserves it. Edit or
+remove that runtime file on the Pi when you intentionally want new runtime
+values.
 
 Raw framebuffer placeholders are still part of the legacy `videolooper` runtime. The code logs FIFO commands, playlist reloads, `transition-placeholder.fb` and `interstitial-ad.fb` display events, and `player.play(...)` boundaries. A channel switch draws only the transition placeholder and suppresses the next interstitial; an in-channel playlist refresh does not draw the transition placeholder and uses the regular interstitial before the next playback.
 
@@ -186,7 +171,12 @@ Pi provisioning also installs recovery settings for appliance outages: kernel pa
 
 The environment template is:
 
-- `rick-tv-pi/provisioning/rick-tv-pi.env.example`
+- `rick-tv-pi/provisioning/rick-tv.env.example`
+
+It is intentionally a full first-boot config: Wi-Fi, SSH, hostname, and Pi
+runtime values live in one file. Firstboot and SSH deploy write only the
+`RICK_TV_*` runtime subset to `/etc/rick-tv-pi.env` for systemd. Telegram bot
+credentials are server-side only and must not be added to the Pi config.
 
 Important settings:
 

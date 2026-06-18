@@ -14,11 +14,12 @@ VIDEOLOOPER_INSTALLER="$VIDEOLOOPER_PROVISIONING/rick_tv_fifo_patch.py"
 TRANSITION_FRAME="$VIDEOLOOPER_PROVISIONING/assets/transition-placeholder.fb"
 INTERSTITIAL_FRAME="$VIDEOLOOPER_PROVISIONING/assets/interstitial-ad.fb"
 RECOVERY_SCRIPT="$PI_PROVISIONING/scripts/configure-pi-recovery.sh"
+PI_ENV_EXAMPLE="rick-tv-pi/provisioning/rick-tv.env.example"
 
 usage() {
   cat <<'EOF'
 Usage:
-  deploy_videolooper_image.sh deploy [--host pi@192.168.1.68] [--password video]
+  deploy_videolooper_image.sh deploy [--host pi@192.168.1.68] [--password video] [--config rick-tv.env]
   deploy_videolooper_image.sh wifi --boot /Volumes/boot --ssid WIFI_SSID --psk WIFI_PASSWORD [--country UA]
 
 Environment:
@@ -92,6 +93,15 @@ package_project() {
   tar \
     --exclude=".git" \
     --exclude=".venv" \
+    --exclude=".env" \
+    --exclude="**/.env" \
+    --exclude="**/*.sqlite3" \
+    --exclude=".pytest_cache" \
+    --exclude=".mypy_cache" \
+    --exclude=".ruff_cache" \
+    --exclude="dist" \
+    --exclude="*.img" \
+    --exclude="*.zip" \
     --exclude="**/__pycache__" \
     --exclude="**/.DS_Store" \
     --exclude="rick-tv-server/.env" \
@@ -114,7 +124,7 @@ validate_deploy_payload() {
     "$INTERSTITIAL_FRAME"
     "$RECOVERY_SCRIPT"
     "rick-tv-pi/systemd/rick-tv-pi.service"
-    "rick-tv-pi/provisioning/rick-tv-pi.env.example"
+    "$PI_ENV_EXAMPLE"
   )
 
   local path
@@ -124,10 +134,13 @@ validate_deploy_payload() {
 }
 
 deploy() {
+  local full_config=""
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --host) PI_HOST="${2:-}"; shift 2 ;;
       --password) PI_PASSWORD="${2:-}"; shift 2 ;;
+      --config) full_config="${2:-}"; shift 2 ;;
       -h|--help) usage; exit 0 ;;
       *) die "unknown deploy option: $1" ;;
     esac
@@ -138,13 +151,19 @@ deploy() {
   require_cmd ssh
   require_cmd tar
   validate_deploy_payload
+  if [[ -n "$full_config" && ! -f "$full_config" ]]; then
+    die "config file not found: $full_config"
+  fi
 
   local archive
   archive="$(mktemp -t rick-tv-src.XXXXXX.tar.gz)"
   package_project "$archive"
 
-  ssh_pi "mkdir -p '$REMOTE_TMP'"
+  ssh_pi "mkdir -p '$REMOTE_TMP' && rm -f '$REMOTE_TMP/rick-tv.env'"
   scp_pi "$archive" "$PI_HOST:$REMOTE_TMP/rick-tv-src.tar.gz"
+  if [[ -n "$full_config" ]]; then
+    scp_pi "$full_config" "$PI_HOST:$REMOTE_TMP/rick-tv.env"
+  fi
   rm -f "$archive"
 
   ssh_pi "cat > '$REMOTE_TMP/install.sh' <<'REMOTE'
@@ -161,9 +180,59 @@ chown -R pi:pi /home/pi/rick-tv
 python3 -m venv --system-site-packages /opt/rick-tv-pi/.venv
 /opt/rick-tv-pi/.venv/bin/pip install --upgrade pip setuptools
 /opt/rick-tv-pi/.venv/bin/pip install /opt/rick-tv-src/rick-tv-pi
+/opt/rick-tv-pi/.venv/bin/pip install 'evdev==1.7.1' 'certifi==2026.4.22'
+
+write_runtime_env_from_full_config() {
+  local full_config=\"\$1\"
+  local runtime_env=\"\$2\"
+  local tmp
+  tmp=\"\$(mktemp)\"
+  set -a
+  # shellcheck disable=SC1090
+  . \"\$full_config\"
+  set +a
+
+  local runtime_names=(
+    RICK_TV_SERVER_URL
+    RICK_TV_API_TOKEN
+    RICK_TV_MEDIA_ROOT
+    RICK_TV_METADATA_PATH
+    RICK_TV_POLL_INTERVAL_SECONDS
+    RICK_TV_REMOTE_POLL_INTERVAL_SECONDS
+    RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT
+    RICK_TV_VIDEOLOOPER_COMMAND_PATH
+    RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS
+    RICK_TV_CHANNEL_SHUFFLE_SECONDS
+    RICK_TV_TOUCH_SCREEN_WIDTH
+    RICK_TV_TOUCH_SCREEN_HEIGHT
+    RICK_TV_TOUCH_SWAP_AXES
+    RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS
+    RICK_TV_TOUCH_INVERT_X
+    RICK_TV_TOUCH_INVERT_Y
+    RICK_TV_TOUCH_DEVICE
+    RICK_TV_RUNTIME_TICK_SECONDS
+  )
+
+  local name value
+  for name in \"\${runtime_names[@]}\"; do
+    if [[ -v \"\$name\" ]]; then
+      value=\"\${!name}\"
+      printf '%s=%s\n' \"\$name\" \"\$value\" >> \"\$tmp\"
+    fi
+  done
+
+  install -m 0600 \"\$tmp\" \"\$runtime_env\"
+  rm -f \"\$tmp\"
+}
 
 if [ ! -f /etc/rick-tv-pi.env ]; then
-  cp /opt/rick-tv-src/rick-tv-pi/provisioning/rick-tv-pi.env.example /etc/rick-tv-pi.env
+  runtime_config=/tmp/rick-tv-deploy/rick-tv.env
+  if [ ! -f \"\$runtime_config\" ]; then
+    runtime_config=/opt/rick-tv-src/rick-tv-pi/provisioning/rick-tv.env.example
+  fi
+  write_runtime_env_from_full_config \"\$runtime_config\" /etc/rick-tv-pi.env
+else
+  echo \"preserving existing /etc/rick-tv-pi.env\"
 fi
 
 cp /opt/rick-tv-src/rick-tv-pi/systemd/rick-tv-pi.service /etc/systemd/system/rick-tv-pi.service

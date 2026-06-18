@@ -43,39 +43,45 @@ part of Rick TV setup.
 
 ## Packaged Image Payload
 
-The preferred install path is a Rick TV-prepared image made from the known-good
-`videolooper.de` base image. If you have the base image file locally, build a
-flashable Rick TV image from the repository root:
+The preferred install path is a Rick TV-prepared image made from the
+`videolooper.de` v2.11 base archive with `gitbls/sdm`. Install `sdm` on the
+build machine:
+
+```sh
+curl -L https://raw.githubusercontent.com/gitbls/sdm/master/install-sdm | bash
+```
+
+Then build a flashable Rick TV image from the repository root:
 
 ```sh
 sudo rick-tv-pi/provisioning/image/build_packaged_image.sh \
-  --base-image /path/to/known-good-videolooper.img \
-  --output-image /path/to/rick-tv.img
+  --base-image-url https://videolooper.de/video_looper_v2.11.zip \
+  --output-image dist/rick-tv-pi.img
 ```
 
-The builder copies the base image, mounts its root/boot partitions through a
-loop device, stages the Rick TV payload, and writes `rick-tv.img.sha256`.
-Optionally pass `--boot-config /path/to/rick-tv.env` to put a filled first-boot
-config onto the generated image. Do not commit filled config files.
-
-If the partitions are already mounted, stage the payload directly:
-
-```sh
-rick-tv-pi/provisioning/image/install_packaged_image_payload.sh \
-  --rootfs /mnt/rick-tv-root \
-  --bootfs /mnt/rick-tv-boot
-```
-
-The installer copies the project to `/opt/rick-tv-src`, installs
-`/usr/local/sbin/rick-tv-firstboot`, enables `rick-tv-firstboot.service`, and
-places `rick-tv.env.example` on the boot partition.
+The builder downloads/extracts the Video Looper image outside tracked repo
+paths, copies it to the requested output image, runs `sdm --customize` with Rick
+TV's custom phase script, stages the Rick TV payload, and writes
+`dist/rick-tv-pi.img.sha256`. During staging it also copies the Waveshare
+2.8inch DPI LCD DTBO files to the boot partition, appends Rick TV's legacy DPI
+display block to `config.txt`, writes Rick TV's `/boot/video_looper.ini`,
+patches the Video Looper egg, installs placeholder assets, creates the empty
+playlist tree, installs panic/watchdog recovery config, installs
+`rick-tv-pi.service`, and builds `/opt/rick-tv-pi/.venv`. The venv installs
+`evdev==1.7.1` and `certifi==2026.4.22` as pip-level runtime overrides because
+the legacy `videolooper.de` Buster image otherwise exposes older system
+packages through `--system-site-packages`. Optionally pass
+`--boot-config /path/to/rick-tv.env` to put a filled first-boot config onto a
+private generated image. Do not commit filled config files.
 
 Before the first boot, copy `rick-tv.env.example` to `rick-tv.env` on the boot
 partition and fill in Wi-Fi, API, SSH, hostname, and Rick TV runtime values.
 The first-boot service creates `/etc/rick-tv-pi.env`, configures Wi-Fi/SSH,
-installs the pinned videolooper overrides/assets, enables `rick-tv-pi.service`,
-and writes `/var/lib/rick-tv-pi/firstboot.done`. Later boots skip the setup and
-do not overwrite user-edited `/etc/rick-tv-pi.env`.
+re-applies the same idempotent runtime checks, starts `rick-tv-pi.service`,
+restarts `video_looper`, and writes `/var/lib/rick-tv-pi/firstboot.done`. Later
+boots skip the setup and do not overwrite user-edited `/etc/rick-tv-pi.env`.
+Telegram bot token and allowed user IDs are server-side settings; do not put
+them in the Pi image or `rick-tv.env`.
 
 ## Deploy to a Running Pi
 
@@ -97,6 +103,8 @@ The deploy script:
 - installs required packages only;
 - copies the project to `/opt/rick-tv-src`;
 - installs `rick-tv-pi` into `/opt/rick-tv-pi/.venv`;
+- installs pinned venv runtime overrides matching the working Pi:
+  `evdev==1.7.1` and `certifi==2026.4.22`;
 - writes the systemd unit;
 - configures `/boot/video_looper.ini`;
 - installs pinned Rick TV overrides into the Video Looper Python egg;
@@ -105,8 +113,21 @@ The deploy script:
 - installs kernel panic reboot and watchdog recovery config;
 - restarts `rick-tv-pi.service` and supervisor `video_looper`.
 
-If `/etc/rick-tv-pi.env` does not exist, the script installs
-`rick-tv-pi.env.example`. Edit the real file on the Pi with server URL and token.
+If `/etc/rick-tv-pi.env` does not exist, the script generates it from the
+`RICK_TV_*` values in `rick-tv-pi/provisioning/rick-tv.env.example`. For real
+values, create a private filled config and pass it to deploy:
+
+```sh
+mkdir -p dist
+cp rick-tv-pi/provisioning/rick-tv.env.example dist/rick-tv.env
+nano dist/rick-tv.env
+PI_HOST=pi@192.168.1.68 PI_PASSWORD=video \
+  rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy --config dist/rick-tv.env
+```
+
+Existing `/etc/rick-tv-pi.env` files are preserved. Wi-Fi/SSH fields from the
+full config are firstboot-only; deploy writes only the runtime `RICK_TV_*`
+subset.
 
 ## Wi-Fi Bootstrap
 
@@ -131,8 +152,8 @@ For the Waveshare 2.8inch DPI LCD on the legacy image, use:
 - `display/config.txt.waveshare-28dpi-legacy`
 - `vendor/waveshare-28dpi/overlays/*.dtbo`
 
-Copy the overlay files to the boot partition `overlays/` directory if the image
-does not already contain them.
+The packaged-image builder applies these automatically. Manual copying is only
+for lab repair of an already-written boot partition.
 
 ## Framebuffer Diagnostics
 
