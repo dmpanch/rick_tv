@@ -18,7 +18,10 @@ def import_main_with_env(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("RICK_TV_PUBLIC_BASE_URL", "https://server.example.test")
     monkeypatch.setenv("RICK_TV_TELEGRAM_BOT_TOKEN", "bot-token")
     monkeypatch.setenv("RICK_TV_TELEGRAM_ALLOWED_USER_IDS", "42, 100")
-    monkeypatch.setenv("RICK_TV_CHANNELS_PATH", str(tmp_path / "config" / "channels.yml"))
+    monkeypatch.setenv(
+        "RICK_TV_CHANNELS_PATH",
+        str(tmp_path / "ignored" / "channels.yml"),
+    )
     monkeypatch.setenv("RICK_TV_DB_PATH", str(tmp_path / "state" / "custom.sqlite3"))
     sys.modules.pop("rick_tv_server.main", None)
     return importlib.import_module("rick_tv_server.main")

@@ -146,11 +146,20 @@ RICK_TV_SERVER_URL=https://rick-tv.example
 RICK_TV_API_TOKEN=replace-me
 RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media
 RICK_TV_METADATA_PATH=/home/pi/rick-tv/config/channels.json
+RICK_TV_POLL_INTERVAL_SECONDS=60
+RICK_TV_REMOTE_POLL_INTERVAL_SECONDS=2
 RICK_TV_VIDEOLOOPER_PLAYLIST_ROOT=/home/pi/rick-tv/playlists
 RICK_TV_VIDEOLOOPER_COMMAND_PATH=/tmp/rick-tv-videolooper.fifo
 RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS=false
 RICK_TV_CHANNEL_SHUFFLE_SECONDS=3600
-RICK_TV_REMOTE_POLL_INTERVAL_SECONDS=2
+RICK_TV_TOUCH_SCREEN_WIDTH=480
+RICK_TV_TOUCH_SCREEN_HEIGHT=640
+RICK_TV_TOUCH_SWAP_AXES=auto
+RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS=x
+RICK_TV_TOUCH_INVERT_X=0
+RICK_TV_TOUCH_INVERT_Y=0
+RICK_TV_TOUCH_DEVICE=
+RICK_TV_RUNTIME_TICK_SECONDS=0.1
 ```
 
 Telegram bot token and allowed user IDs are server-side settings and must not be
@@ -165,18 +174,7 @@ Telegram remote-control command poll and defaults to `2`. `RICK_TV_CHANNEL_SHUFF
 controls how often files inside each channel playlist are reshuffled; the
 default is `3600` seconds.
 
-Touch gestures also can be tuned for DPI orientation:
-
-```text
-RICK_TV_TOUCH_SCREEN_WIDTH=480
-RICK_TV_TOUCH_SCREEN_HEIGHT=640
-RICK_TV_TOUCH_SWAP_AXES=auto
-RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS=x
-RICK_TV_TOUCH_INVERT_X=0
-RICK_TV_TOUCH_INVERT_Y=0
-RICK_TV_TOUCH_DEVICE=
-RICK_TV_RUNTIME_TICK_SECONDS=0.1
-```
+Touch gestures also can be tuned for DPI orientation.
 
 - `RICK_TV_TOUCH_SWAP_AXES` supports `true|false|auto`; use `auto` for the packaged Waveshare DPI image so the rotated raw touch axes are mapped to the portrait display.
 - `RICK_TV_TOUCH_GESTURE_HORIZONTAL_AXIS` supports `x|y` and selects axis used for left-right detection.

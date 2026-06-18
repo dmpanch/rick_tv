@@ -31,9 +31,7 @@ def load_settings_from_env() -> ServerSettings:
         raise RuntimeError("RICK_TV_API_TOKEN must be set")
 
     config_dir = Path(os.environ.get("RICK_TV_CONFIG_DIR", DEFAULT_CONFIG_DIR))
-    channels_path = Path(
-        os.environ.get("RICK_TV_CHANNELS_PATH", str(config_dir / "channels.yml"))
-    )
+    channels_path = config_dir / "channels.yml"
 
     return ServerSettings(
         media_dir=Path(os.environ.get("RICK_TV_MEDIA_DIR", DEFAULT_MEDIA_DIR)),
