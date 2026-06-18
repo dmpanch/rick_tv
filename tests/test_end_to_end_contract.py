@@ -10,12 +10,13 @@ from rick_tv_pi.config import PiSettings
 from rick_tv_pi.main import RuntimeState, run_runtime_cycle
 from rick_tv_pi.poller import Poller
 from rick_tv_server.api import create_app
+from rick_tv_server.channels import ChannelRegistryStore
 from rick_tv_server.config import ServerSettings
 from rick_tv_server.remote import RemoteCommandStore
 from rick_tv_server.state import DeliveryStateStore
 
 
-def test_pi_poll_downloads_pending_server_media_and_archives_ack(
+def test_pi_poll_downloads_pending_server_media_and_marks_available(
     tmp_path: Path,
 ):
     api_token = "contract-token"
@@ -91,16 +92,6 @@ def test_registry_channel_first_delivery_reaches_empty_pi_media_root(
         state_dir=tmp_path / "server-state",
         api_token=api_token,
         public_base_url="https://server.example",
-        channels_path=tmp_path / "server-config" / "channels.yml",
-    )
-    server_settings.channels_path.parent.mkdir(parents=True)
-    server_settings.channels_path.write_text(
-        """
-channels:
-  01_Citadel:
-    display_name: Citadel TV
-""".lstrip(),
-        encoding="utf-8",
     )
     converted_path = server_settings.media_dir / "converted" / filename
     converted_path.parent.mkdir(parents=True)
@@ -110,6 +101,7 @@ channels:
     original_path.write_bytes(b"source bytes")
 
     store = DeliveryStateStore(server_settings)
+    ChannelRegistryStore(server_settings).add_channel(channel_id, "Citadel TV")
     store.create_uploaded_item(
         item_id=item_id,
         original_path=original_path,
@@ -161,16 +153,6 @@ def test_restore_all_requeues_library_and_delivers_to_fresh_pi(
         state_dir=tmp_path / "server-state",
         api_token=api_token,
         public_base_url="https://server.example",
-        channels_path=tmp_path / "server-config" / "channels.yml",
-    )
-    server_settings.channels_path.parent.mkdir(parents=True)
-    server_settings.channels_path.write_text(
-        """
-channels:
-  01_Citadel:
-    display_name: Citadel TV
-""".lstrip(),
-        encoding="utf-8",
     )
     converted_path = server_settings.media_dir / "converted" / filename
     converted_path.parent.mkdir(parents=True)
@@ -180,6 +162,7 @@ channels:
     original_path.write_bytes(b"source bytes")
 
     store = DeliveryStateStore(server_settings)
+    ChannelRegistryStore(server_settings).add_channel(channel_id, "Citadel TV")
     store.create_uploaded_item(
         item_id=item_id,
         original_path=original_path,
@@ -227,16 +210,6 @@ def test_pi_poll_deletes_server_removed_media_and_acks_delete(
         state_dir=tmp_path / "server-state",
         api_token=api_token,
         public_base_url="https://server.example",
-        channels_path=tmp_path / "server-config" / "channels.yml",
-    )
-    server_settings.channels_path.parent.mkdir(parents=True)
-    server_settings.channels_path.write_text(
-        """
-channels:
-  01_Citadel:
-    display_name: Citadel TV
-""".lstrip(),
-        encoding="utf-8",
     )
     converted_path = server_settings.media_dir / "converted" / filename
     converted_path.parent.mkdir(parents=True)
@@ -246,6 +219,7 @@ channels:
     original_path.write_bytes(b"source bytes")
 
     store = DeliveryStateStore(server_settings)
+    ChannelRegistryStore(server_settings).add_channel(channel_id, "Citadel TV")
     store.create_uploaded_item(
         item_id=item_id,
         original_path=original_path,
