@@ -23,9 +23,9 @@ def test_docker_compose_mounts_runtime_directories_and_publishes_port() -> None:
     assert compose_file.exists()
     content = compose_file.read_text(encoding="utf-8")
 
-    assert "./media:/var/lib/rick-tv/media" in content
-    assert "./config:/etc/rick-tv" in content
-    assert "./state:/var/lib/rick-tv/state" in content
+    assert "${RICK_TV_DATA_DIR:-./data}/media:/var/lib/rick-tv/media" in content
+    assert "${RICK_TV_DATA_DIR:-./data}/config:/etc/rick-tv" in content
+    assert "${RICK_TV_DATA_DIR:-./data}/state:/var/lib/rick-tv/state" in content
     assert "8080:8080" in content
     assert "restart: unless-stopped" in content
 
@@ -37,6 +37,56 @@ def test_docker_compose_supports_local_smoke_without_external_env() -> None:
 
     assert "RICK_TV_API_TOKEN: ${RICK_TV_API_TOKEN:-" in content
     assert "RICK_TV_API_TOKEN: ${RICK_TV_API_TOKEN:?" not in content
+
+
+def test_docker_compose_runs_services_as_host_user_by_default() -> None:
+    compose_file = PROJECT_ROOT / "docker-compose.yml"
+
+    content = compose_file.read_text(encoding="utf-8")
+
+    assert content.count('user: "${RICK_TV_UID:-1000}:${RICK_TV_GID:-1000}"') == 2
+
+
+def test_docker_compose_runs_bot_service_with_shared_runtime_volumes() -> None:
+    compose_file = PROJECT_ROOT / "docker-compose.yml"
+
+    content = compose_file.read_text(encoding="utf-8")
+
+    assert "rick-tv-bot:" in content
+    assert "python -m rick_tv_server.bot_runner" in content
+    assert (
+        content.count("${RICK_TV_DATA_DIR:-./data}/media:/var/lib/rick-tv/media")
+        == 2
+    )
+    assert content.count("${RICK_TV_DATA_DIR:-./data}/config:/etc/rick-tv") == 2
+    assert (
+        content.count("${RICK_TV_DATA_DIR:-./data}/state:/var/lib/rick-tv/state")
+        == 2
+    )
+    assert "RICK_TV_TELEGRAM_BOT_TOKEN" in content
+    assert "RICK_TV_TELEGRAM_ALLOWED_USER_IDS" in content
+    assert "RICK_TV_CHANNELS_PATH" not in content
+
+
+def test_dockerignore_excludes_runtime_volume_directories() -> None:
+    dockerignore = PROJECT_ROOT / ".dockerignore"
+
+    assert dockerignore.exists()
+    content = dockerignore.read_text(encoding="utf-8")
+
+    assert "media/" in content
+    assert "config/" in content
+    assert "state/" in content
+    assert "data/" in content
+
+
+def test_env_example_documents_single_host_data_dir() -> None:
+    env_example = PROJECT_ROOT / ".env.example"
+
+    content = env_example.read_text(encoding="utf-8")
+
+    assert "RICK_TV_DATA_DIR=./data" in content
+    assert "/srv/rick-tv" in content
 
 
 def test_server_docs_document_docker_build_and_import_smoke_check() -> None:

@@ -135,6 +135,8 @@ class VideoLooper:
         self._rick_tv_interstitial_frame_path = '/home/pi/rick-tv/system/interstitial-ad.fb'
         self._rick_tv_interstitial_frame = None
         self._rick_tv_skip_next_interstitial = False
+        self._rick_tv_disable_framebuffer_placeholders = self._rick_tv_env_truthy('RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS')
+        self._rick_tv_clear_stale_framebuffer()
         self._playbackStopped = not self._play_on_startup
         #used for not waiting the first time
         self._firstStart = True
@@ -514,19 +516,37 @@ class VideoLooper:
             command = command.strip()
             if not command:
                 continue
+            self._print(f"Rick TV FIFO command received: {command}")
             if '.m3u' in command:
                 playlist_mtime = self._rick_tv_playlist_mtime(command)
+                same_playlist = command == self._rick_tv_current_playlist_path
+                self._print(
+                    "Rick TV FIFO playlist command details: "
+                    f"same_playlist={same_playlist}, "
+                    f"playlist_mtime={playlist_mtime}, "
+                    f"current_playlist={self._rick_tv_current_playlist_path}, "
+                    f"current_mtime={self._rick_tv_current_playlist_mtime}"
+                )
                 if (
-                    command == self._rick_tv_current_playlist_path
+                    same_playlist
                     and playlist_mtime == self._rick_tv_current_playlist_mtime
                 ):
                     self._print(f"Rick TV playlist command unchanged; ignoring: {command}")
                     continue
-                self._print(f"Rick TV loading playlist: {command}")
+                if same_playlist:
+                    self._print(
+                        "Rick TV same-channel playlist refresh; transition placeholder suppressed: "
+                        f"{command}"
+                    )
+                else:
+                    self._print(f"Rick TV loading playlist: {command}")
                 self._playlist_path = command
+                self._print(f"Rick TV stopping player for playlist command: {command}")
                 self._player.stop(0)
-                self._rick_tv_show_transition_placeholder()
-                self._rick_tv_skip_next_interstitial = True
+                if not same_playlist:
+                    self._rick_tv_show_transition_placeholder()
+                    self._print("Rick TV suppressing next interstitial after channel switch")
+                    self._rick_tv_skip_next_interstitial = True
                 self._playbackStopped = False
                 self._playlist = None
                 self._rick_tv_playlist_reload = True
@@ -576,6 +596,11 @@ class VideoLooper:
         return frame + b"\0" * (expected_bytes - len(frame))
 
     def _rick_tv_show_transition_placeholder(self):
+        if not self._rick_tv_framebuffer_placeholders_enabled():
+            self._print(
+                "Rick TV transition placeholder disabled by RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS"
+            )
+            return
         frame = self._rick_tv_transition_frame
         expected_bytes = self._rick_tv_framebuffer_bytes()
         if expected_bytes is None:
@@ -598,6 +623,7 @@ class VideoLooper:
         try:
             fd = os.open('/dev/fb0', os.O_WRONLY)
             try:
+                self._print("Rick TV showing transition placeholder")
                 os.write(fd, frame)
             finally:
                 os.close(fd)
@@ -605,6 +631,11 @@ class VideoLooper:
             self._print(f"Rick TV transition placeholder unavailable: {exc}")
 
     def _rick_tv_show_interstitial_ad(self):
+        if not self._rick_tv_framebuffer_placeholders_enabled():
+            self._print(
+                "Rick TV interstitial ad disabled by RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS"
+            )
+            return
         frame = self._rick_tv_interstitial_frame
         expected_bytes = self._rick_tv_framebuffer_bytes()
         if expected_bytes is None:
@@ -627,11 +658,72 @@ class VideoLooper:
         try:
             fd = os.open('/dev/fb0', os.O_WRONLY)
             try:
+                self._print("Rick TV showing interstitial ad")
                 os.write(fd, frame)
             finally:
                 os.close(fd)
         except OSError as exc:
             self._print(f"Rick TV interstitial ad unavailable: {exc}")
+
+    def _rick_tv_framebuffer_placeholders_enabled(self):
+        return not self._rick_tv_disable_framebuffer_placeholders
+
+    def _rick_tv_clear_stale_framebuffer(self):
+        if not self._rick_tv_disable_framebuffer_placeholders:
+            return
+        expected_bytes = self._rick_tv_framebuffer_bytes()
+        if expected_bytes is None:
+            return
+        try:
+            fd = os.open('/dev/fb0', os.O_WRONLY)
+            try:
+                chunk = b'\0' * 65536
+                remaining = expected_bytes
+                while remaining > 0:
+                    written = os.write(fd, chunk[:min(len(chunk), remaining)])
+                    if written <= 0:
+                        break
+                    remaining -= written
+                self._print(
+                    "Rick TV cleared stale framebuffer because RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS is enabled"
+                )
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            self._print(f"Rick TV stale framebuffer clear failed: {exc}")
+
+    def _rick_tv_env_truthy(self, name):
+        return self._rick_tv_env_value(name).strip().lower() in ('1', 'true', 'yes', 'on')
+
+    def _rick_tv_env_value(self, name):
+        value = os.environ.get(name)
+        if value is not None:
+            return value
+        try:
+            fd = os.open('/etc/rick-tv-pi.env', os.O_RDONLY)
+            try:
+                content = os.read(fd, 65536).decode('utf-8')
+            finally:
+                os.close(fd)
+        except OSError:
+            return ''
+
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, file_value = line.split('=', 1)
+            if key.strip() != name:
+                continue
+            file_value = file_value.strip()
+            if (
+                len(file_value) >= 2
+                and file_value[0] == file_value[-1]
+                and file_value[0] in ('"', "'")
+            ):
+                file_value = file_value[1:-1]
+            return file_value
+        return ''
 
     def _rick_tv_prepare_framebuffer_console(self):
         try:
@@ -841,6 +933,7 @@ class VideoLooper:
         while self._running:
             self._rick_tv_handle_fifo_commands()
             if self._rick_tv_playlist_reload:
+                self._print("Rick TV playlist reload requested; rebuilding playlist")
                 self._playlist = self._build_playlist()
                 movie = self._playlist.get_next()
                 self._rick_tv_playlist_reload = False
@@ -875,8 +968,11 @@ class VideoLooper:
                     if movie is None:
                         continue
 
-                    if not self._firstStart and not self._rick_tv_skip_next_interstitial:
-                        self._rick_tv_show_interstitial_ad()
+                    if not self._firstStart:
+                        if self._rick_tv_skip_next_interstitial:
+                            self._print("Rick TV skipping interstitial after channel switch")
+                        else:
+                            self._rick_tv_show_interstitial_ad()
                     self._rick_tv_skip_next_interstitial = False
                     movie.was_played() # type: ignore
 
@@ -906,6 +1002,7 @@ class VideoLooper:
                                         
                     # Start playing the first available movie.
                     self._print(f"Playing movie: {movie} {infotext}")
+                    self._print(f"Rick TV player.play starting: {movie}")
                     # todo: maybe clear screen to black so that background (image/color) is not visible for videos with a resolution that is < screen resolution
                     self._player.play(movie, loop=player_loop, vol = self._sound_vol)
 
@@ -943,7 +1040,8 @@ class VideoLooper:
 
         self._playbackStopped = True
         self._running = False
-        pygame.event.post(pygame.event.Event(pygame.QUIT))
+        if self._osd and pygame.get_init():
+            pygame.event.post(pygame.event.Event(pygame.QUIT))
 
         if self._player is not None:
             self._player.stop()

@@ -1,7 +1,7 @@
 import json
 import subprocess
 
-from rick_tv_pi.validator import validate_ready_profile
+from rick_tv_server.validator import validate_ready_profile
 
 
 def _completed_probe(payload):

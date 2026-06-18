@@ -63,17 +63,22 @@ class VideolooperController:
         self._master_playlist_path.write_text(master_playlist_text)
         self._last_master_playlist_text = master_playlist_text
 
-    def select_channel(self, channel: Channel) -> None:
-        if self._current_channel is not None and self._current_channel.id == channel.id:
-            return
+    def select_channel(self, channel: Channel) -> bool:
+        if (
+            self._current_channel is not None
+            and self._current_channel.id == channel.id
+            and self._current_commanded_channel_id == channel.id
+        ):
+            return True
         self._current_channel = channel
         self._write_channel_playlist_if_due(channel, time.monotonic())
         self._update_state(channel)
         if self.current_file is None:
             self._changed_channel_ids.discard(channel.id)
-            return
-        self._send_channel_command(channel, force=True)
+            return True
+        command_sent = self._send_channel_command(channel, force=True)
         self._changed_channel_ids.discard(channel.id)
+        return command_sent
 
     def rescan_current_channel(self, now: Optional[float] = None) -> None:
         if self._current_channel is None:
@@ -158,16 +163,18 @@ class VideolooperController:
             lines.append(str(path))
         return "\n".join(lines) + "\n", files[0]
 
-    def _send_channel_command(self, channel: Channel, *, force: bool = False) -> None:
+    def _send_channel_command(self, channel: Channel, *, force: bool = False) -> bool:
         command = str(self._channel_playlist_path(channel))
         if not force and self._current_commanded_channel_id == channel.id:
-            return
+            return True
         try:
             self._command_writer(command)
         except OSError as exc:
             logger.warning("Videolooper command pipe is unavailable: %s", exc)
+            return False
         else:
             self._current_commanded_channel_id = channel.id
+            return True
 
     def _write_fifo_command(self, command: str) -> None:
         fd = os.open(str(self._command_path), os.O_WRONLY | os.O_NONBLOCK)

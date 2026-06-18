@@ -6,6 +6,7 @@ from rick_tv_server.converter import (
     ConversionProfile,
     build_ffmpeg_command,
     convert_to_ready_mp4,
+    strict_conversion_profile,
 )
 
 
@@ -80,3 +81,25 @@ def test_convert_to_ready_mp4_raises_on_ffmpeg_failure():
         )
 
     assert exc_info.value is expected
+
+
+def test_strict_ffmpeg_command_adds_bitrate_caps_and_faststart():
+    command = build_ffmpeg_command(
+        input_path="/tmp/uploads/source.mov",
+        output_path="/tmp/converted/ready.mp4",
+        profile=strict_conversion_profile(),
+    )
+
+    assert command[command.index("-b:v") + 1] == "650k"
+    assert "-maxrate" in command
+    assert command[command.index("-maxrate") + 1] == "700k"
+    assert "-bufsize" in command
+    assert command[command.index("-bufsize") + 1] == "1400k"
+    assert "-r" in command
+    assert command[command.index("-r") + 1] == "30"
+    assert "-ac" in command
+    assert command[command.index("-ac") + 1] == "2"
+    assert "-ar" in command
+    assert command[command.index("-ar") + 1] == "44100"
+    assert "-movflags" in command
+    assert command[command.index("-movflags") + 1] == "+faststart"

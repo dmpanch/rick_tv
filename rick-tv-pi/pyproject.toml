@@ -9,7 +9,6 @@ requires-python = ">=3.7"
 dependencies = [
     "httpx>=0.24,<0.25; python_version < '3.8'",
     "httpx; python_version >= '3.8'",
-    "PyYAML",
     "evdev; platform_system == 'Linux'",
 ]
 

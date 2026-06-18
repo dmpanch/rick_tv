@@ -8,14 +8,21 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from rick_tv_server.channels import ChannelRegistryStore
 from rick_tv_server.config import ServerSettings
+from rick_tv_server.remote import RemoteCommand, RemoteCommandStore
 from rick_tv_server.state import DeliveryItem, DeliveryStateStore
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> FastAPI:
+def create_app(
+    settings: ServerSettings,
+    state_store: DeliveryStateStore,
+    remote_command_store: RemoteCommandStore | None = None,
+) -> FastAPI:
     app = FastAPI()
+    remote_store = remote_command_store or RemoteCommandStore(settings)
 
     def require_bearer_token(
         credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
@@ -41,15 +48,44 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
             "items": [
                 _ready_item_response(settings, item)
                 for item in state_store.ready_items_for_channels(channel_ids)
+            ],
+            "deletions": [
+                _delete_item_response(item)
+                for item in state_store.device_delete_items_for_channels(channel_ids)
+            ],
+        }
+
+    @app.get("/api/v1/channels", dependencies=[Depends(require_bearer_token)])
+    def channels() -> dict[str, dict[str, dict[str, str]]]:
+        registry = ChannelRegistryStore(settings)
+        return registry.dump_payload()
+
+    @app.get("/api/v1/commands", dependencies=[Depends(require_bearer_token)])
+    def commands() -> dict[str, list[dict[str, str]]]:
+        return {
+            "commands": [
+                _remote_command_response(command)
+                for command in remote_store.pending_commands()
             ]
         }
 
+    @app.post(
+        "/api/v1/commands/{command_id}/ack",
+        dependencies=[Depends(require_bearer_token)],
+    )
+    def command_ack(command_id: str) -> Response:
+        try:
+            remote_store.ack_command(command_id)
+        except KeyError:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     @app.get("/api/v1/download/{item_id}", dependencies=[Depends(require_bearer_token)])
     def download(item_id: str) -> FileResponse:
-        item = state_store.items.get(item_id)
+        item = state_store.get_item(item_id)
         if (
             item is None
-            or item.status != "pending"
+            or item.status != "pending_delivery"
             or item.converted_path is None
             or not item.converted_path.exists()
         ):
@@ -59,17 +95,33 @@ def create_app(settings: ServerSettings, state_store: DeliveryStateStore) -> Fas
 
     @app.post("/api/v1/ack/{item_id}", dependencies=[Depends(require_bearer_token)])
     def ack(item_id: str) -> Response:
-        item = state_store.items.get(item_id)
+        item = state_store.get_item(item_id)
         if item is None or item.status in {
             "uploaded",
             "converting",
+            "failed",
             "canceled",
-            "deleted_server_side",
+            "pending_device_delete",
+            "deleted",
         }:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
-        if item.status == "pending":
+        if item.status == "pending_delivery":
             state_store.ack_item(item_id)
+
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.post(
+        "/api/v1/delete-ack/{item_id}",
+        dependencies=[Depends(require_bearer_token)],
+    )
+    def delete_ack(item_id: str) -> Response:
+        item = state_store.get_item(item_id)
+        if item is None or item.status not in {"pending_device_delete", "deleted"}:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+        if item.status == "pending_device_delete":
+            state_store.ack_device_delete(item_id)
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -89,6 +141,37 @@ def _ready_item_response(settings: ServerSettings, item: DeliveryItem) -> dict[s
         "filename": item.converted_path.name,
         "download_url": f"{settings.public_base_url.rstrip('/')}/api/v1/download/{item.item_id}",
         "sha256": _sha256_file(item.converted_path),
+    }
+
+
+def _delete_item_response(item: DeliveryItem) -> dict[str, str]:
+    if item.channel_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Delete item is missing channel metadata",
+        )
+
+    filename = item.filename
+    if filename is None and item.converted_path is not None:
+        filename = item.converted_path.name
+    if filename is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Delete item is missing filename metadata",
+        )
+
+    return {
+        "id": item.item_id,
+        "channel_id": item.channel_id,
+        "filename": filename,
+    }
+
+
+def _remote_command_response(command: RemoteCommand) -> dict[str, str]:
+    return {
+        "id": command.command_id,
+        "type": command.command_type,
+        "channel_id": command.channel_id,
     }
 
 

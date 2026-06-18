@@ -10,7 +10,7 @@ from rick_tv_pi.touch import SwipeAction
 
 
 class ChannelPlayer(Protocol):
-    def select_channel(self, channel: Channel) -> None: ...
+    def select_channel(self, channel: Channel) -> bool | None: ...
 
 
 class ChannelNavigator:
@@ -54,3 +54,16 @@ class ChannelNavigator:
         elif action == "previous":
             self._current_index = (self._current_index - 1) % len(self._channels)
         player.select_channel(self._channels[self._current_index])
+
+    def select_channel_id(self, channel_id: str, player: ChannelPlayer) -> bool:
+        for index, channel in enumerate(self._channels):
+            if channel.id != channel_id:
+                continue
+            if player.select_channel(channel) is False:
+                return False
+            self._current_index = index
+            return True
+        return False
+
+    def has_channel_id(self, channel_id: str) -> bool:
+        return any(channel.id == channel_id for channel in self._channels)

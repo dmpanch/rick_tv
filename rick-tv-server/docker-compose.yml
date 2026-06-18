@@ -1,16 +1,39 @@
 services:
   rick-tv-server:
     build: .
+    user: "${RICK_TV_UID:-1000}:${RICK_TV_GID:-1000}"
     ports:
       - "8080:8080"
     environment:
       RICK_TV_MEDIA_DIR: /var/lib/rick-tv/media
       RICK_TV_CONFIG_DIR: /etc/rick-tv
       RICK_TV_STATE_DIR: /var/lib/rick-tv/state
+      RICK_TV_DB_PATH: ${RICK_TV_DB_PATH:-/var/lib/rick-tv/state/rick-tv.sqlite3}
       RICK_TV_API_TOKEN: ${RICK_TV_API_TOKEN:-change-me-local}
       RICK_TV_PUBLIC_BASE_URL: ${RICK_TV_PUBLIC_BASE_URL:-http://localhost:8080}
     volumes:
-      - ./media:/var/lib/rick-tv/media
-      - ./config:/etc/rick-tv
-      - ./state:/var/lib/rick-tv/state
+      - ${RICK_TV_DATA_DIR:-./data}/media:/var/lib/rick-tv/media
+      - ${RICK_TV_DATA_DIR:-./data}/config:/etc/rick-tv
+      - ${RICK_TV_DATA_DIR:-./data}/state:/var/lib/rick-tv/state
+    restart: unless-stopped
+
+  rick-tv-bot:
+    build: .
+    user: "${RICK_TV_UID:-1000}:${RICK_TV_GID:-1000}"
+    command: python -m rick_tv_server.bot_runner
+    profiles:
+      - bot
+    environment:
+      RICK_TV_MEDIA_DIR: /var/lib/rick-tv/media
+      RICK_TV_CONFIG_DIR: /etc/rick-tv
+      RICK_TV_STATE_DIR: /var/lib/rick-tv/state
+      RICK_TV_DB_PATH: ${RICK_TV_DB_PATH:-/var/lib/rick-tv/state/rick-tv.sqlite3}
+      RICK_TV_API_TOKEN: ${RICK_TV_API_TOKEN:-change-me-local}
+      RICK_TV_PUBLIC_BASE_URL: ${RICK_TV_PUBLIC_BASE_URL:-http://localhost:8080}
+      RICK_TV_TELEGRAM_BOT_TOKEN: ${RICK_TV_TELEGRAM_BOT_TOKEN:-}
+      RICK_TV_TELEGRAM_ALLOWED_USER_IDS: ${RICK_TV_TELEGRAM_ALLOWED_USER_IDS:-}
+    volumes:
+      - ${RICK_TV_DATA_DIR:-./data}/media:/var/lib/rick-tv/media
+      - ${RICK_TV_DATA_DIR:-./data}/config:/etc/rick-tv
+      - ${RICK_TV_DATA_DIR:-./data}/state:/var/lib/rick-tv/state
     restart: unless-stopped

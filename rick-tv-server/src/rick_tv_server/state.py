@@ -1,265 +1,408 @@
 from __future__ import annotations
 
-import json
-import os
-import tempfile
-from dataclasses import asdict, dataclass, replace
+import sqlite3
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
 from rick_tv_server.config import ServerSettings
+from rick_tv_server.database import connect_database, ensure_database
+from rick_tv_server.library_paths import relative_media_path, resolve_media_path
 
 DeliveryStatus = Literal[
     "uploaded",
     "converting",
-    "pending",
+    "pending_delivery",
+    "available",
+    "failed",
     "canceled",
-    "delivered",
-    "archived",
-    "deleted_server_side",
+    "pending_device_delete",
+    "deleted",
 ]
 
 DELIVERY_STATUSES: tuple[DeliveryStatus, ...] = (
     "uploaded",
     "converting",
-    "pending",
+    "pending_delivery",
+    "available",
+    "failed",
     "canceled",
-    "delivered",
-    "archived",
-    "deleted_server_side",
+    "pending_device_delete",
+    "deleted",
+)
+
+VISIBLE_CHANNEL_VIDEO_STATUSES: tuple[DeliveryStatus, ...] = (
+    "pending_delivery",
+    "available",
+)
+
+CHANNEL_DELETE_BLOCKING_STATUSES: tuple[DeliveryStatus, ...] = (
+    "uploaded",
+    "converting",
+    "pending_delivery",
+    "available",
+    "pending_device_delete",
 )
 
 
 @dataclass
 class DeliveryItem:
     item_id: str
-    user_id: str
     status: DeliveryStatus
     original_path: Path
+    channel_id: str
     converted_path: Path | None = None
-    source_message_id: int | None = None
-    channel_id: str | None = None
     filename: str | None = None
     sha256: str | None = None
-
-    @classmethod
-    def from_json(cls, data: dict[str, object]) -> "DeliveryItem":
-        converted_path = data.get("converted_path")
-        return cls(
-            item_id=str(data["item_id"]),
-            user_id=str(data["user_id"]),
-            status=data["status"],  # type: ignore[arg-type]
-            original_path=Path(str(data["original_path"])),
-            converted_path=Path(str(converted_path)) if converted_path is not None else None,
-            source_message_id=data.get("source_message_id"),  # type: ignore[arg-type]
-            channel_id=data.get("channel_id"),  # type: ignore[arg-type]
-            filename=data.get("filename"),  # type: ignore[arg-type]
-            sha256=data.get("sha256"),  # type: ignore[arg-type]
-        )
-
-    def to_json(self) -> dict[str, object]:
-        data = asdict(self)
-        data["original_path"] = str(self.original_path)
-        data["converted_path"] = str(self.converted_path) if self.converted_path is not None else None
-        return data
+    failure_message: str | None = None
 
 
 class DeliveryStateStore:
     def __init__(self, settings: ServerSettings):
         self.settings = settings
-        self.state_path = settings.state_dir / "queue.json"
-        self.items: dict[str, DeliveryItem] = {}
-        self.last_channel_by_user: dict[str, str] = {}
-        self.acknowledgements: dict[str, object] = {}
-        self.archive_index: dict[str, object] = {}
-        self.archive_delete_requests: dict[str, object] = {}
-        self._load()
+        ensure_database(settings)
+
+    @property
+    def items(self) -> dict[str, DeliveryItem]:
+        with connect_database(self.settings) as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM media_items
+                ORDER BY rowid
+                """
+            ).fetchall()
+        return {row["item_id"]: self._item_from_row(row) for row in rows}
+
+    @property
+    def last_channel_by_user(self) -> dict[str, str]:
+        with connect_database(self.settings) as connection:
+            rows = connection.execute(
+                """
+                SELECT user_id, channel_id
+                FROM user_channel_preferences
+                ORDER BY user_id
+                """
+            ).fetchall()
+        return {row["user_id"]: row["channel_id"] for row in rows}
 
     def create_uploaded_item(
         self,
         *,
         item_id: str,
-        user_id: str,
+        channel_id: str = "Unassigned",
         original_path: Path,
-        source_message_id: int | None = None,
     ) -> DeliveryItem:
-        if item_id in self.items:
-            raise ValueError(f"delivery item already exists: {item_id}")
+        try:
+            with connect_database(self.settings) as connection:
+                with connection:
+                    connection.execute(
+                        """
+                        INSERT INTO media_items (
+                            item_id,
+                            channel_id,
+                            status,
+                            original_path
+                        )
+                        VALUES (?, ?, 'uploaded', ?)
+                        """,
+                        (
+                            item_id,
+                            channel_id,
+                            relative_media_path(self.settings, original_path),
+                        ),
+                    )
+        except sqlite3.IntegrityError as error:
+            raise ValueError(f"delivery item already exists: {item_id}") from error
 
-        item = DeliveryItem(
-            item_id=item_id,
-            user_id=user_id,
-            status="uploaded",
-            original_path=original_path,
-            source_message_id=source_message_id,
-        )
-        self.items[item_id] = item
-        self._persist()
+        item = self.get_item(item_id)
+        if item is None:
+            raise RuntimeError(f"delivery item was not created: {item_id}")
         return item
 
     def mark_converting(self, item_id: str) -> DeliveryItem:
-        item = self.items[item_id]
+        item = self._require_item(item_id)
         if item.status != "uploaded":
             raise ValueError(
                 f"delivery item must be uploaded before converting: {item_id}"
             )
 
-        item.status = "converting"
-        self._persist()
-        return item
+        self._update_item_status(item_id, "converting")
+        return self._require_item(item_id)
 
     def mark_pending(
         self,
         item_id: str,
         *,
         converted_path: Path,
-        channel_id: str,
         filename: str | None = None,
         sha256: str | None = None,
+        channel_id: str | None = None,
     ) -> DeliveryItem:
-        item = self.items[item_id]
+        item = self._require_item(item_id)
         if item.status != "converting":
             raise ValueError(
-                f"delivery item must be converting before pending: {item_id}"
+                f"delivery item must be converting before pending delivery: {item_id}"
             )
 
-        item.status = "pending"
-        item.converted_path = converted_path
-        item.channel_id = channel_id
-        item.filename = filename
-        item.sha256 = sha256
-        self.remember_user_channel(item.user_id, channel_id)
-        return item
+        with connect_database(self.settings) as connection:
+            with connection:
+                connection.execute(
+                    """
+                    UPDATE media_items
+                    SET status = 'pending_delivery',
+                        converted_path = ?,
+                        filename = ?,
+                        sha256 = ?,
+                        channel_id = COALESCE(?, channel_id)
+                    WHERE item_id = ?
+                    """,
+                    (
+                        relative_media_path(self.settings, converted_path),
+                        filename,
+                        sha256,
+                        channel_id,
+                        item_id,
+                    ),
+                )
+        return self._require_item(item_id)
+
+    def mark_failed(
+        self,
+        item_id: str,
+        *,
+        message: str,
+        channel_id: str | None = None,
+    ) -> DeliveryItem:
+        item = self._require_item(item_id)
+        if item.status not in ("uploaded", "converting"):
+            raise ValueError(
+                f"delivery item must be uploaded or converting before failed: {item_id}"
+            )
+
+        with connect_database(self.settings) as connection:
+            with connection:
+                connection.execute(
+                    """
+                    UPDATE media_items
+                    SET status = 'failed',
+                        failure_message = ?,
+                        channel_id = COALESCE(?, channel_id)
+                    WHERE item_id = ?
+                    """,
+                    (message, channel_id, item_id),
+                )
+        return self._require_item(item_id)
 
     def remember_user_channel(self, user_id: str, channel_id: str) -> None:
-        self.last_channel_by_user[user_id] = channel_id
-        self._persist()
+        with connect_database(self.settings) as connection:
+            with connection:
+                connection.execute(
+                    """
+                    INSERT INTO user_channel_preferences (user_id, channel_id)
+                    VALUES (?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET channel_id = excluded.channel_id
+                    """,
+                    (user_id, channel_id),
+                )
 
     def ready_items_for_channels(self, channel_ids: list[str]) -> list[DeliveryItem]:
-        channels = set(channel_ids)
-        return [
-            item
-            for item in self.items.values()
-            if item.status == "pending" and item.channel_id in channels
-        ]
+        if not channel_ids:
+            return []
+        placeholders = ",".join("?" for _ in channel_ids)
+        with connect_database(self.settings) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT *
+                FROM media_items
+                WHERE status = 'pending_delivery'
+                  AND channel_id IN ({placeholders})
+                ORDER BY rowid
+                """,
+                tuple(channel_ids),
+            ).fetchall()
+        return [self._item_from_row(row) for row in rows]
 
     def list_pending_items(self) -> list[DeliveryItem]:
-        return [item for item in self.items.values() if item.status == "pending"]
+        with connect_database(self.settings) as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM media_items
+                WHERE status = 'pending_delivery'
+                ORDER BY rowid
+                """
+            ).fetchall()
+        return [self._item_from_row(row) for row in rows]
 
-    def list_archived_items(self) -> list[DeliveryItem]:
-        return [
-            item
-            for item in self.items.values()
-            if item.status in ("delivered", "archived")
-        ]
+    def list_active_items_for_channel(self, channel_id: str) -> list[DeliveryItem]:
+        with connect_database(self.settings) as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM media_items
+                WHERE channel_id = ?
+                  AND status IN ('pending_delivery', 'available')
+                ORDER BY rowid
+                """,
+                (channel_id,),
+            ).fetchall()
+        return [self._item_from_row(row) for row in rows]
 
     def cancel_pending_item(self, item_id: str) -> DeliveryItem:
-        item = self.items[item_id]
-        if item.status != "pending":
-            raise ValueError(f"delivery item must be pending before cancel: {item_id}")
-
-        item.status = "canceled"
-        self._persist()
-        return item
-
-    def request_archive_delete(self, item_id: str) -> DeliveryItem:
-        item = self.items[item_id]
-        if item.status not in ("delivered", "archived"):
+        item = self._require_item(item_id)
+        if item.status != "pending_delivery":
             raise ValueError(
-                f"delivery item must be archived before archive delete: {item_id}"
+                f"delivery item must be pending delivery before cancel: {item_id}"
             )
 
-        self.archive_delete_requests[item_id] = {"status": "requested"}
-        self._persist()
-        return item
-
-    def confirm_archive_delete(self, item_id: str) -> DeliveryItem:
-        item = self.items[item_id]
-        if item.status not in ("delivered", "archived"):
-            raise ValueError(
-                f"delivery item must be archived before archive delete: {item_id}"
-            )
-        if item_id not in self.archive_delete_requests:
-            raise ValueError(f"archive delete must be requested before confirm: {item_id}")
-
-        moved_media_paths = self._quarantine_server_side_media(item)
-        previous_status = item.status
-        previous_archive_entry = self.archive_index.get(item_id)
-        previous_request = self.archive_delete_requests.get(item_id)
-        item.status = "deleted_server_side"
-        self.archive_index.pop(item_id, None)
-        self.archive_delete_requests.pop(item_id, None)
-        try:
-            self._persist()
-        except Exception:
-            item.status = previous_status
-            if previous_archive_entry is not None:
-                self.archive_index[item_id] = previous_archive_entry
-            if previous_request is not None:
-                self.archive_delete_requests[item_id] = previous_request
-            self._restore_quarantined_media(moved_media_paths)
-            raise
-
-        self._delete_quarantined_media(moved_media_paths)
-        return item
+        self._update_item_status(item_id, "canceled")
+        return self._require_item(item_id)
 
     def ack_item(self, item_id: str) -> DeliveryItem:
-        item = self.items[item_id]
-        if item.status != "pending":
-            raise ValueError(f"delivery item must be pending before ack: {item_id}")
+        item = self._require_item(item_id)
+        if item.status != "pending_delivery":
+            raise ValueError(
+                f"delivery item must be pending delivery before ack: {item_id}"
+            )
 
-        item.status = "delivered"
-        delivered = replace(item)
-        self.acknowledgements[item_id] = {"status": "delivered"}
+        self._update_item_status(item_id, "available")
+        return self._require_item(item_id)
 
-        item.status = "archived"
-        self.archive_index[item_id] = {
-            "status": "archived",
-            "channel_id": item.channel_id,
-            "user_id": item.user_id,
-        }
-        self._persist()
-        return delivered
+    def restore_all_available(self) -> list[DeliveryItem]:
+        with connect_database(self.settings) as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM media_items
+                WHERE status = 'available'
+                ORDER BY rowid
+                """
+            ).fetchall()
+            items = [self._item_from_row(row) for row in rows]
+            with connection:
+                connection.execute(
+                    """
+                    UPDATE media_items
+                    SET status = 'pending_delivery'
+                    WHERE status = 'available'
+                    """
+                )
+        return [replace(item, status="pending_delivery") for item in items]
 
-    def _load(self) -> None:
-        if not self.state_path.exists():
-            return
+    def delete_item_from_channel(self, item_id: str) -> DeliveryItem:
+        item = self._require_item(item_id)
+        if item.status not in VISIBLE_CHANNEL_VIDEO_STATUSES:
+            raise ValueError(f"delivery item must be active before channel delete: {item_id}")
+        if item.filename is None and item.converted_path is None:
+            raise ValueError(f"delivery item is missing filename: {item_id}")
 
-        with self.state_path.open("r", encoding="utf-8") as state_file:
-            data = json.load(state_file)
-
-        self.items = {
-            item_id: DeliveryItem.from_json(item_data)
-            for item_id, item_data in data.get("items", {}).items()
-        }
-        self.last_channel_by_user = dict(data.get("last_channel_by_user", {}))
-        self.acknowledgements = dict(data.get("acknowledgements", {}))
-        self.archive_index = dict(data.get("archive_index", {}))
-        self.archive_delete_requests = dict(data.get("archive_delete_requests", {}))
-
-    def _persist(self) -> None:
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            "items": {item_id: item.to_json() for item_id, item in self.items.items()},
-            "last_channel_by_user": self.last_channel_by_user,
-            "acknowledgements": self.acknowledgements,
-            "archive_index": self.archive_index,
-            "archive_delete_requests": self.archive_delete_requests,
-        }
-
-        fd, tmp_name = tempfile.mkstemp(
-            prefix=f".{self.state_path.name}.",
-            suffix=".tmp",
-            dir=self.state_path.parent,
-        )
+        moved_paths: list[tuple[Path, Path]] = []
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
-                json.dump(data, tmp_file, indent=2, sort_keys=True)
-                tmp_file.write("\n")
-            os.replace(tmp_name, self.state_path)
+            moved_paths = self._quarantine_server_side_media(item)
+            self._update_item_status(item_id, "pending_device_delete")
         except Exception:
-            Path(tmp_name).unlink(missing_ok=True)
+            self._restore_quarantined_media(moved_paths)
             raise
+
+        self._delete_quarantined_media(moved_paths)
+        return self._require_item(item_id)
+
+    def device_delete_items_for_channels(
+        self,
+        channel_ids: list[str],
+    ) -> list[DeliveryItem]:
+        if not channel_ids:
+            return []
+        placeholders = ",".join("?" for _ in channel_ids)
+        with connect_database(self.settings) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT *
+                FROM media_items
+                WHERE status = 'pending_device_delete'
+                  AND channel_id IN ({placeholders})
+                ORDER BY rowid
+                """,
+                tuple(channel_ids),
+            ).fetchall()
+        return [self._item_from_row(row) for row in rows]
+
+    def ack_device_delete(self, item_id: str) -> DeliveryItem:
+        item = self._require_item(item_id)
+        if item.status != "pending_device_delete":
+            raise ValueError(
+                f"delivery item must be pending device delete before device ack: {item_id}"
+            )
+
+        self._update_item_status(item_id, "deleted")
+        return self._require_item(item_id)
+
+    def get_item(self, item_id: str) -> DeliveryItem | None:
+        with connect_database(self.settings) as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM media_items
+                WHERE item_id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+        return self._item_from_row(row) if row is not None else None
+
+    def has_active_media_for_channel(self, channel_id: str) -> bool:
+        with connect_database(self.settings) as connection:
+            count = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM media_items
+                WHERE channel_id = ?
+                  AND status IN (
+                      'uploaded',
+                      'converting',
+                      'pending_delivery',
+                      'available',
+                      'pending_device_delete'
+                  )
+                """,
+                (channel_id,),
+            ).fetchone()[0]
+        return bool(count)
+
+    def _require_item(self, item_id: str) -> DeliveryItem:
+        item = self.get_item(item_id)
+        if item is None:
+            raise KeyError(item_id)
+        return item
+
+    def _update_item_status(self, item_id: str, status: DeliveryStatus) -> None:
+        with connect_database(self.settings) as connection:
+            with connection:
+                connection.execute(
+                    """
+                    UPDATE media_items
+                    SET status = ?
+                    WHERE item_id = ?
+                    """,
+                    (status, item_id),
+                )
+
+    def _item_from_row(self, row: sqlite3.Row) -> DeliveryItem:
+        converted_path = row["converted_path"]
+        return DeliveryItem(
+            item_id=row["item_id"],
+            channel_id=row["channel_id"],
+            status=row["status"],
+            original_path=resolve_media_path(self.settings, row["original_path"]),
+            converted_path=(
+                resolve_media_path(self.settings, converted_path)
+                if converted_path is not None
+                else None
+            ),
+            filename=row["filename"],
+            sha256=row["sha256"],
+            failure_message=row["failure_message"],
+        )
 
     def _server_side_media_paths(self, item: DeliveryItem) -> list[Path]:
         paths: list[Path] = []
@@ -283,7 +426,7 @@ class DeliveryStateStore:
 
     def _quarantine_server_side_media(self, item: DeliveryItem) -> list[tuple[Path, Path]]:
         moved_paths: list[tuple[Path, Path]] = []
-        quarantine_dir = self.settings.media_dir / ".deleted_server_side" / item.item_id
+        quarantine_dir = self.settings.media_dir / ".pending_device_delete" / item.item_id
         for index, media_path in enumerate(self._server_side_media_paths(item)):
             quarantine_path = quarantine_dir / f"{index}-{media_path.name}"
             quarantine_path.parent.mkdir(parents=True, exist_ok=True)

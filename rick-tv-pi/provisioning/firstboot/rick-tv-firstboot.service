@@ -1,0 +1,13 @@
+[Unit]
+Description=Rick TV first boot configuration
+After=local-fs.target
+Before=rick-tv-pi.service
+ConditionPathExists=!/var/lib/rick-tv-pi/firstboot.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rick-tv-firstboot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

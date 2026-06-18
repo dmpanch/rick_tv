@@ -35,12 +35,13 @@ class RuntimeState:
     initial_channel_selected: bool = False
     navigator: Optional[ChannelNavigator] = None
     next_poll_at: float = 0.0
+    next_remote_poll_at: float = 0.0
 
 
 class RuntimePlayer(Protocol):
     def sync_channels(self, channels: Iterable, now: Optional[float] = None) -> None: ...
 
-    def select_channel(self, channel) -> None: ...
+    def select_channel(self, channel) -> bool | None: ...
 
     def rescan_current_channel(self, now: Optional[float] = None) -> None: ...
 
@@ -129,6 +130,9 @@ def load_settings_from_env(environ: Optional[dict[str, str]] = None) -> PiSettin
         media_root=Path(env["RICK_TV_MEDIA_ROOT"]),
         poll_interval_seconds=int(env.get("RICK_TV_POLL_INTERVAL_SECONDS", "60")),
         metadata_path=Path(metadata_path) if metadata_path else None,
+        remote_poll_interval_seconds=int(
+            env.get("RICK_TV_REMOTE_POLL_INTERVAL_SECONDS", "2")
+        ),
     )
 
 
@@ -199,6 +203,17 @@ def run_runtime_cycle(
             logger.info("Touch action detected: %s", action)
             state.navigator.apply_action(action, player)
 
+    if current_time >= state.next_remote_poll_at:
+        try:
+            for command in poller.poll_remote_commands():
+                if _apply_remote_command(command, state.navigator, player):
+                    poller.ack_remote_command(command.id)
+        except Exception:
+            logger.warning("Pi runtime remote command poll failed", exc_info=True)
+        state.next_remote_poll_at = (
+            current_time + settings.remote_poll_interval_seconds
+        )
+
     if current_time >= state.next_poll_at:
         try:
             poller.poll_once(channels)
@@ -207,6 +222,26 @@ def run_runtime_cycle(
         state.next_poll_at = current_time + settings.poll_interval_seconds
 
     player.rescan_current_channel(now=current_time)
+
+
+def _apply_remote_command(
+    command,
+    navigator: ChannelNavigator,
+    player: RuntimePlayer,
+) -> bool:
+    if getattr(command, "type", None) != "select_channel":
+        logger.warning("Unknown remote command type: %s", getattr(command, "type", None))
+        return True
+
+    channel_id = str(getattr(command, "channel_id", ""))
+    channel_is_local = navigator.has_channel_id(channel_id)
+    if not navigator.select_channel_id(channel_id, player):
+        if channel_is_local:
+            logger.warning("Remote channel selection failed: %s", channel_id)
+            return False
+        logger.info("Remote channel is not locally playable: %s", channel_id)
+        return True
+    return True
 
 
 def main() -> None:
