@@ -75,12 +75,12 @@ def test_omxplayer_override_uses_nonblocking_stop():
     assert "self.stop(3)  # Up to 3 second delay to let the old player stop." not in source
 
 
-def test_omxplayer_override_generates_legacy_srt_title_overlay():
+def test_omxplayer_override_keeps_original_centered_srt_title_overlay():
     source = OMX_PLAYER_OVERRIDE.read_text()
 
     assert "video_looper.srt" in source
     assert "f.write(self._subtitle_header)" in source
-    assert "args.extend(['--align', 'left'])" in source
+    assert "args.extend(['--align', 'left'])" not in source
     assert "video_looper.ass" not in source
     assert "[V4+ Styles]" not in source
 

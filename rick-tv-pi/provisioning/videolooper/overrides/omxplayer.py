@@ -69,8 +69,7 @@ class OMXPlayer:
             srt_path = os.path.join(self._get_temp_directory(), 'video_looper.srt')
             with open(srt_path, 'w') as f:
                 f.write(self._subtitle_header)
-                f.write(str(movie.title))
-            args.extend(['--align', 'left'])
+                f.write(movie.title)
             args.extend(['--subtitles', srt_path])
         args.append(movie.target)       # Add movie file path.
         # Run omxplayer process and direct standard output to /dev/null.
