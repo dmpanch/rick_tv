@@ -10,7 +10,7 @@ from rick_tv_pi.touch import SwipeAction
 
 
 class ChannelPlayer(Protocol):
-    def select_channel(self, channel: Channel) -> None: ...
+    def select_channel(self, channel: Channel) -> bool | None: ...
 
 
 class ChannelNavigator:
@@ -59,7 +59,11 @@ class ChannelNavigator:
         for index, channel in enumerate(self._channels):
             if channel.id != channel_id:
                 continue
+            if player.select_channel(channel) is False:
+                return False
             self._current_index = index
-            player.select_channel(channel)
             return True
         return False
+
+    def has_channel_id(self, channel_id: str) -> bool:
+        return any(channel.id == channel_id for channel in self._channels)

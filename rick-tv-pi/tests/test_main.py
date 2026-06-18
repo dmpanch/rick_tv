@@ -170,7 +170,13 @@ def test_runtime_cycle_applies_touch_navigation_between_server_polls(tmp_path):
     poller = SuccessfulPoller()
     state = RuntimeState()
 
-    run_runtime_cycle(settings=settings, player=player, poller=poller, state=state, now=0.0)
+    run_runtime_cycle(
+        settings=settings,
+        player=player,
+        poller=poller,
+        state=state,
+        now=0.0,
+    )
     run_runtime_cycle(
         settings=settings,
         player=player,
@@ -241,6 +247,34 @@ def test_runtime_cycle_acks_remote_navigation_for_missing_local_channel(tmp_path
     assert [channel.id for channel in player.selected_channels] == ["01_Citadel"]
 
 
+def test_runtime_cycle_does_not_ack_remote_navigation_when_player_rejects_channel(
+    tmp_path,
+):
+    (tmp_path / "01_Citadel").mkdir()
+    (tmp_path / "02_Cable").mkdir()
+    (tmp_path / "01_Citadel" / "episode.mp4").touch()
+    (tmp_path / "02_Cable" / "episode.mp4").touch()
+    settings = PiSettings(
+        server_base_url="https://rick-tv.example",
+        api_token="test-token",
+        media_root=tmp_path,
+        remote_poll_interval_seconds=2,
+    )
+    player = FakePlayer(rejected_channel_ids={"02_Cable"})
+    poller = RemoteCommandPoller(
+        [[FakeRemoteCommand("cmd-1", "select_channel", "02_Cable")]]
+    )
+    state = RuntimeState()
+
+    run_runtime_cycle(settings=settings, player=player, poller=poller, state=state, now=0.0)
+
+    assert poller.acked_commands == []
+    assert [channel.id for channel in player.selected_channels] == [
+        "01_Citadel",
+        "02_Cable",
+    ]
+
+
 def test_touch_action_queue_returns_none_without_blocking_when_empty():
     queue = TouchActionQueue()
 
@@ -250,11 +284,12 @@ def test_touch_action_queue_returns_none_without_blocking_when_empty():
 class FakePlayer:
     screen_state = "empty"
 
-    def __init__(self) -> None:
+    def __init__(self, rejected_channel_ids=None) -> None:
         self.select_count = 0
         self.rescan_count = 0
         self.synced_channels = []
         self.selected_channels = []
+        self.rejected_channel_ids = set(rejected_channel_ids or [])
 
     def sync_channels(self, channels, now=None):
         self.synced_channels.append([channel.id for channel in channels])
@@ -262,6 +297,9 @@ class FakePlayer:
     def select_channel(self, channel):
         self.select_count += 1
         self.selected_channels.append(channel)
+        if channel.id in self.rejected_channel_ids:
+            return False
+        return True
 
     def rescan_current_channel(self, now=None):
         self.rescan_count += 1

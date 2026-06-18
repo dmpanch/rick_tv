@@ -41,7 +41,7 @@ class RuntimeState:
 class RuntimePlayer(Protocol):
     def sync_channels(self, channels: Iterable, now: Optional[float] = None) -> None: ...
 
-    def select_channel(self, channel) -> None: ...
+    def select_channel(self, channel) -> bool | None: ...
 
     def rescan_current_channel(self, now: Optional[float] = None) -> None: ...
 
@@ -206,8 +206,8 @@ def run_runtime_cycle(
     if current_time >= state.next_remote_poll_at:
         try:
             for command in poller.poll_remote_commands():
-                _apply_remote_command(command, state.navigator, player)
-                poller.ack_remote_command(command.id)
+                if _apply_remote_command(command, state.navigator, player):
+                    poller.ack_remote_command(command.id)
         except Exception:
             logger.warning("Pi runtime remote command poll failed", exc_info=True)
         state.next_remote_poll_at = (
@@ -224,14 +224,24 @@ def run_runtime_cycle(
     player.rescan_current_channel(now=current_time)
 
 
-def _apply_remote_command(command, navigator: ChannelNavigator, player: RuntimePlayer) -> None:
+def _apply_remote_command(
+    command,
+    navigator: ChannelNavigator,
+    player: RuntimePlayer,
+) -> bool:
     if getattr(command, "type", None) != "select_channel":
         logger.warning("Unknown remote command type: %s", getattr(command, "type", None))
-        return
+        return True
 
     channel_id = str(getattr(command, "channel_id", ""))
+    channel_is_local = navigator.has_channel_id(channel_id)
     if not navigator.select_channel_id(channel_id, player):
+        if channel_is_local:
+            logger.warning("Remote channel selection failed: %s", channel_id)
+            return False
         logger.info("Remote channel is not locally playable: %s", channel_id)
+        return True
+    return True
 
 
 def main() -> None:

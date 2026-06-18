@@ -10,6 +10,24 @@ class FakeCommandWriter:
         self.commands.append(command)
 
 
+class FailingCommandWriter:
+    def __call__(self, command):
+        del command
+        raise OSError("fifo unavailable")
+
+
+class FailOnceCommandWriter:
+    def __init__(self) -> None:
+        self.commands = []
+        self.calls = 0
+
+    def __call__(self, command):
+        self.calls += 1
+        if self.calls == 1:
+            raise OSError("fifo unavailable")
+        self.commands.append(command)
+
+
 def test_sync_channels_writes_master_playlist_with_channel_playlists(tmp_path):
     channel_path = tmp_path / "media" / "01_Citadel"
     channel_path.mkdir(parents=True)
@@ -82,6 +100,37 @@ def test_select_channel_sends_channel_playlist_without_restart(tmp_path):
     assert controller.screen_state == "playing"
     assert controller.current_file is not None
     assert controller.current_file.path == episode
+
+
+def test_select_channel_reports_failure_when_command_pipe_is_unavailable(tmp_path):
+    channel_path = tmp_path / "media" / "01_Citadel"
+    channel_path.mkdir(parents=True)
+    (channel_path / "episode.mp4").touch()
+    channel = Channel("01_Citadel", 1, "Citadel TV", channel_path)
+    controller = VideolooperController(
+        playlist_root=tmp_path / "playlists",
+        command_writer=FailingCommandWriter(),
+    )
+
+    assert controller.select_channel(channel) is False
+
+
+def test_select_channel_retries_same_channel_after_command_pipe_failure(tmp_path):
+    channel_path = tmp_path / "media" / "01_Citadel"
+    channel_path.mkdir(parents=True)
+    (channel_path / "episode.mp4").touch()
+    channel = Channel("01_Citadel", 1, "Citadel TV", channel_path)
+    writer = FailOnceCommandWriter()
+    controller = VideolooperController(
+        playlist_root=tmp_path / "playlists",
+        command_writer=writer,
+    )
+
+    assert controller.select_channel(channel) is False
+    assert controller.select_channel(channel) is True
+
+    channel_playlist = tmp_path / "playlists" / "channels" / "01_Citadel.m3u"
+    assert writer.commands == [str(channel_playlist)]
 
 
 def test_select_channel_writes_empty_playlist_for_empty_channel(tmp_path):
