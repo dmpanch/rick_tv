@@ -51,7 +51,7 @@ class VideoLooper:
         pass path to a valid video looper ini configuration file.
         """
         # Load the configuration.
-        self._config = configparser.ConfigParser()
+        self._config = configparser.ConfigParser(interpolation=None)
         if len(self._config.read(config_path)) == 0:
             raise RuntimeError(f"Failed to find configuration file at {config_path}, is the application properly installed?")
         self._console_output = self._config.getboolean('video_looper', 'console_output')
@@ -104,8 +104,7 @@ class VideoLooper:
         self._alsa_hw_device = parse_hw_device(self._config.get('alsa', 'hw_device'))
         self._alsa_hw_vol_control = self._config.get('alsa', 'hw_vol_control')
         self._alsa_hw_vol_file = self._config.get('alsa', 'hw_vol_file')
-        # default ALSA hardware volume (volume will not be changed)
-        self._alsa_hw_vol = None
+        self._alsa_hw_vol = self._config.get('alsa', 'hw_vol', fallback=None)
         # Load sound volume file name value
         self._sound_vol_file = self._config.get('omxplayer', 'sound_vol_file')
         # default value to 0 millibels (omxplayer)

@@ -10,7 +10,7 @@ CONFIG_PATH = Path(os.environ.get("RICK_TV_VIDEOLOOPER_CONFIG_PATH", "/boot/vide
 
 
 def main() -> None:
-    config = configparser.ConfigParser()
+    config = configparser.ConfigParser(interpolation=None)
     config.optionxform = str
     config.read(str(CONFIG_PATH))
 
@@ -41,7 +41,14 @@ def main() -> None:
 
     if not config.has_section("omxplayer"):
         config.add_section("omxplayer")
+    config.set("omxplayer", "sound", "alsa")
     config.set("omxplayer", "show_titles", "true")
+
+    if not config.has_section("alsa"):
+        config.add_section("alsa")
+    config.set("alsa", "hw_device", "1,0")
+    config.set("alsa", "hw_vol", "100%")
+    config.set("alsa", "hw_vol_control", "PCM")
 
     if not config.has_section("rick_tv"):
         config.add_section("rick_tv")

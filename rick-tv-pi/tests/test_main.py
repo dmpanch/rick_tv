@@ -255,6 +255,50 @@ def test_runtime_cycle_acks_remote_navigation_for_missing_local_channel(tmp_path
     assert [channel.id for channel in player.selected_channels] == ["01_Citadel"]
 
 
+def test_runtime_cycle_keeps_registry_channel_command_pending_until_media_arrives(
+    tmp_path,
+):
+    metadata_path = tmp_path / "config" / "channels.json"
+    metadata_path.parent.mkdir()
+    metadata_path.write_text(
+        (
+            '{"channels":{'
+            '"01_Citadel":{"display_name":"Citadel"},'
+            '"05_Sound_test":{"display_name":"Sound test"}'
+            "}}"
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "01_Citadel").mkdir()
+    (tmp_path / "01_Citadel" / "episode.mp4").touch()
+    settings = PiSettings(
+        server_base_url="https://rick-tv.example",
+        api_token="test-token",
+        media_root=tmp_path,
+        metadata_path=metadata_path,
+        remote_poll_interval_seconds=2,
+    )
+    player = FakePlayer()
+    poller = RemoteCommandPoller(
+        [
+            [FakeRemoteCommand("cmd-1", "select_channel", "05_Sound_test")],
+            [FakeRemoteCommand("cmd-1", "select_channel", "05_Sound_test")],
+        ]
+    )
+    state = RuntimeState()
+
+    run_runtime_cycle(settings=settings, player=player, poller=poller, state=state, now=0.0)
+    (tmp_path / "05_Sound_test").mkdir()
+    (tmp_path / "05_Sound_test" / "episode.mp4").touch()
+    run_runtime_cycle(settings=settings, player=player, poller=poller, state=state, now=2.1)
+
+    assert poller.acked_commands == ["cmd-1"]
+    assert [channel.id for channel in player.selected_channels] == [
+        "01_Citadel",
+        "05_Sound_test",
+    ]
+
+
 def test_runtime_cycle_does_not_ack_remote_navigation_when_player_rejects_channel(
     tmp_path,
 ):

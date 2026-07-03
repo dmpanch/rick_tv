@@ -133,6 +133,15 @@ def test_videolooper_override_reads_framebuffer_flag_from_pi_env_file_for_superv
     assert "self._rick_tv_env_truthy('RICK_TV_DISABLE_FRAMEBUFFER_PLACEHOLDERS')" in source
 
 
+def test_videolooper_override_supports_configured_alsa_hardware_volume():
+    source = VIDEO_LOOPER_OVERRIDE.read_text()
+
+    assert "configparser.ConfigParser(interpolation=None)" in source
+    assert "self._config.get('alsa', 'hw_vol', fallback=None)" in source
+    assert "setting hardware volume" in source
+    assert "cmd.extend(('set', self._alsa_hw_vol_control, '--', self._alsa_hw_vol))" in source
+
+
 def test_videolooper_override_clears_stale_framebuffer_when_raw_placeholders_disabled():
     source = VIDEO_LOOPER_OVERRIDE.read_text()
 

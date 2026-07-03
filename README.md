@@ -13,7 +13,7 @@ Rick TV is a small video-delivery system for a Raspberry Pi TV appliance.
 3. The server exposes the canonical channel registry as JSON at `/api/v1/channels`.
 4. The Pi syncs the registry, polls `/api/v1/ready`, downloads new media, applies delete commands, and acknowledges delivery through `/api/v1/ack/{id}` or deletion through `/api/v1/delete-ack/{id}`.
 5. The current Pi runtime integration is built around `videolooper` playlists and FIFO commands.
-6. The Telegram bot can queue a remote channel switch command. The Pi polls `/api/v1/commands`, applies the command when the channel is locally playable, and acknowledges it with `/api/v1/commands/{id}/ack`.
+6. The Telegram bot can queue a remote channel switch command. The Pi polls `/api/v1/commands`, applies the command when the channel is locally playable, and acknowledges it with `/api/v1/commands/{id}/ack`; commands for registry-known channels remain pending until their first local media file arrives.
 
 ## Hardware
 
@@ -278,7 +278,7 @@ Typical flow:
 2. `/add_channel` asks only for the display name. The stable channel ID is generated automatically, for example `04_Birdperson_TV`.
 3. `/list_channels` shows channels as `01 - Citadel`. Selecting a channel opens `Switch channel on Pi`, `List all videos`, `Rename channel`, and `Delete channel`.
 4. `List all videos` shows each active channel video as a separate button. The selected video screen offers `Download`, `Delete`, and `Back`.
-5. `Switch channel on Pi` queues a remote command. The Pi picks it up through its fast command poll loop and switches through the `videolooper` FIFO if the channel is locally playable.
+5. `Switch channel on Pi` queues a remote command. The Pi picks it up through its fast command poll loop and switches through the `videolooper` FIFO if the channel is locally playable. For a newly created registry channel, the command remains pending until the Pi downloads at least one playable `.mp4`.
 6. `Download` sends the converted Pi-ready `.mp4` back to Telegram.
 7. `Delete` removes the original and converted files from the server, removes the video from the active library, and queues a Pi delete. The Pi removes its local copy on the next successful poll and confirms with `/api/v1/delete-ack/{id}`.
 8. `/restore_all_videos` asks for confirmation before re-delivering the full active library.

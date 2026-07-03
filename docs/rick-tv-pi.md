@@ -204,8 +204,10 @@ The Pi also polls `/api/v1/commands` on the faster remote interval. The current
 command type is `select_channel`, queued by the Telegram bot. If the requested
 channel is playable locally, the Pi selects it through the existing
 videolooper playlist/FIFO path and acknowledges the command. If the channel is
-not locally playable yet, the Pi logs that fact and still acknowledges the
-command so it does not remain pending forever.
+known in the synced registry but is not locally playable yet, the Pi leaves the
+command pending so it can retry after the first media download creates the local
+channel directory. Unknown channels are logged and acknowledged so stale
+commands do not remain pending forever.
 
 A directory is a navigation/playback channel only when it contains at least one
 playable `.mp4`. Empty directories are ignored by navigation and generated

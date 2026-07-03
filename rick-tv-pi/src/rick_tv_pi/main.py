@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import queue
 import threading
@@ -205,8 +206,14 @@ def run_runtime_cycle(
 
     if current_time >= state.next_remote_poll_at:
         try:
+            registry_channel_ids = _load_registry_channel_ids(settings.metadata_path)
             for command in poller.poll_remote_commands():
-                if _apply_remote_command(command, state.navigator, player):
+                if _apply_remote_command(
+                    command,
+                    state.navigator,
+                    player,
+                    registry_channel_ids=registry_channel_ids,
+                ):
                     poller.ack_remote_command(command.id)
         except Exception:
             logger.warning("Pi runtime remote command poll failed", exc_info=True)
@@ -228,6 +235,7 @@ def _apply_remote_command(
     command,
     navigator: ChannelNavigator,
     player: RuntimePlayer,
+    registry_channel_ids: set[str] | None = None,
 ) -> bool:
     if getattr(command, "type", None) != "select_channel":
         logger.warning("Unknown remote command type: %s", getattr(command, "type", None))
@@ -239,9 +247,27 @@ def _apply_remote_command(
         if channel_is_local:
             logger.warning("Remote channel selection failed: %s", channel_id)
             return False
+        if registry_channel_ids is not None and channel_id in registry_channel_ids:
+            logger.info("Remote channel is not locally playable yet: %s", channel_id)
+            return False
         logger.info("Remote channel is not locally playable: %s", channel_id)
         return True
     return True
+
+
+def _load_registry_channel_ids(metadata_path: Path | None) -> set[str] | None:
+    if metadata_path is None or not metadata_path.exists():
+        return None
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    channels = metadata.get("channels")
+    if not isinstance(channels, dict):
+        return None
+    return {channel_id for channel_id in channels if isinstance(channel_id, str)}
 
 
 def main() -> None:

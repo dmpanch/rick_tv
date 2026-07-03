@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import re
 import subprocess
 import sys
@@ -22,6 +23,9 @@ RECOVERY_SCRIPT = PROJECT_ROOT / "provisioning" / "scripts" / "configure-pi-reco
 LOGGING_SCRIPT = PROJECT_ROOT / "provisioning" / "scripts" / "configure-pi-logging.sh"
 PLAYLIST_GENERATOR = (
     PROJECT_ROOT / "provisioning" / "videolooper" / "generate_channel_playlists.py"
+)
+VIDEOLOOPER_CONFIGURER = (
+    PROJECT_ROOT / "provisioning" / "videolooper" / "configure_rick_tv_videolooper.py"
 )
 PI_DOCS = PROJECT_ROOT.parent / "docs" / "rick-tv-pi.md"
 
@@ -52,6 +56,38 @@ def test_deploy_restarts_videolooper_before_pi_runtime() -> None:
     assert content.index("supervisorctl restart video_looper") < content.index(
         "systemctl restart rick-tv-pi.service"
     )
+
+
+def test_videolooper_configurer_routes_omxplayer_to_usb_dac(tmp_path) -> None:
+    config_path = tmp_path / "video_looper.ini"
+    config_path.write_text(
+        "[omxplayer]\n"
+        "sound = both\n"
+        "show_titles = false\n"
+        "\n"
+        "[alsa]\n"
+        "hw_device = \n"
+        "hw_vol_control = Headphone\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(VIDEOLOOPER_CONFIGURER)],
+        check=False,
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "RICK_TV_VIDEOLOOPER_CONFIG_PATH": str(config_path),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    content = config_path.read_text(encoding="utf-8")
+    assert "sound = alsa" in content
+    assert "hw_device = 1,0" in content
+    assert "hw_vol = 100%" in content
+    assert "hw_vol_control = PCM" in content
 
 
 def test_deploy_payload_excludes_local_secrets_and_runtime_data() -> None:
