@@ -1,0 +1,16 @@
+[Unit]
+Description=Rick TV GPIO Power Button
+After=rick-tv-firstboot.service
+Wants=rick-tv-firstboot.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/rick-tv-pi.env
+ExecStart=/opt/rick-tv-pi/.venv/bin/python -m rick_tv_pi.power_button
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

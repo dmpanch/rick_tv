@@ -27,6 +27,7 @@ PLAYLIST_GENERATOR = (
 VIDEOLOOPER_CONFIGURER = (
     PROJECT_ROOT / "provisioning" / "videolooper" / "configure_rick_tv_videolooper.py"
 )
+POWER_BUTTON_SERVICE = PROJECT_ROOT / "systemd" / "rick-tv-power-button.service"
 PI_DOCS = PROJECT_ROOT.parent / "docs" / "rick-tv-pi.md"
 
 
@@ -56,6 +57,19 @@ def test_deploy_restarts_videolooper_before_pi_runtime() -> None:
     assert content.index("supervisorctl restart video_looper") < content.index(
         "systemctl restart rick-tv-pi.service"
     )
+
+
+def test_deploy_provisions_power_button_service() -> None:
+    script = PROJECT_ROOT / "provisioning" / "deploy_videolooper_image.sh"
+    content = script.read_text(encoding="utf-8")
+
+    assert "rick-tv-pi/systemd/rick-tv-power-button.service" in content
+    assert (
+        "cp /opt/rick-tv-src/rick-tv-pi/systemd/rick-tv-power-button.service "
+        "/etc/systemd/system/rick-tv-power-button.service"
+    ) in content
+    assert "systemctl enable rick-tv-power-button.service" in content
+    assert "systemctl restart rick-tv-power-button.service" in content
 
 
 def test_videolooper_configurer_routes_omxplayer_to_usb_dac(tmp_path) -> None:
@@ -88,6 +102,94 @@ def test_videolooper_configurer_routes_omxplayer_to_usb_dac(tmp_path) -> None:
     assert "hw_device = 1,0" in content
     assert "hw_vol = 100%" in content
     assert "hw_vol_control = PCM" in content
+
+
+def test_videolooper_configurer_routes_explicit_usb_dac_audio_profile(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "video_looper.ini"
+    config_path.write_text(
+        "[omxplayer]\n"
+        "sound = both\n"
+        "\n"
+        "[alsa]\n"
+        "hw_device = \n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(VIDEOLOOPER_CONFIGURER)],
+        check=False,
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "RICK_TV_VIDEOLOOPER_CONFIG_PATH": str(config_path),
+            "RICK_TV_AUDIO_PROFILE": "usb-dac",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    content = config_path.read_text(encoding="utf-8")
+    assert "sound = alsa" in content
+    assert "hw_device = 1,0" in content
+    assert "hw_vol = 100%" in content
+    assert "hw_vol_control = PCM" in content
+
+
+def test_videolooper_configurer_routes_pwm_audio_profile_without_alsa_device(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "video_looper.ini"
+    config_path.write_text(
+        "[omxplayer]\n"
+        "sound = alsa\n"
+        "\n"
+        "[alsa]\n"
+        "hw_device = 1,0\n"
+        "hw_vol = 25%\n"
+        "hw_vol_control = Headphone\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(VIDEOLOOPER_CONFIGURER)],
+        check=False,
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "RICK_TV_VIDEOLOOPER_CONFIG_PATH": str(config_path),
+            "RICK_TV_AUDIO_PROFILE": "pwm",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    content = config_path.read_text(encoding="utf-8")
+    assert "sound = both" in content
+    assert "hw_device = \n" in content
+    assert "hw_device = 1,0" not in content
+    assert "hw_vol =" not in content
+
+
+def test_videolooper_configurer_rejects_unknown_audio_profile(tmp_path) -> None:
+    config_path = tmp_path / "video_looper.ini"
+    config_path.write_text("[omxplayer]\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(VIDEOLOOPER_CONFIGURER)],
+        check=False,
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "RICK_TV_VIDEOLOOPER_CONFIG_PATH": str(config_path),
+            "RICK_TV_AUDIO_PROFILE": "bluetooth",
+        },
+    )
+
+    assert result.returncode != 0
+    assert "unsupported RICK_TV_AUDIO_PROFILE: bluetooth" in result.stderr
 
 
 def test_deploy_payload_excludes_local_secrets_and_runtime_data() -> None:
@@ -159,8 +261,10 @@ def test_deploy_uses_single_full_config_example_for_missing_runtime_env() -> Non
     assert 'scp_pi "$full_config" "$PI_HOST:$REMOTE_TMP/rick-tv.env"' in content
     assert "runtime_config=/tmp/rick-tv-deploy/rick-tv.env" in content
     assert "write_runtime_env_from_full_config" in content
-    assert "if [ ! -f /etc/rick-tv-pi.env ]; then" in content
+    assert r'if [ -f \"\$runtime_config\" ]; then' in content
+    assert "elif [ ! -f /etc/rick-tv-pi.env ]; then" in content
     assert "preserving existing /etc/rick-tv-pi.env" in content
+    assert r'. \"\$runtime_config\"' in content
 
     runtime_start = content.index("runtime_names=(")
     runtime_section = content[
@@ -169,6 +273,7 @@ def test_deploy_uses_single_full_config_example_for_missing_runtime_env() -> Non
     for name in [
         "RICK_TV_SERVER_URL",
         "RICK_TV_API_TOKEN",
+        "RICK_TV_AUDIO_PROFILE",
         "RICK_TV_METADATA_PATH",
         "RICK_TV_REMOTE_POLL_INTERVAL_SECONDS",
         "RICK_TV_RUNTIME_TICK_SECONDS",
@@ -489,6 +594,7 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
                 "SSH_AUTHORIZED_KEY='ssh-ed25519 AAAATEST rick-tv'",
                 "RICK_TV_SERVER_URL=http://192.168.1.10:8080",
                 "RICK_TV_API_TOKEN=test-token",
+                "RICK_TV_AUDIO_PROFILE=pwm",
                 "RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media",
                 "RICK_TV_METADATA_PATH=/home/pi/rick-tv/config/channels.json",
                 "RICK_TV_POLL_INTERVAL_SECONDS=60",
@@ -531,6 +637,7 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
     assert runtime_env == (
         "RICK_TV_SERVER_URL=http://192.168.1.10:8080\n"
         "RICK_TV_API_TOKEN=test-token\n"
+        "RICK_TV_AUDIO_PROFILE=pwm\n"
         "RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media\n"
         "RICK_TV_METADATA_PATH=/home/pi/rick-tv/config/channels.json\n"
         "RICK_TV_POLL_INTERVAL_SECONDS=60\n"
@@ -583,6 +690,8 @@ def test_firstboot_script_applies_boot_config_without_real_system_commands(tmp_p
         "dtparam=watchdog=on"
     ) == 1
     assert "systemctl --no-block restart rick-tv-pi.service" in result.stdout
+    assert "systemctl enable rick-tv-power-button.service" in result.stdout
+    assert "systemctl --no-block restart rick-tv-power-button.service" in result.stdout
     assert "systemctl restart rick-tv-pi.service" not in result.stdout
     assert "supervisorctl restart video_looper" in result.stdout
     assert (rootfs / "var" / "lib" / "rick-tv-pi" / "firstboot.done").exists()
@@ -654,8 +763,55 @@ def test_packaged_image_payload_installer_stages_firstboot_files(tmp_path) -> No
         / "rick-tv-firstboot.service"
     ).is_symlink()
     assert (rootfs / "opt" / "rick-tv-src" / "rick-tv-pi").exists()
+    installed_power_service = (
+        rootfs / "etc" / "systemd" / "system" / "rick-tv-power-button.service"
+    )
+    assert installed_power_service.read_text(encoding="utf-8") == (
+        POWER_BUTTON_SERVICE.read_text(encoding="utf-8")
+    )
+    assert (
+        rootfs
+        / "etc"
+        / "systemd"
+        / "system"
+        / "multi-user.target.wants"
+        / "rick-tv-power-button.service"
+    ).is_symlink()
     assert (bootfs / "rick-tv.env.example").read_text(encoding="utf-8") == (
         FIRSTBOOT_EXAMPLE.read_text(encoding="utf-8")
+    )
+
+
+def test_packaged_image_payload_installer_uses_boot_audio_profile(tmp_path) -> None:
+    rootfs = tmp_path / "rootfs"
+    bootfs = tmp_path / "bootfs"
+    rootfs.mkdir()
+    bootfs.mkdir()
+    boot_config = tmp_path / "rick-tv.env"
+    boot_config.write_text("RICK_TV_AUDIO_PROFILE=pwm\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(IMAGE_INSTALLER),
+            "--rootfs",
+            str(rootfs),
+            "--bootfs",
+            str(bootfs),
+            "--boot-config",
+            str(boot_config),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    content = (bootfs / "video_looper.ini").read_text(encoding="utf-8")
+    assert "sound = both" in content
+    assert "hw_device = \n" in content
+    assert (bootfs / "rick-tv.env").read_text(encoding="utf-8") == (
+        "RICK_TV_AUDIO_PROFILE=pwm\n"
     )
 
 
@@ -851,6 +1007,9 @@ def test_packaged_image_payload_installer_stages_full_runtime_payload(
 
     assert result.returncode == 0, result.stderr
     assert (rootfs / "etc" / "systemd" / "system" / "rick-tv-pi.service").exists()
+    assert (
+        rootfs / "etc" / "systemd" / "system" / "rick-tv-power-button.service"
+    ).exists()
     assert not (
         rootfs
         / "etc"

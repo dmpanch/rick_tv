@@ -53,6 +53,7 @@ write_runtime_env() {
   local names=(
     RICK_TV_SERVER_URL
     RICK_TV_API_TOKEN
+    RICK_TV_AUDIO_PROFILE
     RICK_TV_MEDIA_ROOT
     RICK_TV_METADATA_PATH
     RICK_TV_POLL_INTERVAL_SECONDS
@@ -72,7 +73,7 @@ write_runtime_env() {
   )
 
   for name in "${names[@]}"; do
-    if [[ -v "$name" ]]; then
+    if [[ -n "${!name+x}" ]]; then
       value="${!name}"
       printf '%s=%s\n' "$name" "$value" >> "$tmp"
     fi
@@ -209,6 +210,12 @@ install_rick_tv_runtime() {
       "$(target_path /etc/systemd/system/rick-tv-pi.service)"
   fi
 
+  if [[ -f "$source_root/rick-tv-pi/systemd/rick-tv-power-button.service" ]]; then
+    install -m 0644 \
+      "$source_root/rick-tv-pi/systemd/rick-tv-power-button.service" \
+      "$(target_path /etc/systemd/system/rick-tv-power-button.service)"
+  fi
+
   if [[ -d "$source_root/rick-tv-pi/provisioning/videolooper/assets" ]]; then
     install -m 0644 \
       "$source_root/rick-tv-pi/provisioning/videolooper/assets/transition-placeholder.fb" \
@@ -230,7 +237,9 @@ install_rick_tv_runtime() {
 
   run_cmd systemctl daemon-reload
   run_cmd systemctl enable rick-tv-pi.service
+  run_cmd systemctl enable rick-tv-power-button.service
   run_cmd systemctl --no-block restart rick-tv-pi.service
+  run_cmd systemctl --no-block restart rick-tv-power-button.service
   run_cmd supervisorctl restart video_looper
   log "Rick TV runtime verified"
 }

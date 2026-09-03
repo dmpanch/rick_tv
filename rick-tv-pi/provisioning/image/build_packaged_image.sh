@@ -32,6 +32,17 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
 }
 
+write_sha256() {
+  local image="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$image" > "$image.sha256"
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$image" > "$image.sha256"
+  else
+    die "missing command: sha256sum or shasum"
+  fi
+}
+
 find_sdm() {
   if [[ -n "${RICK_TV_SDM_BIN:-}" ]]; then
     printf '%s\n' "$RICK_TV_SDM_BIN"
@@ -49,8 +60,8 @@ find_sdm() {
 }
 
 is_zip() {
-  case "${1,,}" in
-    *.zip) return 0 ;;
+  case "$1" in
+    *.[zZ][iI][pP]) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -198,7 +209,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
   fi
   log "dry-run: would run $(build_sdm_command_for_log "$OUTPUT_IMAGE" "$BOOT_CONFIG")"
   if [[ -f "$OUTPUT_IMAGE" ]]; then
-    sha256sum "$OUTPUT_IMAGE" > "$OUTPUT_IMAGE.sha256"
+    write_sha256 "$OUTPUT_IMAGE"
     log "Wrote $OUTPUT_IMAGE.sha256"
   fi
   exit 0
@@ -211,6 +222,6 @@ fi
 
 copy_base_image "$source_image" "$OUTPUT_IMAGE"
 run_sdm_customize "$OUTPUT_IMAGE" "$BOOT_CONFIG"
-sha256sum "$OUTPUT_IMAGE" > "$OUTPUT_IMAGE.sha256"
+write_sha256 "$OUTPUT_IMAGE"
 log "Built $OUTPUT_IMAGE"
 log "Wrote $OUTPUT_IMAGE.sha256"
