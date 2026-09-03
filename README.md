@@ -21,6 +21,9 @@ The repository is currently aimed at this appliance setup:
 
 - Raspberry Pi Zero W
 - Waveshare 2.8inch DPI LCD
+- GPIO26 active-low power switch and GPIO18 display/amplifier control
+- Either a USB DAC or PWM audio on GPIO19, selected with
+  `RICK_TV_AUDIO_PROFILE`
 
 The Pi also needs network access to the server.
 
@@ -29,7 +32,7 @@ The Pi also needs network access to the server.
 Server:
 
 - Docker and Docker Compose
-- Free host port `8080`
+- Free host port selected by `RICK_TV_HOST_PORT` (defaults to `8080`)
 - Shared API token in `RICK_TV_API_TOKEN`
 - Telegram bot token and allowlisted user IDs if `rick-tv-bot` is enabled
 
@@ -52,7 +55,7 @@ cp .env.example .env
 # edit .env
 ```
 
-Set `RICK_TV_API_TOKEN`, `RICK_TV_PUBLIC_BASE_URL`,
+Set `RICK_TV_API_TOKEN`, `RICK_TV_PUBLIC_BASE_URL`, `RICK_TV_HOST_PORT`,
 `RICK_TV_TELEGRAM_BOT_TOKEN`, and `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`. Keep
 `RICK_TV_UID=$(id -u)` and `RICK_TV_GID=$(id -g)` in `.env` so bind-mounted
 runtime files stay editable from the host.
@@ -68,6 +71,8 @@ This starts both `rick-tv-server` and `rick-tv-bot`. `docker-compose.yml` reads
 `RICK_TV_UID:RICK_TV_GID`, and Compose stores runtime data under
 `${RICK_TV_DATA_DIR:-./data}` by default. For a persistent installation, set
 `RICK_TV_DATA_DIR=/srv/rick-tv` or another absolute path on the host disk.
+`RICK_TV_HOST_PORT` publishes the API on a different host port while the
+container continues to listen on `8080`.
 
 For API-only development runs:
 
@@ -115,7 +120,7 @@ The local builder writes `dist/rick-tv-pi.img` and
 `dist/rick-tv-pi.img.sha256`. The generated image includes the Waveshare 2.8inch
 DPI LCD boot config, Rick TV's `/boot/video_looper.ini`, the patched Video
 Looper egg, placeholder assets, panic/watchdog recovery config,
-`rick-tv-pi.service`, `/opt/rick-tv-pi/.venv`, and the pinned Pi runtime
+`rick-tv-pi.service`, `rick-tv-power-button.service`, `/opt/rick-tv-pi/.venv`, and the pinned Pi runtime
 overrides `evdev==1.7.1` and `certifi==2026.4.22`.
 
 The image contains `rick-tv.env.example`, but it does not contain a filled
@@ -131,18 +136,20 @@ nano dist/rick-tv.env
 cp dist/rick-tv.env /path/to/boot/rick-tv.env
 ```
 
-Fill in Wi-Fi, SSH, hostname, `RICK_TV_SERVER_URL`, `RICK_TV_API_TOKEN`, and
-the Pi runtime values. Telegram bot token and allowed user IDs stay on the
+Fill in Wi-Fi, SSH, hostname, `RICK_TV_SERVER_URL`, `RICK_TV_API_TOKEN`,
+`RICK_TV_AUDIO_PROFILE`, and the Pi runtime values. Use `pwm` for the original
+GPIO19 television and `usb-dac` for the USB audio build. Telegram bot token and allowed user IDs stay on the
 server only; do not put them in the Pi image or `rick-tv.env`. Keep filled env
 files out of git.
 
 On first boot, `rick-tv-firstboot.service` reads `/boot/rick-tv.env`, configures
 Wi-Fi and SSH, writes `/etc/rick-tv-pi.env`, verifies the non-secret Rick TV
-runtime payload, starts `rick-tv-pi.service`, restarts `video_looper`, and then
+runtime payload, starts `rick-tv-pi.service` and `rick-tv-power-button.service`,
+restarts `video_looper`, and then
 stops overwriting manual edits. After the Pi joins the network, verify services:
 
 ```bash
-ssh pi@<pi-ip> 'systemctl is-active rick-tv-pi.service && sudo supervisorctl status video_looper'
+ssh pi@<pi-ip> 'systemctl is-active rick-tv-pi.service rick-tv-power-button.service && sudo supervisorctl status video_looper'
 ```
 
 ### Update an Existing Lab Pi
@@ -169,9 +176,9 @@ PI_HOST=pi@<pi-ip> PI_PASSWORD=<pi-password> \
   rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy --config dist/rick-tv.env
 ```
 
-If `/etc/rick-tv-pi.env` already exists on the Pi, deploy preserves it. Edit or
-remove that runtime file on the Pi when you intentionally want new runtime
-values.
+An explicit `deploy --config ...` replaces `/etc/rick-tv-pi.env` with the
+runtime subset from that config, including the audio profile. Deploy without a
+config preserves an existing runtime environment.
 
 Raw framebuffer placeholders are still part of the legacy `videolooper` runtime. The code logs FIFO commands, playlist reloads, `transition-placeholder.fb` and `interstitial-ad.fb` display events, and `player.play(...)` boundaries. A channel switch draws only the transition placeholder and suppresses the next interstitial; an in-channel playlist refresh does not draw the transition placeholder and uses the regular interstitial before the next playback.
 
@@ -194,6 +201,7 @@ Important settings:
 
 - `RICK_TV_SERVER_URL`: server API URL, for example `http://192.168.1.10:8080`
 - `RICK_TV_API_TOKEN`: shared API token, matching `rick-tv-server/.env`
+- `RICK_TV_AUDIO_PROFILE`: `usb-dac` (default) or `pwm` for GPIO19 audio
 - `RICK_TV_MEDIA_ROOT`: root directory for channel folders on the Pi
 - `RICK_TV_METADATA_PATH`: path to `channels.json`
 - `RICK_TV_POLL_INTERVAL_SECONDS`: normal server polling interval

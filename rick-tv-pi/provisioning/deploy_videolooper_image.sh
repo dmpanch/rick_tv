@@ -16,6 +16,7 @@ INTERSTITIAL_FRAME="$VIDEOLOOPER_PROVISIONING/assets/interstitial-ad.fb"
 RECOVERY_SCRIPT="$PI_PROVISIONING/scripts/configure-pi-recovery.sh"
 LOGGING_SCRIPT="$PI_PROVISIONING/scripts/configure-pi-logging.sh"
 PI_ENV_EXAMPLE="rick-tv-pi/provisioning/rick-tv.env.example"
+POWER_BUTTON_SERVICE="rick-tv-pi/systemd/rick-tv-power-button.service"
 
 usage() {
   cat <<'EOF'
@@ -126,6 +127,7 @@ validate_deploy_payload() {
     "$RECOVERY_SCRIPT"
     "$LOGGING_SCRIPT"
     "rick-tv-pi/systemd/rick-tv-pi.service"
+    "$POWER_BUTTON_SERVICE"
     "$PI_ENV_EXAMPLE"
   )
 
@@ -197,6 +199,7 @@ write_runtime_env_from_full_config() {
   local runtime_names=(
     RICK_TV_SERVER_URL
     RICK_TV_API_TOKEN
+    RICK_TV_AUDIO_PROFILE
     RICK_TV_MEDIA_ROOT
     RICK_TV_METADATA_PATH
     RICK_TV_POLL_INTERVAL_SECONDS
@@ -217,7 +220,7 @@ write_runtime_env_from_full_config() {
 
   local name value
   for name in \"\${runtime_names[@]}\"; do
-    if [[ -v \"\$name\" ]]; then
+    if [[ -n \"\${!name+x}\" ]]; then
       value=\"\${!name}\"
       printf '%s=%s\n' \"\$name\" \"\$value\" >> \"\$tmp\"
     fi
@@ -227,17 +230,23 @@ write_runtime_env_from_full_config() {
   rm -f \"\$tmp\"
 }
 
-if [ ! -f /etc/rick-tv-pi.env ]; then
-  runtime_config=/tmp/rick-tv-deploy/rick-tv.env
-  if [ ! -f \"\$runtime_config\" ]; then
-    runtime_config=/opt/rick-tv-src/rick-tv-pi/provisioning/rick-tv.env.example
-  fi
+runtime_config=/tmp/rick-tv-deploy/rick-tv.env
+if [ -f \"\$runtime_config\" ]; then
+  write_runtime_env_from_full_config \"\$runtime_config\" /etc/rick-tv-pi.env
+elif [ ! -f /etc/rick-tv-pi.env ]; then
+  runtime_config=/opt/rick-tv-src/rick-tv-pi/provisioning/rick-tv.env.example
   write_runtime_env_from_full_config \"\$runtime_config\" /etc/rick-tv-pi.env
 else
   echo \"preserving existing /etc/rick-tv-pi.env\"
 fi
+runtime_config=/etc/rick-tv-pi.env
+set -a
+# shellcheck disable=SC1090
+. \"\$runtime_config\"
+set +a
 
 cp /opt/rick-tv-src/rick-tv-pi/systemd/rick-tv-pi.service /etc/systemd/system/rick-tv-pi.service
+cp /opt/rick-tv-src/rick-tv-pi/systemd/rick-tv-power-button.service /etc/systemd/system/rick-tv-power-button.service
 python3 /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/configure_rick_tv_videolooper.py
 echo "Installing pinned Rick TV pi_video_looper overrides"
 python3 /opt/rick-tv-src/rick-tv-pi/provisioning/videolooper/rick_tv_fifo_patch.py
@@ -249,8 +258,10 @@ bash /opt/rick-tv-src/rick-tv-pi/provisioning/scripts/configure-pi-logging.sh
 
 systemctl daemon-reload
 systemctl enable rick-tv-pi.service
+systemctl enable rick-tv-power-button.service
 supervisorctl restart video_looper
 systemctl restart rick-tv-pi.service
+systemctl restart rick-tv-power-button.service
 REMOTE
 printf '%s\n' '$PI_PASSWORD' | sudo -S bash '$REMOTE_TMP/install.sh'"
 }

@@ -8,9 +8,14 @@ The Phase 1 runtime assumes the existing Raspberry Pi TV hardware remains in pla
 
 - Raspberry Pi Zero W.
 - Waveshare 2.8inch DPI LCD.
-- GPIO19 audio/PWM.
+- USB DAC audio or GPIO19 PWM audio.
 - GPIO26 power button.
 - Existing GPIO18 amplifier/backlight wiring.
+
+Set `RICK_TV_AUDIO_PROFILE=usb-dac` for the USB DAC build or
+`RICK_TV_AUDIO_PROFILE=pwm` for the original GPIO19 build. `usb-dac` is the
+compatibility default. The power-button service always controls GPIO18 and the
+display through `tvservice`; it changes GPIO19 only under the `pwm` profile.
 
 ## SD-card and videolooper setup
 
@@ -56,8 +61,8 @@ cp rick-tv-pi/provisioning/rick-tv.env.example dist/rick-tv.env
 nano dist/rick-tv.env
 ```
 
-Fill in at least the server URL, shared API token, media root, playlist root,
-and videolooper FIFO path. For first boot from a freshly written SD card, also
+Fill in at least the server URL, shared API token, audio profile, media root,
+playlist root, and videolooper FIFO path. For first boot from a freshly written SD card, also
 fill in Wi-Fi and SSH values. `dist/` is ignored so local filled configs are not
 committed.
 
@@ -68,11 +73,11 @@ PI_HOST=pi@<pi-ip> PI_PASSWORD=<pi-password> \
   rick-tv-pi/provisioning/deploy_videolooper_image.sh deploy --config dist/rick-tv.env
 ```
 
-7. Reboot once for boot-level panic/watchdog settings, then verify both services:
+7. Reboot once for boot-level panic/watchdog settings, then verify the services:
 
 ```sh
 ssh pi@<pi-ip> 'sudo reboot'
-ssh pi@<pi-ip> 'systemctl is-active rick-tv-pi.service && sudo supervisorctl status video_looper'
+ssh pi@<pi-ip> 'systemctl is-active rick-tv-pi.service rick-tv-power-button.service && sudo supervisorctl status video_looper'
 ```
 
 ### Packaged image path
@@ -109,7 +114,8 @@ Before first boot, copy `rick-tv.env.example` from the boot partition to
 `rick-tv.env`, fill in Wi-Fi, SSH, API token, hostname, server URL, and Rick TV
 runtime values, and boot the Pi. The first boot service creates
 `/etc/rick-tv-pi.env`, configures Wi-Fi/SSH, re-applies the same idempotent
-runtime checks, starts `rick-tv-pi.service`, restarts `video_looper`, and writes
+runtime checks, starts `rick-tv-pi.service` and
+`rick-tv-power-button.service`, restarts `video_looper`, and writes
 a completion marker so later boots do not overwrite local edits. Telegram bot
 token and allowed user IDs are server-side settings and must not be placed in
 the Pi image or `rick-tv.env`.
@@ -135,15 +141,16 @@ for lab repair of an already-written boot partition.
 Use `rick-tv-pi/provisioning/rick-tv.env.example` as the single human-facing Pi
 config template. It includes Wi-Fi, SSH, hostname, and all Pi `RICK_TV_*`
 runtime values. Firstboot reads `rick-tv.env` from the boot partition and writes
-only the `RICK_TV_*` subset to `/etc/rick-tv-pi.env`; SSH deploy can do the same
-from `deploy --config dist/rick-tv.env` if the runtime file does not already
-exist.
+only the `RICK_TV_*` subset to `/etc/rick-tv-pi.env`. An explicit SSH
+`deploy --config dist/rick-tv.env` replaces that runtime subset; deploy without
+`--config` preserves an existing runtime environment.
 
 The generated `/etc/rick-tv-pi.env` used by systemd contains values like:
 
 ```text
 RICK_TV_SERVER_URL=https://rick-tv.example
 RICK_TV_API_TOKEN=replace-me
+RICK_TV_AUDIO_PROFILE=usb-dac
 RICK_TV_MEDIA_ROOT=/home/pi/rick-tv/media
 RICK_TV_METADATA_PATH=/home/pi/rick-tv/config/channels.json
 RICK_TV_POLL_INTERVAL_SECONDS=60
@@ -164,6 +171,17 @@ RICK_TV_RUNTIME_TICK_SECONDS=0.1
 
 Telegram bot token and allowed user IDs are server-side settings and must not be
 placed in `rick-tv.env` or `/etc/rick-tv-pi.env`.
+
+`RICK_TV_AUDIO_PROFILE` accepts exactly two values:
+
+- `usb-dac` configures omxplayer for ALSA device `1,0`, `100%` hardware volume,
+  and the `PCM` mixer control;
+- `pwm` configures omxplayer with `sound = both`, clears the explicit ALSA
+  device, and lets the power-button service switch GPIO19 between PWM ALT5 and
+  input together with the television power state.
+
+Unknown profile values stop provisioning instead of selecting an output
+implicitly.
 
 `RICK_TV_METADATA_PATH` is optional, but it should be set when the Pi is expected
 to receive the first file for a registry channel that does not yet exist locally.

@@ -40,6 +40,7 @@ DISPLAY_CONFIG="$PROVISIONING_DIR/display/config.txt.waveshare-28dpi-legacy"
 DISPLAY_OVERLAY_DIR="$PROVISIONING_DIR/vendor/waveshare-28dpi/overlays"
 DISPLAY_CONFIG_MARKER="# Rick TV Waveshare 2.8inch DPI LCD"
 RICK_TV_SERVICE="$ROOT_DIR/rick-tv-pi/systemd/rick-tv-pi.service"
+POWER_BUTTON_SERVICE="$ROOT_DIR/rick-tv-pi/systemd/rick-tv-power-button.service"
 VIDEOLOOPER_CONFIGURER="$PROVISIONING_DIR/videolooper/configure_rick_tv_videolooper.py"
 VIDEOLOOPER_PATCHER="$PROVISIONING_DIR/videolooper/rick_tv_fifo_patch.py"
 VIDEOLOOPER_PLAYLIST_GENERATOR="$PROVISIONING_DIR/videolooper/generate_channel_playlists.py"
@@ -58,10 +59,11 @@ apply_waveshare_display_boot_config() {
   cp "$DISPLAY_OVERLAY_DIR"/*.dtbo "$BOOTFS/overlays/"
 
   touch "$config_file"
-  sed -i -E \
+  sed -E -i.bak \
     -e 's/^([[:space:]]*)dtoverlay=vc4-kms-v3d([[:space:]]*)$/# \1dtoverlay=vc4-kms-v3d\2 # disabled by Rick TV Waveshare DPI config/' \
     -e 's/^([[:space:]]*)dtoverlay=vc4-fkms-v3d([[:space:]]*)$/# \1dtoverlay=vc4-fkms-v3d\2 # disabled by Rick TV Waveshare DPI config/' \
     "$config_file"
+  rm -f "$config_file.bak"
 
   if ! grep -qxF "$DISPLAY_CONFIG_MARKER" "$config_file"; then
     {
@@ -77,7 +79,17 @@ apply_videolooper_boot_config() {
 
   [[ -f "$VIDEOLOOPER_CONFIGURER" ]] || die "missing videolooper config script"
   touch "$config_file"
-  RICK_TV_VIDEOLOOPER_CONFIG_PATH="$config_file" python3 "$VIDEOLOOPER_CONFIGURER"
+  if [[ -n "$BOOT_CONFIG" ]]; then
+    (
+      set -a
+      # shellcheck disable=SC1090
+      . "$BOOT_CONFIG"
+      set +a
+      RICK_TV_VIDEOLOOPER_CONFIG_PATH="$config_file" python3 "$VIDEOLOOPER_CONFIGURER"
+    )
+  else
+    RICK_TV_VIDEOLOOPER_CONFIG_PATH="$config_file" python3 "$VIDEOLOOPER_CONFIGURER"
+  fi
 }
 
 stage_rick_tv_runtime_payload() {
@@ -89,6 +101,9 @@ stage_rick_tv_runtime_payload() {
     "$ROOTFS/home/pi/rick-tv/config"
 
   install -m 0644 "$RICK_TV_SERVICE" "$ROOTFS/etc/systemd/system/rick-tv-pi.service"
+  install -m 0644 \
+    "$POWER_BUTTON_SERVICE" \
+    "$ROOTFS/etc/systemd/system/rick-tv-power-button.service"
   install -m 0644 \
     "$VIDEOLOOPER_ASSET_DIR/transition-placeholder.fb" \
     "$ROOTFS/home/pi/rick-tv/system/transition-placeholder.fb"
@@ -127,6 +142,7 @@ stage_rick_tv_runtime_payload() {
 [[ -f "$DISPLAY_CONFIG" ]] || die "missing Waveshare display config"
 [[ -d "$DISPLAY_OVERLAY_DIR" ]] || die "missing Waveshare overlay directory"
 [[ -f "$RICK_TV_SERVICE" ]] || die "missing Rick TV service unit"
+[[ -f "$POWER_BUTTON_SERVICE" ]] || die "missing power button service unit"
 [[ -f "$VIDEOLOOPER_CONFIGURER" ]] || die "missing videolooper config script"
 [[ -f "$VIDEOLOOPER_PATCHER" ]] || die "missing videolooper patcher"
 [[ -f "$VIDEOLOOPER_PLAYLIST_GENERATOR" ]] || die "missing playlist generator"
@@ -148,6 +164,8 @@ install -m 0755 "$FIRSTBOOT_DIR/rick-tv-firstboot.sh" "$ROOTFS/usr/local/sbin/ri
 install -m 0644 "$FIRSTBOOT_DIR/rick-tv-firstboot.service" "$ROOTFS/etc/systemd/system/rick-tv-firstboot.service"
 ln -sfn ../rick-tv-firstboot.service \
   "$ROOTFS/etc/systemd/system/multi-user.target.wants/rick-tv-firstboot.service"
+ln -sfn ../rick-tv-power-button.service \
+  "$ROOTFS/etc/systemd/system/multi-user.target.wants/rick-tv-power-button.service"
 install -m 0644 "$FIRSTBOOT_EXAMPLE" "$BOOTFS/rick-tv.env.example"
 if [[ -n "$BOOT_CONFIG" ]]; then
   install -m 0600 "$BOOT_CONFIG" "$BOOTFS/rick-tv.env"

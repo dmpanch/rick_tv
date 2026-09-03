@@ -15,6 +15,8 @@ Set these environment variables before starting the service:
   local smoke checks; set a real token before using the service.
 - `RICK_TV_PUBLIC_BASE_URL`: public URL used when generating download links.
   Defaults to `http://localhost:8080`.
+- `RICK_TV_HOST_PORT`: host TCP port published by Docker Compose. Defaults to
+  `8080`; the API still listens on `8080` inside the container.
 - `RICK_TV_LOG_LEVEL`: Python logging level for the API and Telegram runner.
   Defaults to `INFO`.
 - `RICK_TV_DATA_DIR`: host directory mounted by Docker Compose for media,
@@ -54,7 +56,8 @@ The Compose file mounts:
 - `${RICK_TV_DATA_DIR:-./data}/config` to `/etc/rick-tv`
 - `${RICK_TV_DATA_DIR:-./data}/state` to `/var/lib/rick-tv/state`
 
-It publishes `8080:8080` and uses `restart: unless-stopped` so the server
+It publishes `${RICK_TV_HOST_PORT:-8080}:8080` and uses
+`restart: unless-stopped` so the server
 comes back after host restarts unless it was explicitly stopped.
 The SQLite DB path inside the container remains
 `/var/lib/rick-tv/state/rick-tv.sqlite3`, so with Compose it physically lives at
