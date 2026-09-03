@@ -26,7 +26,8 @@ def test_docker_compose_mounts_runtime_directories_and_publishes_port() -> None:
     assert "${RICK_TV_DATA_DIR:-./data}/media:/var/lib/rick-tv/media" in content
     assert "${RICK_TV_DATA_DIR:-./data}/config:/etc/rick-tv" in content
     assert "${RICK_TV_DATA_DIR:-./data}/state:/var/lib/rick-tv/state" in content
-    assert "8080:8080" in content
+    assert '"${RICK_TV_HOST_PORT:-8080}:8080"' in content
+    assert '"8080:8080"' not in content
     assert "restart: unless-stopped" in content
 
 
@@ -103,6 +104,14 @@ def test_env_example_documents_single_host_data_dir() -> None:
 
     assert "RICK_TV_DATA_DIR=./data" in content
     assert "/srv/rick-tv" in content
+
+
+def test_env_example_documents_configurable_host_port() -> None:
+    env_example = PROJECT_ROOT / ".env.example"
+
+    content = env_example.read_text(encoding="utf-8")
+
+    assert "RICK_TV_HOST_PORT=8080" in content
 
 
 def test_env_example_documents_telegram_as_default_stack_required() -> None:

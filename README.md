@@ -32,7 +32,7 @@ The Pi also needs network access to the server.
 Server:
 
 - Docker and Docker Compose
-- Free host port `8080`
+- Free host port selected by `RICK_TV_HOST_PORT` (defaults to `8080`)
 - Shared API token in `RICK_TV_API_TOKEN`
 - Telegram bot token and allowlisted user IDs if `rick-tv-bot` is enabled
 
@@ -55,7 +55,7 @@ cp .env.example .env
 # edit .env
 ```
 
-Set `RICK_TV_API_TOKEN`, `RICK_TV_PUBLIC_BASE_URL`,
+Set `RICK_TV_API_TOKEN`, `RICK_TV_PUBLIC_BASE_URL`, `RICK_TV_HOST_PORT`,
 `RICK_TV_TELEGRAM_BOT_TOKEN`, and `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`. Keep
 `RICK_TV_UID=$(id -u)` and `RICK_TV_GID=$(id -g)` in `.env` so bind-mounted
 runtime files stay editable from the host.
@@ -71,6 +71,8 @@ This starts both `rick-tv-server` and `rick-tv-bot`. `docker-compose.yml` reads
 `RICK_TV_UID:RICK_TV_GID`, and Compose stores runtime data under
 `${RICK_TV_DATA_DIR:-./data}` by default. For a persistent installation, set
 `RICK_TV_DATA_DIR=/srv/rick-tv` or another absolute path on the host disk.
+`RICK_TV_HOST_PORT` publishes the API on a different host port while the
+container continues to listen on `8080`.
 
 For API-only development runs:
 
