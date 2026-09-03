@@ -29,9 +29,11 @@ class FakeGPIO:
 def test_pwm_power_button_applies_active_low_on_state() -> None:
     gpio = FakeGPIO(button_level=0)
     commands = []
+    display_states = []
     controller = PowerButtonController(
         gpio=gpio,
         command_runner=commands.append,
+        display_power_setter=display_states.append,
         audio_profile="pwm",
     )
 
@@ -44,16 +46,18 @@ def test_pwm_power_button_applies_active_low_on_state() -> None:
     assert commands == [
         ("raspi-gpio", "set", "19", "op", "a5"),
         ("raspi-gpio", "set", "18", "ip"),
-        ("tvservice", "--sdtvon=NTSC [P]"),
     ]
+    assert display_states == [True]
 
 
 def test_pwm_power_button_applies_off_transition_only_once() -> None:
     gpio = FakeGPIO(button_level=0)
     commands = []
+    display_states = []
     controller = PowerButtonController(
         gpio=gpio,
         command_runner=commands.append,
+        display_power_setter=display_states.append,
         audio_profile="pwm",
     )
     controller.setup()
@@ -69,16 +73,18 @@ def test_pwm_power_button_applies_off_transition_only_once() -> None:
     assert commands == [
         ("raspi-gpio", "set", "19", "ip"),
         ("raspi-gpio", "set", "18", "op", "dl"),
-        ("tvservice", "-o"),
     ]
+    assert display_states == [True, False]
 
 
 def test_usb_dac_power_button_never_changes_gpio19() -> None:
     gpio = FakeGPIO(button_level=0)
     commands = []
+    display_states = []
     controller = PowerButtonController(
         gpio=gpio,
         command_runner=commands.append,
+        display_power_setter=display_states.append,
         audio_profile="usb-dac",
     )
     controller.setup()
@@ -89,10 +95,9 @@ def test_usb_dac_power_button_never_changes_gpio19() -> None:
 
     assert commands == [
         ("raspi-gpio", "set", "18", "ip"),
-        ("tvservice", "--sdtvon=NTSC [P]"),
         ("raspi-gpio", "set", "18", "op", "dl"),
-        ("tvservice", "-o"),
     ]
+    assert display_states == [True, False]
 
 
 def test_power_button_rejects_unknown_audio_profile() -> None:
@@ -100,5 +105,6 @@ def test_power_button_rejects_unknown_audio_profile() -> None:
         PowerButtonController(
             gpio=FakeGPIO(button_level=1),
             command_runner=lambda command: None,
+            display_power_setter=lambda enabled: None,
             audio_profile="bluetooth",
         )

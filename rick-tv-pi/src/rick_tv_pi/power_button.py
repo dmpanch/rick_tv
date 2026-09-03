@@ -3,12 +3,15 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
 
 
 Command = Tuple[str, ...]
 CommandRunner = Callable[[Command], None]
+DisplayPowerSetter = Callable[[bool], None]
 SUPPORTED_AUDIO_PROFILES = {"pwm", "usb-dac"}
+BACKLIGHT_POWER_PATH = Path("/sys/class/backlight/rpi_backlight/bl_power")
 
 
 class PowerButtonController:
@@ -16,6 +19,7 @@ class PowerButtonController:
         self,
         gpio: Any,
         command_runner: CommandRunner,
+        display_power_setter: DisplayPowerSetter,
         audio_profile: str,
     ) -> None:
         normalized_profile = audio_profile.strip().lower()
@@ -25,6 +29,7 @@ class PowerButtonController:
             )
         self._gpio = gpio
         self._run_command = command_runner
+        self._set_display_power = display_power_setter
         self._audio_profile = normalized_profile
         self._screen_on: Optional[bool] = None
 
@@ -48,17 +53,21 @@ class PowerButtonController:
         if self._audio_profile == "pwm":
             self._run_command(("raspi-gpio", "set", "19", "op", "a5"))
         self._run_command(("raspi-gpio", "set", "18", "ip"))
-        self._run_command(("tvservice", "--sdtvon=NTSC [P]"))
+        self._set_display_power(True)
 
     def _turn_off(self) -> None:
         if self._audio_profile == "pwm":
             self._run_command(("raspi-gpio", "set", "19", "ip"))
         self._run_command(("raspi-gpio", "set", "18", "op", "dl"))
-        self._run_command(("tvservice", "-o"))
+        self._set_display_power(False)
 
 
 def run_system_command(command: Command) -> None:
     subprocess.run(command, check=False)
+
+
+def set_backlight_power(enabled: bool) -> None:
+    BACKLIGHT_POWER_PATH.write_text("0\n" if enabled else "1\n", encoding="ascii")
 
 
 def main() -> None:
@@ -67,6 +76,7 @@ def main() -> None:
     controller = PowerButtonController(
         gpio=GPIO,
         command_runner=run_system_command,
+        display_power_setter=set_backlight_power,
         audio_profile=os.environ.get("RICK_TV_AUDIO_PROFILE", "usb-dac"),
     )
     controller.setup()
