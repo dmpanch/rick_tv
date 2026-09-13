@@ -77,7 +77,7 @@ def test_pwm_power_button_applies_off_transition_only_once() -> None:
     assert display_states == [True, False]
 
 
-def test_usb_dac_power_button_never_changes_gpio19() -> None:
+def test_usb_dac_power_button_mutes_audio_without_changing_gpio19() -> None:
     gpio = FakeGPIO(button_level=0)
     commands = []
     display_states = []
@@ -95,6 +95,8 @@ def test_usb_dac_power_button_never_changes_gpio19() -> None:
 
     assert commands == [
         ("raspi-gpio", "set", "18", "ip"),
+        ("amixer", "-q", "-c", "1", "sset", "PCM", "unmute"),
+        ("amixer", "-q", "-c", "1", "sset", "PCM", "mute"),
         ("raspi-gpio", "set", "18", "op", "dl"),
     ]
     assert display_states == [True, False]

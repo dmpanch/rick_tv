@@ -1,7 +1,7 @@
 [Unit]
 Description=Rick TV GPIO Power Button
-After=rick-tv-firstboot.service
-Wants=rick-tv-firstboot.service
+After=rick-tv-firstboot.service sound.target
+Wants=rick-tv-firstboot.service sound.target
 
 [Service]
 Type=simple

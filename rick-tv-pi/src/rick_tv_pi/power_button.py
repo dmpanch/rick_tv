@@ -54,8 +54,16 @@ class PowerButtonController:
             self._run_command(("raspi-gpio", "set", "19", "op", "a5"))
         self._run_command(("raspi-gpio", "set", "18", "ip"))
         self._set_display_power(True)
+        if self._audio_profile == "usb-dac":
+            self._run_command(
+                ("amixer", "-q", "-c", "1", "sset", "PCM", "unmute")
+            )
 
     def _turn_off(self) -> None:
+        if self._audio_profile == "usb-dac":
+            self._run_command(
+                ("amixer", "-q", "-c", "1", "sset", "PCM", "mute")
+            )
         if self._audio_profile == "pwm":
             self._run_command(("raspi-gpio", "set", "19", "ip"))
         self._run_command(("raspi-gpio", "set", "18", "op", "dl"))

@@ -72,6 +72,13 @@ def test_deploy_provisions_power_button_service() -> None:
     assert "systemctl restart rick-tv-power-button.service" in content
 
 
+def test_power_button_service_waits_for_sound_target() -> None:
+    content = POWER_BUTTON_SERVICE.read_text(encoding="utf-8")
+
+    assert "After=rick-tv-firstboot.service sound.target" in content
+    assert "Wants=rick-tv-firstboot.service sound.target" in content
+
+
 def test_videolooper_configurer_routes_omxplayer_to_usb_dac(tmp_path) -> None:
     config_path = tmp_path / "video_looper.ini"
     config_path.write_text(
