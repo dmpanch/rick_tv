@@ -72,6 +72,20 @@ def test_load_settings_from_env_requires_api_token(monkeypatch, tmp_path: Path):
         raise AssertionError("missing API token should fail server startup")
 
 
+def test_local_telegram_api_setting_normalizes_url(monkeypatch, tmp_path: Path):
+    main = import_main_with_env(monkeypatch, tmp_path)
+    monkeypatch.setenv(
+        "RICK_TV_TELEGRAM_LOCAL_API_URL", " http://telegram-bot-api:8081/ "
+    )
+
+    assert main.load_settings_from_env().telegram_local_api_url == (
+        "http://telegram-bot-api:8081"
+    )
+
+    monkeypatch.setenv("RICK_TV_TELEGRAM_LOCAL_API_URL", " ")
+    assert main.load_settings_from_env().telegram_local_api_url is None
+
+
 def test_create_server_app_creates_runtime_directories(monkeypatch, tmp_path: Path):
     main = import_main_with_env(monkeypatch, tmp_path)
     initialized_settings = []

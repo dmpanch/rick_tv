@@ -38,6 +38,10 @@ Set these environment variables before starting the service:
 - `RICK_TV_TELEGRAM_ALLOWED_USER_IDS`: comma-separated allowlist of Telegram
   user IDs allowed to manage channels, upload media, and restore available
   media.
+- `RICK_TV_TELEGRAM_LOCAL_API_URL`: optional root URL of a local Telegram Bot
+  API server, for example `http://telegram-bot-api:8081`. Omit it to use the
+  cloud API. The local Compose override sets it automatically, enables local
+  file handling, and gives file preparation requests a 300-second timeout.
 
 ## Docker Compose
 
@@ -87,6 +91,93 @@ docker compose up -d --build
 ```
 
 The bot runner uses long polling, not webhooks.
+
+## Local Telegram Bot API for Large Uploads
+
+The cloud Bot API can download files only up to 20 MB. Telegram's official
+Bot API server with `--local` removes that download limit. The optional
+`docker-compose.telegram-local.yml` runs it using an image packaged by aiogram,
+pinned by digest. Its HTTP port is accessible only inside the Compose network.
+
+Obtain your own `api_id` and `api_hash` at
+[my.telegram.org/apps](https://my.telegram.org/apps), then set `TELEGRAM_API_ID`
+and `TELEGRAM_API_HASH` in the deployment `.env`. These credentials belong to a
+Telegram application and are separate from the existing BotFather bot token.
+Keep the bot token unchanged.
+
+Create the cache directory under your configured `RICK_TV_DATA_DIR`, owned by
+the same UID/GID as `RICK_TV_UID` and `RICK_TV_GID`. For the default relative
+data path, run as that user:
+
+```bash
+install -d -m 0700 ./data/telegram-bot-api/temp
+```
+
+Both containers mount this directory at `/var/lib/telegram-bot-api`; the bot
+mounts it read-only. Matching paths and ownership are required because local
+`getFile` responses contain absolute file paths. Rick TV copies each download
+to its own temporary upload path and leaves the Telegram cache file intact.
+
+For an existing cloud bot, back up `.env`, Compose files, and the SQLite library
+before migration. Build the updated bot image and start the local API server
+first:
+
+```bash
+docker compose build rick-tv-bot
+docker compose -f docker-compose.yml -f docker-compose.telegram-local.yml up -d telegram-bot-api
+```
+
+Check the local server logs and verify that it is listening before switching.
+Then stop the polling bot and call the cloud `logOut` method once. This command
+reads the token inside the container without printing it:
+
+```bash
+(
+set -e
+docker compose -f docker-compose.yml -f docker-compose.telegram-local.yml config --quiet
+docker compose stop rick-tv-bot
+docker compose run --rm --no-deps -T rick-tv-bot python - <<'PY'
+import json
+import os
+import urllib.error
+import urllib.request
+
+token = os.environ["RICK_TV_TELEGRAM_BOT_TOKEN"]
+request = urllib.request.Request(
+    "https://api.telegram.org/bot" + token + "/logOut", data=b""
+)
+try:
+    with urllib.request.urlopen(request, timeout=30) as response:
+        result = json.load(response)
+except urllib.error.HTTPError as error:
+    raise SystemExit(f"Cloud logOut failed: HTTP {error.code}") from None
+except urllib.error.URLError:
+    raise SystemExit("Cloud logOut failed: network error") from None
+if not result.get("ok"):
+    raise SystemExit("Cloud logOut was not accepted")
+print("Cloud logOut accepted")
+PY
+docker compose -f docker-compose.yml -f docker-compose.telegram-local.yml up -d rick-tv-bot
+)
+```
+
+Use both Compose files for subsequent updates. To make this persistent for
+plain `docker compose` commands, set
+`COMPOSE_FILE=docker-compose.yml:docker-compose.telegram-local.yml` in the
+deployment `.env`. Verify the bot connects to the local API, then send a video
+larger than 20 MB through the existing bot chat.
+Channel selection and delivery to the Pi use the existing workflow.
+
+Do not run cloud and local polling instances for the same bot simultaneously.
+After cloud `logOut`, Telegram prevents logging back into the cloud API for
+10 minutes. For rollback, stop the bot and local API first, remove the local
+URL setting if it was set manually, wait out that interval, and recreate the
+bot using the base Compose file. Remove `COMPOSE_FILE` from `.env` as well, or
+explicitly use `docker compose -f docker-compose.yml` for rollback commands.
+Library and channel data remain in their existing mounts.
+
+References: [Telegram local server and migration](https://github.com/tdlib/telegram-bot-api),
+[Telegram logOut](https://core.telegram.org/bots/api#logout).
 
 ## Channel Registry And Telegram Uploads
 

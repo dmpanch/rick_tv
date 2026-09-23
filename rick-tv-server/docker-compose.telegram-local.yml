@@ -1,0 +1,30 @@
+services:
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api@sha256:f1f32323a96de81242216931347d58de7b180fafcbebd625fbaa2f7d81acfab1
+    user: "${RICK_TV_UID:-1000}:${RICK_TV_GID:-1000}"
+    entrypoint: ["telegram-bot-api"]
+    command:
+      - --local
+      - --http-port=8081
+      - --dir=/var/lib/telegram-bot-api
+      - --temp-dir=/var/lib/telegram-bot-api/temp
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:?Set TELEGRAM_API_ID from my.telegram.org/apps}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:?Set TELEGRAM_API_HASH from my.telegram.org/apps}
+    volumes:
+      - ${RICK_TV_DATA_DIR:-./data}/telegram-bot-api:/var/lib/telegram-bot-api
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  rick-tv-bot:
+    environment:
+      RICK_TV_TELEGRAM_LOCAL_API_URL: http://telegram-bot-api:8081
+    volumes:
+      - ${RICK_TV_DATA_DIR:-./data}/telegram-bot-api:/var/lib/telegram-bot-api:ro
+    depends_on:
+      telegram-bot-api:
+        condition: service_started

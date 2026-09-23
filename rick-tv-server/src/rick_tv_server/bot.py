@@ -721,12 +721,17 @@ def build_application(
 
     allowed_user_ids = settings.telegram_allowed_user_ids
     remote_command_store = RemoteCommandStore(settings)
-    application = (
+    builder = (
         ApplicationBuilder()
         .token(settings.telegram_bot_token)
         .post_init(configure_bot_command_menu)
-        .build()
     )
+    if settings.telegram_local_api_url:
+        base_url = settings.telegram_local_api_url.rstrip("/")
+        builder.base_url(f"{base_url}/bot").base_file_url(
+            f"{base_url}/file/bot"
+        ).local_mode(True).read_timeout(300).media_write_timeout(300)
+    application = builder.build()
     application.add_handler(
         CommandHandler(
             "add_channel",

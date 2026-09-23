@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from telegram import InlineKeyboardMarkup
+from telegram import File, InlineKeyboardMarkup
 
 from rick_tv_server import bot
 from rick_tv_server.channels import ChannelRegistryStore
@@ -209,6 +209,80 @@ def test_telegram_command_menu_contains_direct_actions_only() -> None:
         ("list_channels", "List channels"),
         ("restore_all_videos", "Restore all videos"),
     ]
+
+
+def test_application_routes_file_requests_to_local_api(tmp_path: Path):
+    settings = replace(
+        make_settings(tmp_path),
+        telegram_bot_token="123456:ABC",
+        telegram_local_api_url="http://telegram-bot-api:8081/",
+    )
+    application = bot.build_application(
+        settings,
+        ChannelRegistryStore(settings),
+        DeliveryStateStore(settings),
+        RecordingUploadProcessor(),
+    )
+
+    assert application.bot.base_url == "http://telegram-bot-api:8081/bot123456:ABC"
+    assert application.bot.base_file_url == (
+        "http://telegram-bot-api:8081/file/bot123456:ABC"
+    )
+    assert application.bot.local_mode is True
+    assert application.bot.request.read_timeout == 300
+
+
+def test_application_uses_cloud_api_without_local_setting(tmp_path: Path):
+    settings = replace(make_settings(tmp_path), telegram_bot_token="123456:ABC")
+    application = bot.build_application(
+        settings,
+        ChannelRegistryStore(settings),
+        DeliveryStateStore(settings),
+        RecordingUploadProcessor(),
+    )
+
+    assert application.bot.base_url == "https://api.telegram.org/bot123456:ABC"
+    assert application.bot.base_file_url == "https://api.telegram.org/file/bot123456:ABC"
+    assert application.bot.local_mode is False
+
+
+def test_upload_from_local_api_preserves_shared_file_over_20_mb(tmp_path: Path):
+    settings = replace(
+        make_settings(tmp_path), telegram_local_api_url="http://telegram-bot-api:8081"
+    )
+    state_store = DeliveryStateStore(settings)
+    channel_store = ChannelRegistryStore(settings)
+    channel_store.add_channel("01_Citadel", "Citadel")
+    shared_file = tmp_path / "telegram-bot-api" / "large.mp4"
+    shared_file.parent.mkdir()
+    with shared_file.open("wb") as stream:
+        stream.truncate(21 * 1024 * 1024)
+
+    class LocalAttachment:
+        file_name = "large.mp4"
+
+        async def get_file(self):
+            return File(
+                file_id="large-file", file_unique_id="unique-file",
+                file_size=shared_file.stat().st_size, file_path=str(shared_file),
+            )
+
+    context = FakeContext()
+    context.user_data["upload_channel_id"] = "01_Citadel"
+    processor = RecordingUploadProcessor()
+    message = FakeMessage(document=LocalAttachment())
+    asyncio.run(bot.handle_upload_attachment(
+        FakeUpdate(effective_user=FakeUser(id=42), message=message),
+        context, settings, processor, channel_store, state_store,
+        allowed_user_ids=(42,),
+    ))
+
+    assert len(processor.calls) == 1
+    assert len(processor.calls[0]["content"]) == 21 * 1024 * 1024
+    assert processor.calls[0]["channel_id"] == "01_Citadel"
+    assert not Path(processor.calls[0]["source_path"]).exists()
+    assert shared_file.stat().st_size == 21 * 1024 * 1024
+    assert message.replies == [{"text": "Upload accepted: item-1."}]
 
 
 def test_remember_user_channel_uses_public_state_store_interface():
