@@ -48,6 +48,10 @@ def load_settings_from_env() -> ServerSettings:
         telegram_allowed_user_ids=_parse_allowed_user_ids(
             os.environ.get("RICK_TV_TELEGRAM_ALLOWED_USER_IDS", "")
         ),
+        telegram_local_api_url=(
+            os.environ.get("RICK_TV_TELEGRAM_LOCAL_API_URL", "").strip().rstrip("/")
+            or None
+        ),
         channels_path=channels_path,
         db_path=(
             Path(db_path)

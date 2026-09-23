@@ -32,6 +32,7 @@ services:
       RICK_TV_LOG_LEVEL: ${RICK_TV_LOG_LEVEL:-INFO}
       RICK_TV_TELEGRAM_BOT_TOKEN: ${RICK_TV_TELEGRAM_BOT_TOKEN:-}
       RICK_TV_TELEGRAM_ALLOWED_USER_IDS: ${RICK_TV_TELEGRAM_ALLOWED_USER_IDS:-}
+      RICK_TV_TELEGRAM_LOCAL_API_URL: ${RICK_TV_TELEGRAM_LOCAL_API_URL:-}
     volumes:
       - ${RICK_TV_DATA_DIR:-./data}/media:/var/lib/rick-tv/media
       - ${RICK_TV_DATA_DIR:-./data}/config:/etc/rick-tv

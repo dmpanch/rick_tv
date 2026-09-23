@@ -15,3 +15,4 @@ class ServerSettings:
     telegram_allowed_user_ids: tuple[int, ...] = ()
     channels_path: Path | None = None
     db_path: Path | None = None
+    telegram_local_api_url: str | None = None
