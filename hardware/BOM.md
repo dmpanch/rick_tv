@@ -30,7 +30,7 @@ individual components, even when a linked listing sells an assortment or pack.
 ## Audio
 
 - **U2 · 1 × USB Audio Class DAC with a 3.5 mm stereo output.**
-  HOCO LS36. The current power-control service expects ALSA card `1`
+  HOCO LS36 or similar. The current power-control service expects ALSA card `1`
   with a `PCM` mute control.
 - **1 × micro-USB OTG adapter or cable.** Connects the DAC to the Pi's **USB**
   data port. Choose its other connector to match the DAC.
