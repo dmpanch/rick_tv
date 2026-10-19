@@ -13,8 +13,7 @@ switch. Power enters through the Pi's **PWR IN** micro-USB connector.
 The diagram uses **physical header numbers** alongside **BCM GPIO names**.
 For example, GPIO26 is physical pin 37, not pin 26. The Raspberry Pi is shown
 from the solder side using a real board photograph. Pin 1 is the square pad;
-the numbering follows that rear view, with pin 2 beside it in the outer row.
-The photo is rotated without mirroring. The display mounts on the opposite
+the numbering follows that rear view, with pin 2 beside it in the outer row. The display mounts on the opposite
 side through the 40-pin header. External connections are drawn as continuous
 wires without crossings. Dots mark joined branches.
 
@@ -23,12 +22,10 @@ wires without crossings. Dots mark joined branches.
 1. Connect the enclosure micro-USB breakout **J1** to the Pi through the
    internal micro-USB power cable **CBL1** listed in the [BOM](BOM.md).
    The power path is **J1 breakout → CBL1 cable → Pi PWR IN**. Connect VBUS
-   and GND through the cable; leave D+, D−, and ID on the power breakout
-   unconnected.
+   and GND through the cable.
 2. Fit the Waveshare **DPI** display to the 40-pin header, aligning pin 1.
    Use an appropriate pass-through connection or solder access for the audio
-   supply and switch. Use the display wiring and overlays supplied for this
-   exact model.
+   supply and switch.
 3. Take amplifier **VIN / 2–5VDC** from Pi physical pin **2** (+5 V).
    Pin 4 is an alternative on the same rail. Take amplifier **GND** from
    physical pin **6**.
@@ -49,7 +46,6 @@ amplifier directly.
 4. Join the DAC **sleeve**, RV1 ground terminal, amplifier **A− / Audio In−**,
    and amplifier **GND** to the common ground net.
 5. Wire the speaker only between amplifier **SP+** and **SP−**.
-   Both are driven outputs.
 6. Leave **SD / Shutdown** unconnected on the Adafruit module in this build.
    The software mutes the USB DAC when the screen is off.
 
@@ -61,16 +57,12 @@ for clipping.
 
 **SW1 connects GPIO26 (physical pin 37) to GND (physical pin 39 is convenient).**
 The runtime enables the Pi's internal pull-up. A closed contact turns the screen
-and sound on; an open contact turns them off. Use a maintained/latching switch,
-as the current service follows the contact state rather than toggling on each
-momentary press.
+and sound on; an open contact turns them off.
 
-For a six-pin switch, use one common/switched pair from a single pole. Check
-continuity on the actual part instead of assuming a pin order from its shape.
+For a six-pin switch, use one common/switched pair from a single pole.
 The diagram shows all six contacts by pole: A1/C1/B1 and A2/C2/B2.
 C identifies the common contact; A and B identify the two throws without
-assuming which one closes in the pressed state. The pictured connection uses
-C2 and A2. Confirm the corresponding pair on the actual switch by continuity.
+assuming which one closes in the pressed state. Confirm the corresponding pair on the actual switch by continuity.
 
 Set `RICK_TV_AUDIO_PROFILE=usb-dac`. The service mutes/unmutes ALSA card `1`,
 control `PCM`, and controls the display backlight. It also switches GPIO18
