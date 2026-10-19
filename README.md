@@ -32,9 +32,6 @@ Pi stays running.
   off together.
 - **Printable enclosure.** Editable OpenSCAD source and an STL are included.
 
-The GIF above shows the physical build. It is a silent, 10-second excerpt of
-the supplied demonstration video.
-
 ## Build the hardware
 
 Start with the [bill of materials](hardware/BOM.md), then follow the
