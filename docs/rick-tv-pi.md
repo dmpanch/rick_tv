@@ -9,13 +9,16 @@ The Phase 1 runtime assumes the existing Raspberry Pi TV hardware remains in pla
 - Raspberry Pi Zero W.
 - Waveshare 2.8inch DPI LCD.
 - USB DAC audio or GPIO19 PWM audio.
-- GPIO26 power button.
-- Existing GPIO18 amplifier/backlight wiring.
+- GPIO26 maintained screen/audio switch.
+- GPIO18 display control; the USB DAC build mutes audio in ALSA.
 
 Set `RICK_TV_AUDIO_PROFILE=usb-dac` for the USB DAC build or
 `RICK_TV_AUDIO_PROFILE=pwm` for the original GPIO19 build. `usb-dac` is the
 compatibility default. The power-button service always controls GPIO18 and the
-display through `tvservice`; it changes GPIO19 only under the `pwm` profile.
+backlight through `/sys/class/backlight/rpi_backlight/bl_power`; it changes
+GPIO19 only under the `pwm` profile. The USB DAC profile also mutes/unmutes ALSA
+card `1`, control `PCM`. See the [hardware connection guide](../hardware/README.md)
+for the complete USB DAC circuit and physical pin numbers.
 
 ## SD-card and videolooper setup
 

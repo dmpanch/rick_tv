@@ -1,0 +1,109 @@
+# Hardware and wiring
+
+[Project overview](../README.md) · [Bill of materials](BOM.md) · [Enclosure](enclosure/README.md)
+
+This guide documents the USB DAC build: Raspberry Pi Zero W, Waveshare 2.8inch
+DPI LCD, PAM8302A, mono speaker, volume control, and a combined screen/audio
+switch. Power enters through the Pi's **PWR IN** micro-USB connector.
+
+[![Rick TV wiring with photographs of the Pi, switch, micro-USB breakout, volume potentiometer, and PAM8302A](wiring.png)](wiring.png)
+
+[Open SVG](wiring.svg) · [Download PNG](wiring.png)
+
+The diagram uses **physical header numbers** alongside **BCM GPIO names**.
+For example, GPIO26 is physical pin 37, not pin 26. The Raspberry Pi is shown
+from the solder side using a real board photograph. Pin 1 is the square pad;
+the numbering follows that rear view, with pin 2 beside it in the outer row.
+The photo is rotated without mirroring. The display mounts on the opposite
+side through the 40-pin header. External connections are drawn as continuous
+wires without crossings. Dots mark joined branches.
+
+## Power and display
+
+1. Connect the enclosure micro-USB breakout **J1** to the Pi through the
+   internal micro-USB power cable **CBL1** listed in the [BOM](BOM.md).
+   The power path is **J1 breakout → CBL1 cable → Pi PWR IN**. Connect VBUS
+   and GND through the cable; leave D+, D−, and ID on the power breakout
+   unconnected.
+2. Fit the Waveshare **DPI** display to the 40-pin header, aligning pin 1.
+   Use an appropriate pass-through connection or solder access for the audio
+   supply and switch. Use the display wiring and overlays supplied for this
+   exact model.
+3. Take amplifier **VIN / 2–5VDC** from Pi physical pin **2** (+5 V).
+   Pin 4 is an alternative on the same rail. Take amplifier **GND** from
+   physical pin **6**.
+
+Use a single regulated 5 V supply through PWR IN. The 5 V rail powers the
+amplifier directly. This build has no added capacitors between the Pi and
+PAM8302A. GPIO signal pins use 3.3 V logic and must not receive 5 V.
+
+## USB audio to mono speaker
+
+1. Plug the DAC into the Pi's **USB** data socket through a micro-USB OTG
+   adapter. PWR IN cannot carry USB audio data.
+2. Connect the DAC's 3.5 mm **tip (L)** through **R1, 470 Ω** and **ring (R)**
+   through **R2, 470 Ω**. Join the two resistor outputs to make the mono node.
+3. Connect the mono node to one outer terminal of **RV1, 1 kΩ**. Connect the
+   other outer terminal to GND, and the **wiper** to amplifier **A+ / Audio In+**.
+   Identify the wiper by measurement; swap the outer terminals if the rotation
+   direction is reversed.
+4. Join the DAC **sleeve**, RV1 ground terminal, amplifier **A− / Audio In−**,
+   and amplifier **GND** to the common ground net.
+5. Wire the speaker only between amplifier **SP+** and **SP−**.
+   Both are driven outputs. Neither speaker terminal connects to GND.
+6. Leave **SD / Shutdown** unconnected on the Adafruit module in this build.
+   The software mutes the USB DAC when the screen is off.
+
+Do not join the DAC's L and R outputs directly. The two resistors isolate the
+outputs before summing. Start at low playback volume and raise it while checking
+for clipping. The 5 W speaker rating does not make the amplifier a 5 W amplifier.
+
+## Screen and sound switch
+
+**SW1 connects GPIO26 (physical pin 37) to GND (physical pin 39 is convenient).**
+The runtime enables the Pi's internal pull-up. A closed contact turns the screen
+and sound on; an open contact turns them off. Use a maintained/latching switch,
+as the current service follows the contact state rather than toggling on each
+momentary press.
+
+For a six-pin switch, use one common/switched pair from a single pole. Check
+continuity on the actual part instead of assuming a pin order from its shape.
+The diagram shows all six contacts by pole: A1/C1/B1 and A2/C2/B2.
+C identifies the common contact; A and B identify the two throws without
+assuming which one closes in the pressed state. The pictured connection uses
+C2 and A2. Confirm the corresponding pair on the actual switch by continuity.
+The switch carries a GPIO signal, not the amplifier supply or speaker output.
+
+Set `RICK_TV_AUDIO_PROFILE=usb-dac`. The service mutes/unmutes ALSA card `1`,
+control `PCM`, and controls the display backlight. It also switches GPIO18
+(physical pin 12) between input and output-low as part of the existing display
+control. Do not add a connection from GPIO18 to amplifier VIN or speaker output.
+The Pi remains powered when the screen and sound are off.
+
+## References and scope
+
+The drawing follows the builder's confirmed wiring: direct Pi-to-amplifier
+power and two separate 470 Ω resistors between the DAC's 3.5 mm L/R outputs
+and the external P102 volume potentiometer. The Pi, PAM8302A, switch, USB
+breakout, and potentiometer use real product photographs. Their sources and
+the representative component variants are documented in [photo references](assets/README.md).
+The remaining components use vector drawings. RV1 terminals 1 and 3 identify the
+track ends and 2 the wiper in the drawing: 1 goes to GND, 3 receives the summed
+audio, and 2 feeds A+. Verify the actual part's legs and rotation direction by
+measurement. No continuity test of the assembled device was performed.
+
+- [Underside photograph: Pi Australia / Little Bird](https://piaustralia.com.au/products/raspberry-pi-zero-w)
+- [Photo source and local asset](assets/README.md)
+- [Official Pi Zero W revision 1.1 schematic](https://pip-assets.raspberrypi.com/categories/592-raspberry-pi-zero-w/documents/RP-008368-DS-1-raspberry-pi-zero-w-reduced-schematics.pdf)
+- [Adafruit PAM8302 pinouts](https://learn.adafruit.com/adafruit-pam8302-mono-2-5w-class-d-audio-amplifier/pinouts)
+- [Raspberry Pi GPIO documentation](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#gpio)
+- [Waveshare 2.8inch DPI LCD guide](https://www.waveshare.com/wiki/2.8inch_DPI_LCD)
+- [Power-control implementation](../rick-tv-pi/src/rick_tv_pi/power_button.py)
+- [Packaged display configuration](../rick-tv-pi/provisioning/display/config.txt.waveshare-28dpi-legacy)
+
+## Updating the drawing
+
+Run `python3 hardware/render_wiring.py` from the repository root to rebuild
+`hardware/wiring.svg`. Rasterize that SVG at its native 3750×2310 dimensions to
+update `hardware/wiring.png`. The README displays the PNG for consistent image
+support; the SVG embeds every photograph and does not depend on remote images.
