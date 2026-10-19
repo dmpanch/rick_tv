@@ -68,11 +68,7 @@ individual components, even when a linked listing sells an assortment or pack.
 
 ## Part verification
 
-The Amazon links above are the builder's supplied references. The micro-USB
-breakout listing was accessible and supplied its diagram photograph. The switch
-and potentiometer listings could not be verified, so their mechanism, resistance,
-and dimensions must be checked on the actual parts. The DAC model and final case
-screw specification are also unspecified.
+The Amazon links above are the builder's supplied references.
 
 Component references: [PAM8302 pinout](https://learn.adafruit.com/adafruit-pam8302-mono-2-5w-class-d-audio-amplifier/pinouts),
 [speaker specifications](https://www.adafruit.com/product/3968), and
