@@ -2,7 +2,7 @@
 
 # Rick TV
 
-**A tiny television. Your own channels.**
+**A tiny television with your own channels.**
 
 A Raspberry Pi TV in a 3D-printed retro enclosure, with a touchscreen, a real volume knob, and a built-in speaker.
 
@@ -35,8 +35,7 @@ Pi stays running.
 ## Build the hardware
 
 Start with the [bill of materials](hardware/BOM.md), then follow the
-[connection guide](hardware/README.md). The diagram covers the **USB DAC
-build**, including every pin on the Pi's 40-pin header.
+[connection guide](hardware/README.md).
 
 [![Rick TV wiring with photographs of the Pi, switch, micro-USB breakout, potentiometer and PAM8302A](hardware/wiring.png)](hardware/wiring.png)
 
@@ -47,10 +46,6 @@ build**, including every pin on the Pi's 40-pin header.
 [Download STL](hardware/enclosure/tv-parametric-model.stl) ·
 [OpenSCAD source](hardware/enclosure/tv-parametric-model.scad) ·
 [Model details and fit notes](hardware/enclosure/README.md)
-
-The render assembles the supplied STL using the layout in the SCAD source. Its speaker pocket is
-77.5 mm across; the linked BOM speaker is 40 mm. See the enclosure notes before
-printing for that speaker.
 
 ## How it works
 
