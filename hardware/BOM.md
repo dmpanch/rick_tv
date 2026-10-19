@@ -17,15 +17,14 @@ individual components, even when a linked listing sells an assortment or pack.
 - **1 × microSD card.** At least 8 GB; allow extra space for the local video
   library and the flashed image.
 - **PS1 · 1 × regulated 5 V USB power supply and cable.**
-  A 2 A supply is a reasonable build target; check voltage under load with the
-  display and audio running. The current build enters through the Pi's PWR IN.
+  A 2 A supply is a reasonable build target.
 - **J1 · 1 × micro-USB female breakout board.**
   [Supplied Amazon link](https://www.amazon.co.uk/Breakout-Female-Socket-Adapter-Connector/dp/B07R9SMJKF).
   Its VBUS and GND feed the Pi through the internal cable CBL1.
 - **CBL1 · 1 × internal micro-USB power cable.**
   [Supplied Amazon link](https://www.amazon.co.uk/Micro-Charger-Cable-Braided-Cables/dp/B08XQRV5W1).
   Connects the breakout board to the Pi's **PWR IN** socket:
-  **J1 breakout → CBL1 cable → Pi PWR IN**. Insulate the solder joints.
+  **J1 breakout → CBL1 cable → Pi PWR IN**.
 
 ## Audio
 
@@ -38,15 +37,14 @@ individual components, even when a linked listing sells an assortment or pack.
   sleeve = ground.
 - **U3 · 1 × Adafruit PAM8302A mono amplifier module.**
   [Adafruit #2130](https://www.adafruit.com/product/2130).
-  Rated up to 2.5 W into 4 Ω at 5 V; this is separate from the speaker rating.
+  Rated up to 2.5 W into 4 Ω at 5 V.
 - **LS1 · 1 × 40 mm, 4 Ω, 5 W speaker.**
   [Adafruit #3968](https://www.adafruit.com/product/3968).
   Adafruit identifies the current revision as 5 W. The supplied enclosure has
-  a larger 77.5 mm pocket, so this speaker needs an adapter or a revised mount.
+  a larger 77.5 mm pocket, so this speaker just glued IRL.
 - **RV1 · 1 × P102 / 1 kΩ trimmer potentiometer.**
   [Supplied Amazon link](https://www.amazon.co.uk/HELLOYEE-Breadboard-Trim-Potentiometer-Arduino/dp/B0777J1618).
-  Use the 1 kΩ part from the assortment. Check the wiper with a multimeter and
-  verify the body fits the printed knob and pocket.
+  Use the 1 kΩ part from the assortment.
 - **R1, R2 · 2 × 470 Ω resistors, ¼ W.** One for each stereo channel before
   they join at the mono node.
 
