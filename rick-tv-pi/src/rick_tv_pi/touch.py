@@ -8,7 +8,7 @@ except ImportError:  # pragma: no cover - Python 3.7 runtime compatibility.
     from typing_extensions import Literal
 
 
-SwipeAction = Literal["next", "previous"]
+SwipeAction = Literal["next", "previous", "next_video", "previous_video"]
 
 
 @dataclass(frozen=True)
@@ -36,14 +36,12 @@ class TouchInterpreter:
             horizontal_delta = end.y - start.y
             vertical_delta = end.x - start.x
 
-        if abs(horizontal_delta) < 60:
-            return None
-        if abs(horizontal_delta) <= abs(vertical_delta) * 1.3:
-            return None
-        if horizontal_delta > 0:
-            action: SwipeAction = "next"
+        if abs(horizontal_delta) >= 60 and abs(horizontal_delta) > abs(vertical_delta) * 1.3:
+            action: SwipeAction = "next_video" if horizontal_delta > 0 else "previous_video"
+        elif abs(vertical_delta) >= 60 and abs(vertical_delta) > abs(horizontal_delta) * 1.3:
+            action = "next" if vertical_delta < 0 else "previous"
         else:
-            action = "previous"
+            return None
 
         if (
             self._last_action_at is not None

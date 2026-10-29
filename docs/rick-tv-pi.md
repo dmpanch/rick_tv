@@ -2,6 +2,22 @@
 
 `rick-tv-pi` runs directly on the Raspberry Pi, not in Docker.
 
+## Touch controls
+
+- Swipe up for the next channel, down for the previous channel.
+- Swipe right for the next video, left for the previous video in the current
+  playlist. Navigation wraps at either end of the playlist.
+- A gesture is evaluated on finger release. It must move at least 60 screen
+  pixels along one dominant axis. Taps and diagonal gestures are ignored;
+  accepted gestures share a 0.5-second cooldown.
+- With one playable channel, vertical gestures leave it selected. Horizontal
+  gestures still change its videos. Selecting the current channel from the bot
+  leaves playback running.
+
+Rick TV caches each channel's file list until the directory changes. The player
+checks its command FIFO every 50 ms and its external directory once per second.
+Manual video changes skip the automatic interstitial.
+
 ## Hardware
 
 The Phase 1 runtime assumes the existing Raspberry Pi TV hardware remains in place:

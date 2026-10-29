@@ -1,5 +1,8 @@
 from rick_tv_pi.channels import Channel
 from rick_tv_pi.videolooper import VideolooperController
+from pathlib import Path
+import os
+import pytest
 
 
 class FakeCommandWriter:
@@ -8,6 +11,92 @@ class FakeCommandWriter:
 
     def __call__(self, command):
         self.commands.append(command)
+
+
+@pytest.mark.parametrize('recovers', [True, False])
+def test_video_navigation_waits_for_failed_channel_selection_to_recover(tmp_path, recovers):
+    channels = []
+    for name in ['01_A', '02_B']:
+        path = tmp_path / name
+        path.mkdir()
+        (path / 'video.mp4').touch()
+        channels.append(Channel(name, len(channels) + 1, None, path))
+    delivered = []
+    attempts = []
+
+    def writer(command):
+        if command.endswith('02_B.m3u'):
+            attempts.append(command)
+            if not recovers or len(attempts) == 1:
+                raise OSError('FIFO unavailable')
+        delivered.append(command)
+
+    controller = VideolooperController(tmp_path / 'playlists', command_writer=writer)
+    assert controller.select_channel(channels[0]) is True
+    assert controller.select_channel(channels[1]) is False
+    assert controller.next_video() is recovers
+    assert [Path(command).name for command in delivered] == (
+        ['01_A.m3u', '02_B.m3u', 'next_video'] if recovers else ['01_A.m3u']
+    )
+
+
+def test_unchanged_channel_does_not_repeat_directory_enumeration(tmp_path, monkeypatch):
+    channel_path = tmp_path / 'media' / '01_Rock'
+    channel_path.mkdir(parents=True)
+    (channel_path / 'a.mp4').touch()
+    channel = Channel('01_Rock', 1, None, channel_path)
+    controller = VideolooperController(tmp_path / 'playlists', command_writer=FakeCommandWriter())
+    controller.sync_channels([channel])
+    controller.select_channel(channel)
+    enumerations = []
+    real_iterdir = Path.iterdir
+
+    def counted_iterdir(path):
+        if path == channel_path:
+            enumerations.append(path)
+        return real_iterdir(path)
+
+    monkeypatch.setattr(Path, 'iterdir', counted_iterdir)
+    for _ in range(5):
+        controller.sync_channels([channel])
+        controller.rescan_current_channel()
+    assert enumerations == []
+
+
+def test_cached_files_refresh_after_addition_and_removal(tmp_path):
+    channel_path = tmp_path / '01_Rock'
+    channel_path.mkdir()
+    first = channel_path / 'a.mp4'
+    first.touch()
+    channel = Channel('01_Rock', 1, None, channel_path)
+    controller = VideolooperController(tmp_path / 'playlists', command_writer=FakeCommandWriter())
+    controller.select_channel(channel)
+    second = channel_path / 'b.mp4'
+    second.touch()
+    controller.rescan_current_channel()
+    playlist = tmp_path / 'playlists/channels/01_Rock.m3u'
+    assert str(second) in playlist.read_text()
+    first.unlink()
+    second.unlink()
+    controller.rescan_current_channel()
+    assert controller.current_file is None
+    assert playlist.read_text() == '#EXTM3U\n'
+
+
+def test_cache_invalidates_recreated_directory_even_with_same_mtime(tmp_path):
+    channel_path = tmp_path / '01_Rock'
+    channel_path.mkdir()
+    (channel_path / 'old.mp4').touch()
+    channel = Channel('01_Rock', 1, None, channel_path)
+    controller = VideolooperController(tmp_path / 'playlists', command_writer=FakeCommandWriter())
+    controller.select_channel(channel)
+    before = channel_path.stat()
+    channel_path.rename(tmp_path / 'old')
+    channel_path.mkdir()
+    (channel_path / 'new.mp4').touch()
+    os.utime(channel_path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    controller.rescan_current_channel()
+    assert controller.current_file.path.name == 'new.mp4'
 
 
 class FailingCommandWriter:
