@@ -127,6 +127,8 @@ class VideoLooper:
         self._rick_tv_fifo = None
         self._rick_tv_open_fifo()
         self._rick_tv_playlist_reload = False
+        self._rick_tv_pending_video_steps = []
+        self._rick_tv_next_reader_check = 0.0
         self._rick_tv_current_playlist_path = None
         self._rick_tv_current_playlist_mtime = None
         self._rick_tv_transition_frame_path = '/home/pi/rick-tv/system/transition-placeholder.fb'
@@ -516,6 +518,9 @@ class VideoLooper:
             if not command:
                 continue
             self._print(f"Rick TV FIFO command received: {command}")
+            if command in ('next_video', 'previous_video'):
+                self._rick_tv_pending_video_steps.append(1 if command == 'next_video' else -1)
+                continue
             if '.m3u' in command:
                 playlist_mtime = self._rick_tv_playlist_mtime(command)
                 same_playlist = command == self._rick_tv_current_playlist_path
@@ -547,16 +552,39 @@ class VideoLooper:
                     self._print("Rick TV suppressing next interstitial after channel switch")
                     self._rick_tv_skip_next_interstitial = True
                 self._playbackStopped = False
+                self._rick_tv_pending_video_steps = []
                 self._playlist = None
                 self._rick_tv_playlist_reload = True
                 self._rick_tv_current_playlist_path = command
                 self._rick_tv_current_playlist_mtime = playlist_mtime
+
+    def _rick_tv_apply_video_commands(self, movie):
+        steps = self._rick_tv_pending_video_steps
+        self._rick_tv_pending_video_steps = []
+        if not steps or self._playlist is None or self._playlist.length() == 0:
+            return movie
+        for step in steps:
+            self._playlist.seek(step)
+            movie = self._playlist.get_next()
+            movie.clear_playcount()
+        self._player.stop(0)
+        self._playbackStopped = False
+        self._rick_tv_skip_next_interstitial = True
+        self._print(f"Rick TV manual video selection: {movie}")
+        return movie
 
     def _rick_tv_playlist_mtime(self, playlist_path):
         try:
             return os.path.getmtime(playlist_path)
         except OSError:
             return None
+
+    def _rick_tv_reader_changed(self):
+        now = time.monotonic()
+        if now < self._rick_tv_next_reader_check:
+            return False
+        self._rick_tv_next_reader_check = now + 1.0
+        return self._reader.is_changed()
 
     def _rick_tv_framebuffer_bytes(self):
         try:
@@ -937,6 +965,8 @@ class VideoLooper:
                 movie = self._playlist.get_next()
                 self._rick_tv_playlist_reload = False
 
+            movie = self._rick_tv_apply_video_commands(movie)
+
             # Load and play a new movie if nothing is playing.
             if not self._player.is_playing() and not self._playbackStopped:
                 if movie is None:
@@ -1007,7 +1037,7 @@ class VideoLooper:
 
             # Check for changes in the file search path (like USB drives added)
             # and rebuild the playlist.
-            if self._reader.is_changed() and not self._playbackStopped:
+            if not self._playbackStopped and self._rick_tv_reader_changed():
                 self._print("reader changed, stopping player")
                 self._player.stop(0)  # Up to 3 second delay waiting for old 
                                       # player to stop.
@@ -1025,7 +1055,7 @@ class VideoLooper:
             # but increase CPU usage
             # since keyboard commands are handled in a seperate thread this sleeptime mostly influences the pause between files
                         
-            time.sleep(0.002)
+            time.sleep(0.05)
 
         self._print("run ended")
         pygame.quit()

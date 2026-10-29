@@ -46,6 +46,10 @@ class RuntimePlayer(Protocol):
 
     def rescan_current_channel(self, now: Optional[float] = None) -> None: ...
 
+    def next_video(self) -> bool: ...
+
+    def previous_video(self) -> bool: ...
+
 
 @dataclass(frozen=True)
 class VideolooperSettings:
@@ -202,7 +206,12 @@ def run_runtime_cycle(
             if action is None:
                 break
             logger.info("Touch action detected: %s", action)
-            state.navigator.apply_action(action, player)
+            if action == "next_video":
+                player.next_video()
+            elif action == "previous_video":
+                player.previous_video()
+            else:
+                state.navigator.apply_action(action, player)
 
     if current_time >= state.next_remote_poll_at:
         try:

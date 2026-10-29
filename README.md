@@ -25,7 +25,8 @@ the listening level; the switch turns the screen and sound on or off while the
 Pi stays running.
 
 - **Your own programming.** Create, rename, and delete channels from Telegram.
-- **Touch or remote control.** Change channels with a swipe or a bot command.
+- **Touch or remote control.** Swipe up/down to change channels and right/left
+  to change videos. Channels can also be selected from the bot.
 - **Automatic delivery.** The server converts uploads to the playback format;
   the Pi downloads and verifies them before adding them to its local playlists.
 - **Physical controls.** Adjust volume by hand and switch the screen and sound

@@ -44,6 +44,7 @@ class VideolooperController:
         self._changed_channel_ids = set()
         self._shuffle_interval_seconds = shuffle_interval_seconds
         self._shuffler = shuffler or _shuffle_files
+        self._file_cache = {}
 
     @property
     def master_playlist_path(self) -> Path:
@@ -97,7 +98,7 @@ class VideolooperController:
             self._changed_channel_ids.discard(self._current_channel.id)
 
     def _write_channel_playlist_if_due(self, channel: Channel, now: float) -> bool:
-        files = _channel_files(channel)
+        files = self._channel_files(channel)
         file_set = tuple(files)
         previous_file_set = self._last_file_set_by_channel.get(channel.id)
         next_shuffle_at = self._next_shuffle_at_by_channel.get(channel.id)
@@ -129,15 +130,15 @@ class VideolooperController:
         return playlist_text != last_playlist_text
 
     def _update_state(self, channel: Channel) -> None:
-        _playlist_text, first_file = self._build_channel_playlist(channel, shuffle=False)
+        files = self._channel_files(channel)
+        first_file = files[0] if files else None
         self.screen_state = "playing" if first_file is not None else "empty"
         self.current_file = PlayableFile(first_file) if first_file is not None else None
 
     def _build_master_playlist(self, channels: Iterable[Channel]) -> str:
         lines = ["#EXTM3U"]
         for channel in channels:
-            _, first_file = self._build_channel_playlist(channel, shuffle=False)
-            if first_file is None:
+            if not self._channel_files(channel):
                 continue
             lines.append(f"#EXTINF:0,{_channel_title(channel)}")
             lines.append(str(self._channel_playlist_path(channel)))
@@ -150,7 +151,7 @@ class VideolooperController:
         files: Optional[list[Path]] = None,
         shuffle: bool,
     ) -> Tuple[str, Optional[Path]]:
-        files = _channel_files(channel) if files is None else list(files)
+        files = self._channel_files(channel) if files is None else list(files)
         if not files:
             return "#EXTM3U\n", None
         if shuffle:
@@ -176,6 +177,24 @@ class VideolooperController:
             self._current_commanded_channel_id = channel.id
             return True
 
+    def next_video(self) -> bool:
+        return self._send_video_command("next_video")
+
+    def previous_video(self) -> bool:
+        return self._send_video_command("previous_video")
+
+    def _send_video_command(self, command: str) -> bool:
+        if self.current_file is None or self._current_channel is None:
+            return False
+        if not self._send_channel_command(self._current_channel):
+            return False
+        try:
+            self._command_writer(command)
+        except OSError as exc:
+            logger.warning("Videolooper command pipe is unavailable: %s", exc)
+            return False
+        return True
+
     def _write_fifo_command(self, command: str) -> None:
         fd = os.open(str(self._command_path), os.O_WRONLY | os.O_NONBLOCK)
         try:
@@ -189,6 +208,19 @@ class VideolooperController:
 
     def _channel_playlist_path(self, channel: Channel) -> Path:
         return self._channels_root / f"{channel.id}.m3u"
+
+    def _channel_files(self, channel: Channel) -> list[Path]:
+        try:
+            stat = channel.path.stat()
+            signature = (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_ctime_ns)
+            cached = self._file_cache.get(channel.path)
+            if cached is None or cached[0] != signature:
+                cached = (signature, _channel_files(channel))
+                self._file_cache[channel.path] = cached
+            return list(cached[1])
+        except (FileNotFoundError, NotADirectoryError):
+            self._file_cache.pop(channel.path, None)
+            return []
 
 
 def _channel_title(channel: Channel) -> str:
